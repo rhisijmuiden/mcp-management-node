@@ -35,6 +35,14 @@ func collectPlatform(m *Metrics) {
 		m.DiskTotal = st.Blocks * uint64(st.Bsize)
 		m.DiskUsed = (st.Blocks - st.Bfree) * uint64(st.Bsize)
 	}
+	m.Disks = disks()
+	if ents, err := os.ReadDir(path("/proc")); err == nil {
+		for _, e := range ents {
+			if c := e.Name()[0]; c >= '0' && c <= '9' {
+				m.Processes++
+			}
+		}
+	}
 	if b, err := os.ReadFile(path("/proc/uptime")); err == nil {
 		f := strings.Fields(string(b))
 		if len(f) > 0 {
@@ -172,4 +180,37 @@ func charsToString[T int8 | uint8](ca []T) string {
 		b = append(b, byte(c))
 	}
 	return string(b)
+}
+
+var realFS = map[string]bool{"ext2": true, "ext3": true, "ext4": true, "xfs": true, "btrfs": true, "zfs": true,
+	"vfat": true, "f2fs": true, "jfs": true, "reiserfs": true, "nfs": true, "nfs4": true, "cifs": true, "fuseblk": true, "ntfs3": true}
+
+// disks lists mounted local and network file systems (no tmpfs, proc, overlay, ...).
+func disks() []Disk {
+	b, err := os.ReadFile(path("/proc/mounts"))
+	if err != nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	out := []Disk{}
+	for _, line := range strings.Split(string(b), "\n") {
+		f := strings.Fields(line)
+		if len(f) < 3 || !realFS[f[2]] || seen[f[1]] || strings.HasPrefix(f[1], "/snap/") {
+			continue
+		}
+		mnt := strings.ReplaceAll(f[1], "\\040", " ")
+		if f[2] == "zfs" && strings.Count(mnt, "/") > 2 {
+			continue // ZFS datasets per guest would flood the list
+		}
+		var st syscall.Statfs_t
+		if syscall.Statfs(path(mnt), &st) != nil || st.Blocks == 0 {
+			continue
+		}
+		seen[f[1]] = true
+		out = append(out, Disk{Path: mnt, FS: f[2], Total: st.Blocks * uint64(st.Bsize), Used: (st.Blocks - st.Bfree) * uint64(st.Bsize)})
+		if len(out) >= 30 {
+			break
+		}
+	}
+	return out
 }

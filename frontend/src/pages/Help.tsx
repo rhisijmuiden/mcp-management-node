@@ -1,5 +1,5 @@
 import * as Tabs from "@radix-ui/react-tabs";
-import { Activity, ArrowUpCircle, BookOpen, Bot, Boxes, CalendarClock, DatabaseBackup, GitBranch, Layers, Globe, Mail, MessageSquare, Network, Plug, Rocket, ScrollText, Server, ShieldCheck, Sparkles, Terminal, Wifi } from "lucide-react";
+import { Activity, ArrowUpCircle, BookOpen, Bot, Boxes, CalendarClock, Copy, DatabaseBackup, GitBranch, Layers, Globe, Mail, MessageSquare, Network, Plug, Rocket, ScrollText, Server, ShieldCheck, Sparkles, Stethoscope, Terminal, Wifi } from "lucide-react";
 import type { ReactNode } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { Link } from "react-router";
@@ -222,7 +222,7 @@ export function McpHelpPage() {
   );
 }
 
-type Cap = { tool: string; scope: "read" | "backups" | "restore" | "updates" | "settings" | "nodes" | "node_updates" | "logs" | "services" | "exec" | "guests" | "guests_admin" | "templates" | "tasks" | "network" | "cluster" | "deploy" };
+type Cap = { tool: string; scope: "read" | "backups" | "restore" | "updates" | "settings" | "nodes" | "node_updates" | "logs" | "services" | "exec" | "guests" | "guests_admin" | "templates" | "tasks" | "network" | "cluster" | "deploy" | "copy" };
 const NOW: { key: string; icon: ReactNode; tools: Cap[] }[] = [
   { key: "system", icon: <Rocket />, tools: [
     { tool: "get_system_info", scope: "read" }, { tool: "check_for_updates", scope: "read" }, { tool: "get_update_status", scope: "read" },
@@ -252,6 +252,11 @@ const NOW: { key: string; icon: ReactNode; tools: Cap[] }[] = [
     { tool: "list_services", scope: "logs" }, { tool: "get_service_status", scope: "logs" },
     { tool: "manage_service", scope: "services" }, { tool: "run_command", scope: "exec" },
   ] },
+  { key: "troubleshoot", icon: <Stethoscope />, tools: [
+    { tool: "list_servers", scope: "read" }, { tool: "diagnose_server", scope: "logs" }, { tool: "search_logs", scope: "logs" },
+    { tool: "read_event_log", scope: "logs" }, { tool: "find_errors", scope: "logs" }, { tool: "check_cve", scope: "logs" },
+  ] },
+  { key: "copy", icon: <Copy />, tools: [{ tool: "copy_data", scope: "copy" }, { tool: "get_transfer", scope: "read" }] },
   { key: "guests", icon: <Boxes />, tools: [
     { tool: "list_guests", scope: "read" }, { tool: "get_guest", scope: "read" }, { tool: "list_snapshots", scope: "read" },
     { tool: "suggest_node", scope: "read" }, { tool: "get_node_resources", scope: "read" },
@@ -291,8 +296,16 @@ const NOW: { key: string; icon: ReactNode; tools: Cap[] }[] = [
     { tool: "list_github_repos", scope: "deploy" }, { tool: "save_deployment", scope: "deploy" }, { tool: "run_deployment", scope: "deploy" },
   ] },
 ];
+const SCENARIOS: { key: string; tools: string[] }[] = [
+  { key: "mail", tools: ["diagnose_server", "get_service_status", "search_logs", "manage_service"] },
+  { key: "cve", tools: ["check_cve", "install_node_updates"] },
+  { key: "updates", tools: ["list_servers", "get_overview", "refresh_node_updates"] },
+  { key: "windows", tools: ["read_event_log", "get_service_status", "manage_service"] },
+  { key: "copy", tools: ["copy_data", "get_transfer", "run_command"] },
+  { key: "errors", tools: ["find_errors", "search_logs", "diagnose_server"] },
+];
+
 const NEXT: { key: string; icon: ReactNode; items: number }[] = [
-  { key: "servers", icon: <Terminal />, items: 3 },
   { key: "unifi", icon: <Wifi />, items: 3 },
 ];
 
@@ -312,6 +325,22 @@ export function McpCapabilitiesPage() {
           </Card>
 
           <div>
+            <h2 className="display mb-1 text-lg">{t("mcpcaps.scen_title")}</h2>
+            <p className="mb-4 text-sm text-muted">{t("mcpcaps.scen_intro")}</p>
+            <div className="grid gap-4 md:grid-cols-2">
+              {SCENARIOS.map((sc) => (
+                <Card key={sc.key}>
+                  <CardBody className="space-y-3 py-5">
+                    <div className="text-[15px] font-bold">“{t(`mcpcaps.scen_${sc.key}_q`)}”</div>
+                    <p className="text-sm leading-6 text-muted">{t(`mcpcaps.scen_${sc.key}_a`)}</p>
+                    <div className="flex flex-wrap gap-1.5">{sc.tools.map((tool) => <code key={tool} className="mono rounded bg-sunken px-1.5 py-0.5 text-[11.5px]">{tool}</code>)}</div>
+                  </CardBody>
+                </Card>
+              ))}
+            </div>
+          </div>
+
+          <div>
             <div className="mb-3 flex items-center gap-2">
               <h2 className="display text-lg">{t("mcpcaps.now_title")}</h2>
               <Badge tone="online" dot>{t("mcpcaps.available")}</Badge>
@@ -324,7 +353,7 @@ export function McpCapabilitiesPage() {
                     {g.tools.map((c) => (
                       <div key={c.tool} className="flex items-center justify-between gap-3 text-sm">
                         <code className="mono truncate text-[12.5px]">{c.tool}</code>
-                        <Badge tone={c.scope === "read" ? "neutral" : c.scope === "restore" || c.scope === "exec" ? "offline" : "accent"}>{t(`scopes.${c.scope}`)}</Badge>
+                        <Badge tone={c.scope === "read" ? "neutral" : c.scope === "restore" || c.scope === "exec" || c.scope === "copy" ? "offline" : "accent"}>{t(`scopes.${c.scope}`)}</Badge>
                       </div>
                     ))}
                   </CardBody>
@@ -363,10 +392,10 @@ export function McpCapabilitiesPage() {
           <Card>
             <CardHeader icon={<MessageSquare />} title={t("mcpcaps.ask_title")} description={t("mcpcaps.ask_desc")} />
             <CardBody className="space-y-2">
-              {[1, 2, 3, 4, 5, 6, 7, 9, 10, 8].map((i) => (
+              {[4, 5, 7, 11, 12, 6, 8, 1, 2, 3, 9, 10, 13].map((i) => (
                 <div key={i} className="rounded-md bg-sunken px-3 py-2 text-sm">
                   <div className="italic">“{t(`mcpcaps.ask_${i}`)}”</div>
-                  <div className="mt-1 text-xs text-muted">{t(i !== 8 ? "mcpcaps.ask_now" : "mcpcaps.ask_later")}</div>
+                  <div className="mt-1 text-xs text-muted">{t(i !== 13 ? "mcpcaps.ask_now" : "mcpcaps.ask_later")}</div>
                 </div>
               ))}
             </CardBody>

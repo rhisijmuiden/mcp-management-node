@@ -82,7 +82,9 @@ jobs:
           go vet ./...
           GOOS=windows go vet ./...
           go test ./...
-      - run: bash agent/build.sh --out /tmp/agent-dist && ls -l /tmp/agent-dist
+      - name: msitools (wixl) for the Windows installer
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq wixl
+      - run: bash agent/build.sh --out /tmp/agent-dist && ls -l /tmp/agent-dist && test -s /tmp/agent-dist/mmn-agent-windows-amd64.msi
 
   scripts:
     name: Shell scripts

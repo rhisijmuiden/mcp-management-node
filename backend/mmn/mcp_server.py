@@ -77,8 +77,12 @@ def _summary(result: Any) -> Any:
     if isinstance(result, list):
         return {"items": len(result)}
     if isinstance(result, dict):
-        keys = ("ok", "status", "state", "channel", "restored", "update_available", "error", "tag", "id", "exit_code")
+        keys = ("ok", "status", "state", "channel", "restored", "update_available", "error", "tag", "id", "exit_code",
+                "stage", "timed_out")
         picked = {k: result[k] for k in keys if k in result and not isinstance(result[k], (dict, list))}
+        if "exit_code" in result and ("stdout" in result or "stderr" in result):
+            # Commands: keep the end of the output, so the audit log shows what happened.
+            picked["output"] = (str(result.get("stdout") or "") + str(result.get("stderr") or ""))[-2000:]
         return picked or {"keys": sorted(result)[:10]}
     return {"type": type(result).__name__}
 
@@ -102,8 +106,12 @@ async def _audit(p: Principal | None, tool_name: str, args: dict[str, Any], succ
 
 
 def _target_of(args: dict[str, Any]) -> str | None:
-    for k in ("deployment", "design_id", "guest", "node", "environment", "slug", "template", "task_id", "run_id", "name", "backup_id",
-              "target_id", "tag", "channel", "to", "pattern"):
+    if args.get("target_path") and args.get("source") and args.get("target"):
+        return f"{args['source']} → {args['target']}"[:255]
+    if isinstance(args.get("servers"), list) and args["servers"]:
+        return ", ".join(map(str, args["servers"]))[:255]
+    for k in ("deployment", "design_id", "guest", "node", "server", "environment", "slug", "template", "task_id", "run_id", "name", "backup_id",
+              "target_id", "tag", "channel", "to", "package", "transfer_id", "pattern"):
         if args.get(k):
             return str(args[k])[:255]
     return None
@@ -162,7 +170,14 @@ replication, Proxmox backup jobs and storage. Monitoring: `get_monitoring`, `get
 `list_alerts`, `get_disk_smart`. GitHub deployments into containers: `list_deployments`,
 `list_github_repos`, `save_deployment`, `run_deployment`.
 
-Nodes can be named by id or by name. Every call is written to the audit log with your token's name.
+Standalone servers ("Servers" in the app, Linux and Windows with the same agent): `list_servers`,
+`diagnose_server` (one-call health check: start here), `find_errors` and `search_logs` across all
+machines (journal, Windows Event Log or log files), `read_event_log` (Windows), `check_cve` (installed
+version vs the fixed version on every machine), services, `install_node_updates` (apt, dnf or Windows
+Update), `run_command` (sh on Linux, PowerShell on Windows) and `copy_data` between machines
+(`get_transfer`).
+
+Nodes and servers can be named by id or by name. Every call is written to the audit log with your token's name.
 Destructive tools need `confirm` set to the exact node name, or are marked destructive: ask the user
 before calling them, and give a short `reason` for commands and service actions."""
 
@@ -396,8 +411,9 @@ def _agent_errors(e: Exception) -> ToolDenied:
 
 @tool("read", RO)
 async def get_overview(environment: str | None = None) -> dict:
-    """Environments, nodes (online, CPU/RAM/disk, pending updates, agent version) and totals.
-    `environment` (name or id) limits the nodes to one environment."""
+    """Environments, all machines with an agent (Proxmox VE nodes and standalone Linux/Windows
+    servers: online, CPU/RAM/disk, pending updates, agent version) and totals. `environment` (name
+    or id) limits it to one environment. `list_servers` gives the standalone servers in more detail."""
     from mmn.api.proxmox import overview
     from mmn.services import nodes
 
@@ -408,7 +424,7 @@ async def get_overview(environment: str | None = None) -> dict:
                 env_id = (await nodes.get_environment(db, environment)).id
             except nodes.NodeError as e:
                 raise ToolDenied(str(e)) from e
-        out = await overview(env_id, db, None)
+        out = await overview(env_id, db, None, kind=None)
     return _jsonable(out)
 
 
@@ -490,8 +506,9 @@ async def refresh_node_updates(node: str) -> dict:
 
 @tool("node_updates", DESTRUCTIVE)
 async def install_node_updates(node: str, confirm: str) -> dict:
-    """Install all package updates on the node (apt dist-upgrade, as Proxmox VE requires). Set
-    `confirm` to the node's name. Returns a job; follow it with get_node_job."""
+    """Install all pending updates on a node or server: apt dist-upgrade (Debian, Ubuntu, Proxmox
+    VE), dnf upgrade (RHEL family) or Windows Update. Set `confirm` to the machine's name. Returns a
+    job; follow it with get_node_job. Windows may need a reboot afterwards (reboot_node)."""
     from mmn.services import nodes
 
     nid, name = await _node_id(node)
@@ -507,8 +524,8 @@ async def install_node_updates(node: str, confirm: str) -> dict:
 
 @tool("node_updates", DESTRUCTIVE)
 async def reboot_node(node: str, confirm: str) -> dict:
-    """Reboot the node. Running guests are handled by Proxmox VE's own shutdown policy. Set
-    `confirm` to the node's name. Always ask the user first."""
+    """Reboot a node or server (Linux or Windows). On Proxmox VE running guests are handled by its
+    own shutdown policy. Set `confirm` to the machine's name. Always ask the user first."""
     from mmn.services import nodes
 
     nid, name = await _node_id(node)
@@ -629,9 +646,11 @@ async def _op(node: str, method: str, params: dict) -> Any:
 async def read_logs(node: str, unit: str | None = None, since: str | None = None, until: str | None = None,
                     priority: str | None = None, grep: str | None = None, lines: int = 200,
                     this_boot: bool = False) -> dict:
-    """Read the systemd journal of a node. unit: e.g. 'nginx' or 'pveproxy'. since/until: journalctl
-    time like '1 hour ago' or '2026-11-22 09:00'. priority: emerg, alert, crit, err, warning, notice,
-    info or debug (that level and worse). grep: case-insensitive text/regex filter. Max 5000 lines."""
+    """Read the systemd journal of a Linux machine, or the Windows Event Log (System + Application)
+    of a Windows server. unit: e.g. 'nginx' or 'pveproxy' (on Windows: the event source, e.g.
+    'Service Control Manager'). since/until: '1 hour ago', '2 days ago', 'today' or
+    '2026-11-22 09:00'. priority: emerg, alert, crit, err, warning, notice, info or debug (that level
+    and worse). grep: case-insensitive text/regex filter. Max 5000 lines."""
     return _jsonable(await _op(node, "logs.journal", {"unit": unit or "", "since": since or "", "until": until or "",
                                                       "priority": priority or "", "grep": grep or "",
                                                       "lines": lines, "boot": this_boot}))
@@ -639,20 +658,23 @@ async def read_logs(node: str, unit: str | None = None, since: str | None = None
 
 @tool("logs", RO)
 async def list_services(node: str, state: str | None = None) -> list[dict]:
-    """systemd services on a node. state: e.g. 'failed' or 'running' to filter."""
+    """Services on a node or server (systemd, or Windows services). state: 'failed' or 'running' to
+    filter. On Windows 'failed' means an automatic service that stopped with an error."""
     return _jsonable(await _op(node, "services.list", {"state": state or ""}))
 
 
 @tool("logs", RO)
 async def get_service_status(node: str, unit: str) -> dict:
-    """`systemctl status` of one service plus its properties (state, restarts, memory, start time)."""
+    """Status of one service: `systemctl status` plus properties on Linux; state, start mode, account,
+    path and recent Service Control Manager events on Windows."""
     return _jsonable(await _op(node, "services.status", {"unit": unit}))
 
 
 @tool("services", DESTRUCTIVE)
 async def manage_service(node: str, unit: str, action: str, reason: str) -> dict:
-    """start, stop, restart, reload, enable or disable a systemd service. `reason` is stored in the
-    audit log. Ask the user before stopping or restarting production services."""
+    """start, stop, restart, reload, enable or disable a service (systemd or Windows; on Windows
+    enable = automatic start, no reload). `reason` is stored in the audit log. Ask the user before
+    stopping or restarting production services."""
     if not reason.strip():
         raise ToolDenied("give a reason")
     return _jsonable(await _op(node, "services.action", {"unit": unit, "action": action}))
@@ -660,8 +682,10 @@ async def manage_service(node: str, unit: str, action: str, reason: str) -> dict
 
 @tool("logs", RO)
 async def find_packages(pattern: str, environment: str | None = None) -> list[dict]:
-    """Which nodes have a package installed and which version, e.g. 'nginx*' or 'openssl' (useful
-    for a CVE). Shows whether an update is pending for it. Offline nodes are listed without data."""
+    """Which machines have a package installed and which version, e.g. 'nginx*' or 'openssl':
+    dpkg/rpm/apk packages on Linux, installed programs on Windows ('*sql server*'), hotfixes with
+    'KB5*'. Shows whether an update is pending for it. Offline machines are listed without data.
+    To mark versions as vulnerable or fixed for a CVE use `check_cve`."""
     from mmn.services import nodes
 
     env_id = None
@@ -676,19 +700,168 @@ async def find_packages(pattern: str, environment: str | None = None) -> list[di
 
 @tool("logs", RO)
 async def read_file(node: str, path: str, max_bytes: int = 65536, tail: bool = False) -> dict:
-    """Read a text file (or list a directory) on a node, e.g. /etc/nginx/nginx.conf or
-    /var/log/syslog with tail=true. At most 1 MiB."""
+    """Read a text file (or list a directory) on a machine, e.g. /etc/nginx/nginx.conf,
+    /var/log/syslog with tail=true, or C:\\inetpub\\logs\\LogFiles on Windows. At most 1 MiB."""
     return _jsonable(await _op(node, "file.read", {"path": path, "max_bytes": max_bytes, "tail": tail}))
 
 
 @tool("exec", DESTRUCTIVE)
 async def run_command(node: str, command: str, reason: str, timeout: int = 60) -> dict:
-    """Run a shell command as root on a node (/bin/sh -c) and return exit code, stdout and stderr
-    (max 256 KiB each). `reason` is stored in the audit log with the command. Prefer the read-only
-    tools when they suffice, and ask the user before changing anything. timeout: seconds, max 1800."""
+    """Run a command on a machine and return exit code, stdout and stderr (max 256 KiB each): /bin/sh
+    as root on Linux, Windows PowerShell 5.1 as SYSTEM on Windows. `reason` is stored in the audit
+    log with the command and its output. Prefer the read-only tools when they suffice, and ask the
+    user before changing anything. timeout: seconds, max 1800."""
     if not reason.strip():
         raise ToolDenied("give a reason")
     return _jsonable(await _op(node, "exec", {"command": command, "timeout": max(1, min(timeout, 1800))}))
+
+
+# ------------------------------------------------------------------ standalone servers + troubleshooting
+async def _targets(servers: list[str] | None, environment: str | None, os: str | None):
+    from mmn.services import nodes
+    from mmn.services import servers as srv
+
+    async with sessionmaker()() as db:
+        try:
+            return await srv.resolve_targets(db, servers, environment, os)
+        except nodes.NodeError as e:
+            raise ToolDenied(str(e)) from e
+
+
+@tool("read", RO)
+async def list_servers(environment: str | None = None, os: str | None = None) -> dict:
+    """Standalone Linux and Windows servers with an agent (not the Proxmox VE nodes): OS and version,
+    online, CPU/RAM/disks, failed services, pending updates and what needs attention (offline,
+    failed_services, disk_full, memory, reboot_required). os: 'linux' or 'windows'."""
+    from mmn.services import nodes
+    from mmn.services import servers as srv
+
+    async with sessionmaker()() as db:
+        try:
+            env_id = (await nodes.get_environment(db, environment)).id if environment else None
+        except nodes.NodeError as e:
+            raise ToolDenied(str(e)) from e
+        return _jsonable(await srv.overview(db, env_id, os))
+
+
+@tool("logs", RO)
+async def diagnose_server(server: str) -> dict:
+    """Health check of one machine in a single call: findings (full disks, memory, load, failed
+    services, clock, pending updates/reboot), CPU/RAM/disks, failed services, error log lines of the
+    last hour, busiest processes (CPU and memory), listening ports and time sync. Start here when
+    something "doesn't work" on a server, then dig deeper with read_logs, get_service_status or
+    search_logs."""
+    from mmn.services import servers as srv
+
+    nid, _ = await _node_id(server)
+    try:
+        return _jsonable(await srv.diagnose(nid))
+    except Exception as e:
+        raise _agent_errors(e) from e
+
+
+@tool("logs", RO)
+async def search_logs(pattern: str, servers: list[str] | None = None, environment: str | None = None,
+                      os: str | None = None, since: str = "24 hours ago", source: str = "auto",
+                      unit: str | None = None, priority: str | None = None, paths: list[str] | None = None,
+                      lines: int = 100, log: str | None = None) -> list[dict]:
+    """Search the logs of many machines at once (all machines when `servers` and `environment` are
+    empty; os: linux, windows or proxmox). pattern: case-insensitive regex, e.g. 'postfix.*reject' or
+    'disk full|No space left'. source: auto (systemd journal on Linux, Event Log on Windows),
+    journal, eventlog or files (text log files: `paths` such as /var/log/nginx/*.log or
+    C:\\inetpub\\logs\\LogFiles; /var/log when empty). since: '1 hour ago', '2 days ago', 'today'.
+    unit: systemd unit or Windows event source. priority: err, warning, ... log: Windows log names
+    (e.g. 'System,Application,Security'). lines: max results per machine."""
+    from mmn.services import nodes
+    from mmn.services import servers as srv
+
+    targets = await _targets(servers, environment, os)
+    try:
+        res = await srv.search_logs(targets, pattern, since=since, source=source, unit=unit, priority=priority,
+                                    paths=paths, lines=lines, log_name=log)
+    except nodes.NodeError as e:
+        raise ToolDenied(str(e)) from e
+    return _jsonable(res)
+
+
+@tool("logs", RO)
+async def read_event_log(server: str, log: str = "System,Application", level: str | None = None,
+                         since: str = "24 hours ago", source: str | None = None, grep: str | None = None,
+                         max_events: int = 100) -> list[dict]:
+    """Windows Event Log entries of one Windows server as structured data (time, log, level,
+    provider, event id, message). log: comma separated, e.g. 'System', 'Application', 'Security' or
+    'Microsoft-Windows-TaskScheduler/Operational'. level: critical, error, warning or information
+    (that level and worse). source: event provider, e.g. 'Service Control Manager' or 'MSSQLSERVER'."""
+    return _jsonable(await _op(server, "logs.events", {"log": log, "priority": level or "", "since": since,
+                                                       "unit": source or "", "grep": grep or "",
+                                                       "lines": max(1, min(max_events, 2000))}))
+
+
+@tool("logs", RO)
+async def find_errors(servers: list[str] | None = None, environment: str | None = None, os: str | None = None,
+                      since: str = "1 hour ago") -> list[dict]:
+    """What is wrong where: per machine the failed services, the number of error log lines since
+    `since` with the most recent ones, full disks and other findings, most broken machines first.
+    Covers all machines when `servers` and `environment` are empty."""
+    from mmn.services import servers as srv
+
+    return _jsonable(await srv.find_errors(await _targets(servers, environment, os), since))
+
+
+@tool("logs", RO)
+async def check_cve(package: str, fixed_version: str | None = None, servers: list[str] | None = None,
+                    environment: str | None = None, os: str | None = None) -> list[dict]:
+    """Check a vulnerable package on all machines (or the given ones): the installed version per
+    machine and, with `fixed_version` (the first fixed version from the advisory or the
+    distribution's security tracker, e.g. '1.26.3-3' for Debian's nginx), whether it is still
+    vulnerable and whether a pending update fixes it. package: name or glob ('nginx*', 'openssl',
+    '*7-zip*' on Windows). Most affected machines first. Install fixes with install_node_updates."""
+    from mmn.services import servers as srv
+
+    return _jsonable(await srv.check_cve(await _targets(servers, environment, os), package, fixed_version))
+
+
+@tool("copy", DESTRUCTIVE)
+async def copy_data(source: str, paths: list[str], target: str, target_path: str, reason: str,
+                    overwrite: bool = False) -> dict:
+    """Copy files or folders from one machine to another (Linux and Windows, also between them),
+    relayed through the app over the agents' encrypted connections; nothing is opened between the
+    servers. paths: absolute paths on the source (max 20); each one is placed inside `target_path`
+    (created when missing), like `cp -a <path> <target_path>/`. Owners, modes and times are kept on
+    Linux. overwrite=false stops at the first existing file. `reason` is stored in the audit log.
+    Returns a transfer; follow it with get_transfer. Ask the user before overwriting anything."""
+    from mmn.services import nodes
+    from mmn.services import servers as srv
+
+    if not reason.strip():
+        raise ToolDenied("give a reason")
+    p = current_principal()
+    try:
+        t = await srv.start_transfer(source, paths, target, target_path, overwrite=overwrite, reason=reason,
+                                     origin="mcp", requested_by=p.username if p else None)
+    except (nodes.NodeError, Exception) as e:
+        raise _agent_errors(e) from e
+    return _jsonable(srv.transfer_out(t))
+
+
+@tool("read", RO)
+async def get_transfer(transfer_id: str) -> dict:
+    """Status of a data copy (stage send/receive/done, files, bytes, error) and the output of its
+    two jobs (source and target)."""
+    from mmn.models import NodeJob, Transfer
+    from mmn.services import servers as srv
+
+    async with sessionmaker()() as db:
+        t = await db.get(Transfer, transfer_id)
+        if t is None:
+            raise ToolDenied("transfer not found")
+        out = srv.transfer_out(t)
+        for key in ("send_job_id", "receive_job_id"):
+            if t and getattr(t, key):
+                j = await db.get(NodeJob, getattr(t, key))
+                if j is not None:
+                    out[key.replace("_id", "_output")] = (j.output or "")[-4000:]
+    return _jsonable(out)
 
 
 # ------------------------------------------------------------------ VMs and containers

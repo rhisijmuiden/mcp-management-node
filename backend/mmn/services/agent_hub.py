@@ -157,8 +157,13 @@ def _hello_fields(node: Node, data: dict[str, Any]) -> None:
     node.info = _clean(info)
     cluster = info.get("cluster") if isinstance(info.get("cluster"), dict) else None
     node.cluster_name = (str(cluster.get("name"))[:100] or None) if cluster and cluster.get("name") else None
+    # Proxmox VE nodes go to the "Proxmox" section, every other machine to "Servers".
     if "pve" in node.capabilities:
         node.kind = "proxmox"
+    elif node.os == "windows":
+        node.kind = "windows"
+    elif node.os:
+        node.kind = "linux"
     if isinstance(data.get("governor"), dict):
         node.governor = _clean(data["governor"])
 

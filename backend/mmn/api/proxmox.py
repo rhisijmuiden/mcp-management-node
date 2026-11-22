@@ -47,9 +47,10 @@ async def _node(db: AsyncSession, node_id: str) -> Node:
 # ------------------------------------------------------------------ overview
 @router.get("/api/proxmox/overview")
 async def overview(environment_id: str | None = None, db: AsyncSession = Depends(get_db),
-                   _: User = Depends(current_user)):
+                   _: User = Depends(current_user), kind: str | None = "proxmox"):
+    """Proxmox VE nodes only (standalone servers are in /api/servers/overview); kind=None for all."""
     envs = await nodes.list_environments(db)
-    all_nodes = await nodes.list_nodes(db, environment_id)
+    all_nodes = [n for n in await nodes.list_nodes(db, environment_id) if kind is None or n.kind == kind]
     out_nodes = [nodes.node_summary(n) for n in all_nodes]
     return {
         "environments": [nodes.env_out(e) for e in envs],
@@ -178,6 +179,7 @@ class AgentSettingsIn(BaseModel):
     port: int = Field(default=8443, ge=1, le=65535)
     auto_update: bool = True
     updates_check_hours: int = Field(default=6, ge=1, le=168)
+    transfer_max_gb: int = Field(default=50, ge=1, le=2000)
 
 
 @router.put("/api/agents/settings")
@@ -227,6 +229,7 @@ async def create_pairing(body: PairingIn, request: Request, db: AsyncSession = D
     await db.commit()
     info = await nodes.connect_info(db, request.headers.get("host"), _base(request))
     return {**nodes.pairing_out(pc), "code": code, "command": nodes.install_command(info["app_url"], code),
+            **nodes.windows_commands(info["app_url"], info["endpoint"], info["fingerprint"], code),
             "manual": f"mmn-agent enroll --server {info['endpoint']} --fingerprint {info['fingerprint']} --code {code}",
             "connect": info}
 
@@ -245,9 +248,14 @@ async def delete_pairing(pid: str, request: Request, db: AsyncSession = Depends(
 
 # ------------------------------------------------------------------ nodes
 @router.get("/api/nodes")
-async def list_nodes(environment_id: str | None = None, db: AsyncSession = Depends(get_db),
-                     _: User = Depends(current_user)):
-    return [nodes.node_summary(n) for n in await nodes.list_nodes(db, environment_id)]
+async def list_nodes(environment_id: str | None = None, kind: Literal["proxmox", "linux", "windows", "servers"] | None = None,
+                     db: AsyncSession = Depends(get_db), _: User = Depends(current_user)):
+    rows = await nodes.list_nodes(db, environment_id)
+    if kind == "servers":
+        rows = [n for n in rows if n.kind != "proxmox"]
+    elif kind:
+        rows = [n for n in rows if n.kind == kind]
+    return [nodes.node_summary(n) for n in rows]
 
 
 @router.get("/api/nodes/{node_id}")
@@ -412,8 +420,8 @@ async def get_job(job_id: str, db: AsyncSession = Depends(get_db), _: User = Dep
 
 # ------------------------------------------------------------------ logs, services, commands
 class OpIn(BaseModel):
-    action: Literal["logs.journal", "services.list", "services.status", "services.action", "packages.query",
-                    "file.read", "exec"]
+    action: Literal["logs.journal", "logs.events", "logs.search", "diagnose", "services.list", "services.status",
+                    "services.action", "packages.query", "file.read", "exec"]
     params: dict = Field(default_factory=dict)
 
 
@@ -422,7 +430,7 @@ async def node_op(node_id: str, body: OpIn, request: Request, db: AsyncSession =
                   admin: User = Depends(require_admin)):
     n = await _node(db, node_id)
     detail = {k: v for k, v in body.params.items() if k in ("unit", "action", "pattern", "path", "since",
-                                                               "priority", "grep", "command", "state")}
+                                                               "priority", "grep", "command", "state", "log", "paths")}
     try:
         res = await nodes.node_call(n.id, body.action, body.params)
     except (nodes.NodeError, AgentError) as e:
@@ -430,7 +438,11 @@ async def node_op(node_id: str, body: OpIn, request: Request, db: AsyncSession =
                     error=str(e), **detail)
         await db.commit()
         raise _err(e) from e
-    extra = {"exit_code": res.get("exit_code")} if isinstance(res, dict) and "exit_code" in res else {}
+    extra = {}
+    if isinstance(res, dict) and "exit_code" in res:
+        extra["exit_code"] = res.get("exit_code")
+        if body.action == "exec":
+            extra["output"] = ((res.get("stdout") or "") + (res.get("stderr") or ""))[-2000:]
     await audit(db, f"node.{body.action}", user=admin, target=n.name, ip=client_ip(request), **detail, **extra)
     await db.commit()
     return res

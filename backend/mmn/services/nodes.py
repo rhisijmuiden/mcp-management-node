@@ -305,11 +305,21 @@ async def connect_info(db: AsyncSession, request_host: str | None = None,
             "agent_version": agent_packages.bundled_version(), "packages_available": bool(agent_packages.manifest()),
             "port": int(agents.get("port") or 8443), "address": agents.get("address", ""),
             "auto_update": bool(agents.get("auto_update", True)),
-            "updates_check_hours": agents.get("updates_check_hours", 6)}
+            "updates_check_hours": agents.get("updates_check_hours", 6),
+            "transfer_max_gb": agents.get("transfer_max_gb", 50)}
 
 
 def install_command(app_url: str, code: str) -> str:
     return f"curl -fsSL {app_url}/api/agent/install.sh | bash -s -- --code {code}"
+
+
+def windows_commands(app_url: str, endpoint: str, fingerprint: str, code: str) -> dict[str, str]:
+    """PowerShell one-liner (checks the SHA-256 of the installer) and the plain msiexec form."""
+    ps = (f"powershell -NoProfile -ExecutionPolicy Bypass -Command \"& ([scriptblock]::Create((irm '{app_url}/api/agent/install.ps1'))) "
+          f"-Code {code}\"")
+    msi = (f"msiexec /i {app_url}/api/agent/download/mmn-agent-windows-amd64.msi /qn "
+           f"SERVER={endpoint} FINGERPRINT={fingerprint} CODE={code}")
+    return {"windows_command": ps, "msiexec": msi}
 
 
 class EnrollIn(BaseModel):
@@ -558,8 +568,9 @@ async def job_finished_mail(job_id: str) -> None:
 
 
 # ------------------------------------------------------------------ server-admin tools (logs, services, ...)
-OPS_TIMEOUTS = {"exec": 1900, "logs.journal": 90, "services.list": 60, "services.status": 60,
-                "services.action": 150, "packages.query": 90, "file.read": 30}
+OPS_TIMEOUTS = {"exec": 1900, "logs.journal": 150, "services.list": 90, "services.status": 90,
+                "services.action": 180, "packages.query": 120, "file.read": 30, "logs.events": 150,
+                "logs.search": 120, "diagnose": 120}
 
 
 async def node_call(node_id: str, method: str, params: dict[str, Any]) -> Any:

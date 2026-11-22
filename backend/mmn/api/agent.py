@@ -162,6 +162,53 @@ async def agent_template(tpl_id: str, filename: str, request: Request, db: Async
     return FileResponse(p, media_type="application/octet-stream", filename=filename)
 
 
+# ------------------------------------------------------------------ data copies between servers
+@router.put("/agent/transfer/{tid}", include_in_schema=False)
+async def transfer_upload(tid: str, request: Request):
+    """The source agent streams the packed data here (tar.gz); the target agent fetches it below."""
+    from mmn.models import Transfer
+    from mmn.services import servers
+
+    async with sessionmaker()() as db:
+        node = await _authenticate(db, request.headers)
+        t = await db.get(Transfer, tid) if len(tid) == 32 else None
+        if node is None or t is None or t.source_node_id != node.id or t.status != "running" or t.stage != "send":
+            raise HTTPException(status.HTTP_403_FORBIDDEN)
+        limit = await servers.max_transfer_bytes(db)
+    path = servers.spool_file(tid)
+    tmp = path.with_suffix(".part")
+    size = 0
+    try:
+        with tmp.open("wb") as f:
+            async for chunk in request.stream():
+                size += len(chunk)
+                if size > limit:
+                    raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                                        detail=f"larger than the limit of {limit // 1024**3} GiB")
+                await asyncio.to_thread(f.write, chunk)
+        tmp.replace(path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+    return {"received": size}
+
+
+@router.get("/agent/transfer/{tid}", include_in_schema=False)
+async def transfer_download(tid: str, request: Request):
+    from mmn.models import Transfer
+    from mmn.services import servers
+
+    async with sessionmaker()() as db:
+        node = await _authenticate(db, request.headers)
+        t = await db.get(Transfer, tid) if len(tid) == 32 else None
+        if node is None or t is None or t.target_node_id != node.id or t.status != "running" or t.stage != "receive":
+            raise HTTPException(status.HTTP_403_FORBIDDEN)
+    p = servers.spool_file(tid)
+    if not p.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    return FileResponse(p, media_type="application/gzip")
+
+
 # ------------------------------------------------------------------ public: install script + packages
 def _request_base(request: Request) -> str:
     bp = get_settings().base_path
@@ -176,6 +223,13 @@ async def install_script(request: Request, db: AsyncSession = Depends(get_db)):
     info = await nodes.connect_info(db, request.headers.get("host"), _request_base(request))
     return PlainTextResponse(agent_packages.install_script(info["app_url"], info["endpoint"], info["fingerprint"]),
                              media_type="text/x-shellscript")
+
+
+@router.get("/api/agent/install.ps1", include_in_schema=False)
+async def install_ps1(request: Request, db: AsyncSession = Depends(get_db)):
+    info = await nodes.connect_info(db, request.headers.get("host"), _request_base(request))
+    return PlainTextResponse(agent_packages.install_ps1(info["app_url"], info["endpoint"], info["fingerprint"]),
+                             media_type="text/plain")
 
 
 @router.get("/api/agent/download/{name}", include_in_schema=False)

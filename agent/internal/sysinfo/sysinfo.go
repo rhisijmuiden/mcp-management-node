@@ -24,6 +24,19 @@ type Metrics struct {
 	Guests     *Guests   `json:"guests,omitempty"`
 	Governor   string    `json:"governor,omitempty"`
 	CPUFreqMHz float64   `json:"cpu_mhz,omitempty"`
+	// Disks lists every local file system (Linux) or fixed drive (Windows).
+	Disks []Disk `json:"disks,omitempty"`
+	// FailedServices is the number of failed services (systemd) or automatic Windows services
+	// that stopped with an error; nil when unknown.
+	FailedServices *int `json:"failed_services,omitempty"`
+	Processes      int  `json:"processes,omitempty"`
+}
+
+type Disk struct {
+	Path  string `json:"path"`
+	FS    string `json:"fs,omitempty"`
+	Total uint64 `json:"total"`
+	Used  uint64 `json:"used"`
 }
 
 type Guests struct {

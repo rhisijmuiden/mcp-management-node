@@ -71,6 +71,12 @@ async def _stale_jobs() -> None:
     from mmn.services.agent_hub import expire_stale_jobs
 
     await expire_stale_jobs()
+    from mmn.services.servers import cleanup_spool
+
+    try:
+        await cleanup_spool()
+    except Exception:  # noqa: BLE001
+        log.exception("transfer cleanup failed")
 
 
 def reload_node_jobs(hours: int) -> None:
