@@ -13,7 +13,7 @@ const re = /(?:\bt\(|i18nKey=)\s*["'`]([a-z_]+(?:\.[a-z0-9_]+)+)["'`]/g;
 const prefixes = new Set();
 for (const f of walk(root)) {
   const src = fs.readFileSync(f, "utf8");
-  for (const m of src.matchAll(re)) if (!en.has(m[1])) { console.error(`unknown key ${m[1]} in ${path.relative(root, f)}`); bad++; }
+  for (const m of src.matchAll(re)) if (!en.has(m[1]) && !en.has(m[1] + "_other")) { console.error(`unknown key ${m[1]} in ${path.relative(root, f)}`); bad++; }
   for (const m of src.matchAll(/t\(\s*`([a-z_.]+)\$\{/g)) prefixes.add(m[1]);
 }
 for (const p of prefixes) if (![...en].some((k) => k.startsWith(p))) { console.error("no keys for dynamic prefix", p); bad++; }

@@ -1,5 +1,5 @@
 import * as Tabs from "@radix-ui/react-tabs";
-import { BookOpen, Bot, Boxes, DatabaseBackup, Globe, Mail, MessageSquare, Network, Rocket, ScrollText, Server, ShieldCheck, Sparkles, Terminal } from "lucide-react";
+import { ArrowUpCircle, BookOpen, Bot, Boxes, DatabaseBackup, Globe, Mail, MessageSquare, Network, Plug, Rocket, ScrollText, Server, ShieldCheck, Sparkles, Terminal } from "lucide-react";
 import type { ReactNode } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { Link } from "react-router";
@@ -29,6 +29,7 @@ export function HelpPage() {
   const topics = [
     { icon: <Sparkles />, title: t("help.topic_caps"), text: t("help.topic_caps_text"), to: "/help/capabilities" },
     { icon: <Bot />, title: t("help.topic_mcp"), text: t("help.topic_mcp_text"), to: "/help/mcp" },
+    { icon: <Plug />, title: t("help.topic_nodes"), text: t("help.topic_nodes_text"), to: "/help/nodes" },
     { icon: <DatabaseBackup />, title: t("help.topic_backups"), text: t("help.topic_backups_text"), to: "/admin/backups" },
     { icon: <Rocket />, title: t("help.topic_updates"), text: t("help.topic_updates_text") },
     { icon: <Globe />, title: t("help.topic_proxy"), text: t("help.topic_proxy_text"), to: "/admin/web-server" },
@@ -221,7 +222,7 @@ export function McpHelpPage() {
   );
 }
 
-type Cap = { tool: string; scope: "read" | "backups" | "restore" | "updates" | "settings" };
+type Cap = { tool: string; scope: "read" | "backups" | "restore" | "updates" | "settings" | "nodes" | "node_updates" | "logs" | "services" | "exec" };
 const NOW: { key: string; icon: ReactNode; tools: Cap[] }[] = [
   { key: "system", icon: <Rocket />, tools: [
     { tool: "get_system_info", scope: "read" }, { tool: "check_for_updates", scope: "read" }, { tool: "get_update_status", scope: "read" },
@@ -235,11 +236,26 @@ const NOW: { key: string; icon: ReactNode; tools: Cap[] }[] = [
     { tool: "get_mail_settings", scope: "read" }, { tool: "update_mail_settings", scope: "settings" }, { tool: "send_test_mail", scope: "settings" },
   ] },
   { key: "audit", icon: <ScrollText />, tools: [{ tool: "get_audit_log", scope: "read" }] },
+  { key: "proxmox", icon: <Server />, tools: [
+    { tool: "get_overview", scope: "read" }, { tool: "list_environments", scope: "read" }, { tool: "list_nodes", scope: "read" },
+    { tool: "get_node", scope: "read" }, { tool: "create_environment", scope: "nodes" }, { tool: "create_pairing_code", scope: "nodes" },
+    { tool: "set_cpu_governor", scope: "nodes" }, { tool: "get_environment_notifications", scope: "read" },
+    { tool: "update_environment_notifications", scope: "nodes" }, { tool: "send_node_test_notification", scope: "nodes" },
+    { tool: "update_node_agent", scope: "nodes" },
+  ] },
+  { key: "node_updates", icon: <ArrowUpCircle />, tools: [
+    { tool: "refresh_node_updates", scope: "read" }, { tool: "get_node_job", scope: "read" },
+    { tool: "install_node_updates", scope: "node_updates" }, { tool: "reboot_node", scope: "node_updates" },
+  ] },
+  { key: "servers", icon: <Terminal />, tools: [
+    { tool: "read_logs", scope: "logs" }, { tool: "find_packages", scope: "logs" }, { tool: "read_file", scope: "logs" },
+    { tool: "list_services", scope: "logs" }, { tool: "get_service_status", scope: "logs" },
+    { tool: "manage_service", scope: "services" }, { tool: "run_command", scope: "exec" },
+  ] },
 ];
 const NEXT: { key: string; icon: ReactNode; items: number }[] = [
-  { key: "proxmox", icon: <Server />, items: 4 },
   { key: "guests", icon: <Boxes />, items: 4 },
-  { key: "servers", icon: <Terminal />, items: 6 },
+  { key: "servers", icon: <Terminal />, items: 3 },
   { key: "network", icon: <Network />, items: 3 },
 ];
 
@@ -271,7 +287,7 @@ export function McpCapabilitiesPage() {
                     {g.tools.map((c) => (
                       <div key={c.tool} className="flex items-center justify-between gap-3 text-sm">
                         <code className="mono truncate text-[12.5px]">{c.tool}</code>
-                        <Badge tone={c.scope === "read" ? "neutral" : c.scope === "restore" ? "offline" : "accent"}>{t(`scopes.${c.scope}`)}</Badge>
+                        <Badge tone={c.scope === "read" ? "neutral" : c.scope === "restore" || c.scope === "exec" ? "offline" : "accent"}>{t(`scopes.${c.scope}`)}</Badge>
                       </div>
                     ))}
                   </CardBody>
@@ -313,7 +329,7 @@ export function McpCapabilitiesPage() {
               {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
                 <div key={i} className="rounded-md bg-sunken px-3 py-2 text-sm">
                   <div className="italic">“{t(`mcpcaps.ask_${i}`)}”</div>
-                  <div className="mt-1 text-xs text-muted">{t(i <= 3 ? "mcpcaps.ask_now" : "mcpcaps.ask_later")}</div>
+                  <div className="mt-1 text-xs text-muted">{t(i <= 7 ? "mcpcaps.ask_now" : "mcpcaps.ask_later")}</div>
                 </div>
               ))}
             </CardBody>
@@ -335,6 +351,37 @@ export function McpCapabilitiesPage() {
               </div>
             </CardBody>
           </Card>
+        </div>
+      </div>
+    </>
+  );
+}
+
+export function NodesHelpPage() {
+  const { t } = useTranslation();
+  return (
+    <>
+      <PageHeader title={t("nodeshelp.title")} description={t("nodeshelp.subtitle")} />
+      <div className="grid gap-6 xl:grid-cols-3">
+        <Card className="xl:col-span-2">
+          <CardHeader icon={<Plug />} title={t("nodeshelp.steps_title")} />
+          <CardBody>
+            <Steps items={[1, 2, 3, 4, 5].map((i) => <Trans key={i} i18nKey={`nodeshelp.step_${i}`} components={{ b, c }} />)} />
+          </CardBody>
+        </Card>
+        <div className="space-y-6">
+          <Card>
+            <CardHeader icon={<Network />} title={t("nodeshelp.network_title")} />
+            <CardBody className="space-y-2 text-sm text-muted">
+              <p><Trans i18nKey="nodeshelp.network_1" components={{ b, c }} /></p>
+              <p><Trans i18nKey="nodeshelp.network_2" components={{ b, c }} /></p>
+            </CardBody>
+          </Card>
+          <Card>
+            <CardHeader icon={<ShieldCheck />} title={t("nodeshelp.security_title")} />
+            <CardBody className="text-sm text-muted">{t("nodeshelp.security_text")}</CardBody>
+          </Card>
+          <Alert tone="info">{t("nodeshelp.files")}</Alert>
         </div>
       </div>
     </>

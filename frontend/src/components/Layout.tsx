@@ -2,6 +2,9 @@ import * as DM from "@radix-ui/react-dropdown-menu";
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
+  ArrowUpCircle,
+  Gauge,
+  Plug,
   Bell,
   Bot,
   Boxes,
@@ -61,7 +64,7 @@ function NavItem({ item, onClick }: { item: Item; onClick?: () => void }) {
   return (
     <NavLink
       to={item.to}
-      end={item.to === "/"}
+      end={item.to === "/" || item.to === "/proxmox"}
       onClick={onClick}
       className={({ isActive }) =>
         cn(base, isActive ? "bg-nacht text-white dark:bg-lucht/15 dark:text-ink [&_svg]:text-koraal" : "text-ink hover:bg-sunken")
@@ -101,8 +104,10 @@ export function Layout() {
     {
       title: t("nav.section.proxmox"),
       items: [
-        { icon: <Boxes />, label: t("nav.environments"), soon: true },
-        { icon: <Server />, label: t("nav.nodes"), soon: true },
+        { to: "/proxmox", icon: <Gauge />, label: t("nav.px_overview") },
+        { to: "/proxmox/environments", icon: <Boxes />, label: t("nav.environments") },
+        { to: "/proxmox/nodes", icon: <Server />, label: t("nav.nodes") },
+        { to: "/proxmox/updates", icon: <ArrowUpCircle />, label: t("nav.updates") },
         { icon: <HardDrive />, label: t("nav.guests"), soon: true },
         { icon: <Network />, label: t("nav.network"), soon: true },
       ],
@@ -130,6 +135,7 @@ export function Layout() {
         { to: "/admin/mail", icon: <Mail />, label: t("nav.mail"), admin: true },
         { to: "/admin/notifications", icon: <Bell />, label: t("nav.notifications"), admin: true },
         { to: "/admin/web-server", icon: <Globe />, label: t("nav.web_server"), admin: true },
+        { to: "/admin/agents", icon: <Plug />, label: t("nav.agents"), admin: true },
         { to: "/admin/audit", icon: <ScrollText />, label: t("nav.audit"), admin: true },
         { to: "/admin/general", icon: <Settings />, label: t("nav.general"), admin: true },
       ],

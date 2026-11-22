@@ -3,11 +3,14 @@ import { Layout } from "@/components/Layout";
 import { Spinner } from "@/components/ui/misc";
 import { useAuth } from "@/lib/auth";
 import { AccountPage } from "@/pages/Account";
+import { AgentsPage } from "@/pages/Agents";
 import { AiActivityPage, AuditPage, ConnectionsPage, TokensPage } from "@/pages/Ai";
 import { ConsentPage, ForgotPage, LoginPage, ResetPage, SetupPage } from "@/pages/AuthPages";
 import { BackupsPage } from "@/pages/Backups";
 import { Dashboard } from "@/pages/Dashboard";
-import { HelpPage, McpCapabilitiesPage, McpHelpPage } from "@/pages/Help";
+import { HelpPage, McpCapabilitiesPage, McpHelpPage, NodesHelpPage } from "@/pages/Help";
+import { NodeDetailPage } from "@/pages/Node";
+import { EnvironmentDetailPage, EnvironmentsPage, NodesPage, ProxmoxOverviewPage, UpdatesPage } from "@/pages/Proxmox";
 import { GeneralPage, MailPage, NotificationsPage, WebServerPage } from "@/pages/Settings";
 import { UsersPage } from "@/pages/Users";
 
@@ -38,6 +41,15 @@ export default function App() {
         <Route path="help" element={<HelpPage />} />
         <Route path="help/mcp" element={<McpHelpPage />} />
         <Route path="help/capabilities" element={<McpCapabilitiesPage />} />
+        <Route path="help/ai-admin" element={<Navigate to="/help/capabilities" replace />} />
+        <Route path="help/nodes" element={<NodesHelpPage />} />
+        <Route path="proxmox" element={<ProxmoxOverviewPage />} />
+        <Route path="proxmox/environments" element={<EnvironmentsPage />} />
+        <Route path="proxmox/environments/:id" element={<EnvironmentDetailPage />} />
+        <Route path="proxmox/nodes" element={<NodesPage />} />
+        <Route path="proxmox/nodes/:id" element={<NodeDetailPage />} />
+        <Route path="proxmox/updates" element={<UpdatesPage />} />
+        <Route path="admin/agents" element={<RequireAuth admin><AgentsPage /></RequireAuth>} />
         <Route path="admin/users" element={<RequireAuth admin><UsersPage /></RequireAuth>} />
         <Route path="admin/backups" element={<RequireAuth admin><BackupsPage /></RequireAuth>} />
         <Route path="admin/mail" element={<RequireAuth admin><MailPage /></RequireAuth>} />

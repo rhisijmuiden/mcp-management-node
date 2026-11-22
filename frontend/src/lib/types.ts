@@ -207,3 +207,153 @@ export interface ProxySettings {
   apply_status: { state: string; error?: string };
   seen: { client_ip: string; scheme: string; host: string; forwarded_for: string | null; forwarded_proto: string | null };
 }
+
+/* ------------------------------------------------------------------ phase 2: Proxmox */
+export interface Environment {
+  id: string;
+  name: string;
+  kind: "home" | "customer";
+  description: string | null;
+  color: string;
+  created_at: string;
+  node_count: number;
+  nodes_online: number;
+  updates: number;
+  notify_enabled: boolean;
+  clusters: string[];
+}
+
+export interface PackageUpdate {
+  name: string;
+  current: string;
+  new: string;
+  arch?: string;
+  suite?: string;
+}
+
+export interface NodeMetrics {
+  at?: string;
+  cpu_percent?: number;
+  cpus?: number;
+  load?: number[];
+  mem_total?: number;
+  mem_used?: number;
+  swap_total?: number;
+  swap_used?: number;
+  disk_total?: number;
+  disk_used?: number;
+  uptime_seconds?: number;
+  governor?: string;
+  cpu_mhz?: number;
+  guests?: { vms_running: number; vms_total: number; cts_running: number; cts_total: number };
+}
+
+export interface NodeInfo {
+  id: string;
+  name: string;
+  kind: string;
+  hostname: string | null;
+  environment_id: string;
+  environment_name: string | null;
+  cluster_name: string | null;
+  online: boolean;
+  agent_version: string | null;
+  agent_update_available: boolean;
+  os: string | null;
+  arch: string | null;
+  install_kind: string | null;
+  capabilities: string[];
+  info: Record<string, unknown> & { pve_version?: string; kernel?: string; os_pretty_name?: string; cpu_model?: string; cluster?: { name?: string; quorate?: boolean; nodes?: { name: string; online: boolean; local: boolean; ip?: string }[] } };
+  metrics: NodeMetrics;
+  updates: { count: number; checked_at: string | null; reboot_required: boolean; error?: string | null; packages?: PackageUpdate[] };
+  governor: { current?: string; available?: string[]; driver?: string; desired?: string | null };
+  notify: { applied_at: string | null; error: string | null; hash: string | null };
+  remote_ip: string | null;
+  enrolled_at: string;
+  last_seen_at: string | null;
+  connected_at: string | null;
+  cert_expires_at: string | null;
+}
+
+export interface Overview {
+  environments: Environment[];
+  nodes: NodeInfo[];
+  totals: {
+    nodes: number;
+    online: number;
+    updates: number;
+    nodes_with_updates: number;
+    reboot_required: number;
+    agents_outdated: number;
+    vms_running: number;
+    vms_total: number;
+    cts_running: number;
+    cts_total: number;
+  };
+  agent_version: string | null;
+}
+
+export interface NodeJob {
+  id: string;
+  node_id: string;
+  kind: string;
+  status: "running" | "success" | "failed";
+  source: string;
+  requested_by: string | null;
+  result: Record<string, unknown>;
+  error: string | null;
+  started_at: string;
+  finished_at: string | null;
+  output?: string;
+}
+
+export interface ConnectInfo {
+  endpoint: string;
+  app_url: string;
+  fingerprint: string;
+  fingerprint_pretty: string;
+  agent_version: string | null;
+  packages_available: boolean;
+  port: number;
+  address: string;
+  auto_update: boolean;
+  updates_check_hours: number;
+}
+
+export interface Pairing {
+  id: string;
+  environment_id: string;
+  environment_name: string;
+  label: string | null;
+  created_at: string;
+  expires_at: string;
+  code: string;
+  command?: string;
+  manual?: string;
+}
+
+export interface NotifyConfig {
+  enabled: boolean;
+  use_app_smtp: boolean;
+  server: string;
+  port: number;
+  mode: "starttls" | "tls" | "insecure";
+  username: string;
+  password_set: boolean;
+  from_address: string;
+  author: string;
+  mailto: string[];
+  types: string[];
+  severities: string[];
+  types_available: string[];
+  severities_available: string[];
+}
+
+export interface ExecResult {
+  exit_code: number;
+  stdout: string;
+  stderr: string;
+  truncated: boolean;
+  duration_ms: number;
+  timed_out: boolean;
+}

@@ -1,0 +1,21 @@
+[Unit]
+Description=MCP Management Node agent
+Documentation=https://github.com/rhisijmuiden/mcp-management-node
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/mmn-agent run
+Restart=always
+RestartSec=5
+# Runs as root: it manages packages, the CPU governor and Proxmox VE (pvesh) on this node.
+# The agent only accepts the fixed set of actions it implements; it never runs arbitrary commands.
+StateDirectory=mmn-agent
+ConfigurationDirectory=mmn-agent
+ConfigurationDirectoryMode=0700
+StateDirectoryMode=0700
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target

@@ -26,6 +26,22 @@ def migrate(_: argparse.Namespace) -> int:
     return 0
 
 
+def agent_tls(_: argparse.Namespace) -> int:
+    """Write the certificates of the agent endpoint, so Nginx can be configured right away."""
+    from mmn.db import dispose_engine, sessionmaker
+    from mmn.services.agent_ca import ensure_tls_files
+
+    async def run() -> bool:
+        async with sessionmaker()() as db:
+            changed = await ensure_tls_files(db)
+            await db.commit()
+        await dispose_engine()
+        return changed
+
+    print("written" if asyncio.run(run()) else "unchanged")
+    return 0
+
+
 def setup_token(args: argparse.Namespace) -> int:
     from mmn.config import get_settings
 
@@ -118,6 +134,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("migrate", help="upgrade the database schema").set_defaults(fn=migrate)
     sub.add_parser("serve", help="run the web app").set_defaults(fn=serve)
+    sub.add_parser("agent-tls", help="write the agent endpoint certificates for Nginx").set_defaults(fn=agent_tls)
     st = sub.add_parser("setup-token", help="show (or create) the one-time setup token")
     st.add_argument("--new", action="store_true")
     st.set_defaults(fn=setup_token)

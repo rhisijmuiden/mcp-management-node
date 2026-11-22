@@ -21,6 +21,7 @@ os.environ.update({
     "MMN_RUN_SCHEDULER": "false",
     "MMN_INSECURE_COOKIES": "true",
     "MMN_LOG_LEVEL": "warning",
+    "MMN_AGENT_DIST": str(DATA_DIR / "agent-dist"),
 })
 
 

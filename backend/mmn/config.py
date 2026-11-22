@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     insecure_cookies: bool = False
     run_scheduler: bool = True
     log_level: str = "info"
+    # Folder with the agent builds (default: <install_dir>/current/agent from the release tarball).
+    agent_dist: Path | None = None
     session_hours: int = Field(default=12, ge=1)
     remember_days: int = Field(default=30, ge=1)
 
@@ -46,6 +48,15 @@ class Settings(BaseSettings):
     @property
     def files_dir(self) -> Path:
         return self.data_dir / "files"
+
+    @property
+    def agent_tls_dir(self) -> Path:
+        """Certificates Nginx uses for the agent endpoint (written by the app, read by Nginx)."""
+        return self.data_dir / "agent-tls"
+
+    @property
+    def agent_dist_dir(self) -> Path:
+        return self.agent_dist or (self.install_dir / "current" / "agent")
 
     @property
     def cookie_path(self) -> str:
