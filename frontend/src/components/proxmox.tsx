@@ -8,13 +8,13 @@ import { CodeBlock, CopyButton } from "@/components/CopyButton";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
-import { Field, Input, Select, Textarea } from "@/components/ui/form";
+import { Field, Input, Select } from "@/components/ui/form";
 import { Alert, Badge } from "@/components/ui/misc";
-import { errorMessage, get, post, put } from "@/lib/api";
+import { errorMessage, getAll, post, put } from "@/lib/api";
 import type { ConnectInfo, Environment, NodeInfo, Pairing } from "@/lib/types";
 import { cn, formatBytes, formatDuration, timeAgo } from "@/lib/utils";
 
-export const useEnvironments = () => useQuery({ queryKey: ["environments"], queryFn: () => get<Environment[]>("api/environments") });
+export const useEnvironments = () => useQuery({ queryKey: ["environments"], queryFn: () => getAll<Environment[]>("api/environments") });
 
 export const ENV_COLORS: Record<string, string> = {
   lucht: "bg-lucht",
@@ -226,55 +226,6 @@ export function PairDialog({ open, onOpenChange, environmentId }: { open: boolea
           <Link to="/admin/agents" className="text-sm font-semibold text-accent-text hover:underline" onClick={() => onOpenChange(false)}>{t("px.endpoint_settings")} →</Link>
         </div>
       )}
-    </Dialog>
-  );
-}
-
-/* ------------------------------------------------------------------ environment form */
-export function EnvironmentDialog({ open, onOpenChange, env }: { open: boolean; onOpenChange: (v: boolean) => void; env?: Environment | null }) {
-  const { t } = useTranslation();
-  const qc = useQueryClient();
-  const [f, setF] = useState({ name: "", kind: "customer", description: "", color: "lucht" });
-  useEffect(() => {
-    if (open) setF(env ? { name: env.name, kind: env.kind, description: env.description ?? "", color: env.color } : { name: "", kind: "customer", description: "", color: "koraal" });
-  }, [open, env]);
-  const save = useMutation({
-    mutationFn: () => (env ? put(`api/environments/${env.id}`, f) : post("api/environments", f)),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["environments"] });
-      qc.invalidateQueries({ queryKey: ["overview"] });
-      toast.success(t("common.saved"));
-      onOpenChange(false);
-    },
-  });
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={onOpenChange}
-      title={env ? t("px.env_edit") : t("px.env_add")}
-      footer={<><Button onClick={() => onOpenChange(false)}>{t("common.cancel")}</Button><Button variant="primary" loading={save.isPending} disabled={!f.name.trim()} onClick={() => save.mutate()}>{t("common.save")}</Button></>}
-    >
-      <div className="space-y-4">
-        {save.isError && <Alert tone="offline">{errorMessage(save.error, t)}</Alert>}
-        <Field label={t("px.env_name")}><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder={t("px.env_name_ph")} autoFocus /></Field>
-        <Field label={t("px.env_kind")}>
-          <Select value={f.kind} onChange={(e) => setF({ ...f, kind: e.target.value })}>
-            <option value="home">{t("px.kind_home")}</option>
-            <option value="customer">{t("px.kind_customer")}</option>
-          </Select>
-        </Field>
-        <Field label={t("px.env_color")}>
-          <div className="flex gap-2">
-            {Object.keys(ENV_COLORS).map((c) => (
-              <button key={c} type="button" onClick={() => setF({ ...f, color: c })} aria-label={c}
-                className={cn("grid size-8 cursor-pointer place-items-center rounded-full border-2", f.color === c ? "border-ink" : "border-transparent")}>
-                <EnvDot color={c} className="size-5" />
-              </button>
-            ))}
-          </div>
-        </Field>
-        <Field label={t("px.env_description")}><Textarea className="min-h-16 font-sans text-sm" value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} /></Field>
-      </div>
     </Dialog>
   );
 }

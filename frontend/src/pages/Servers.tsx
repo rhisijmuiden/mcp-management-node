@@ -9,6 +9,7 @@ import { useTranslation } from "react-i18next";
 import { Link, useNavigate } from "react-router";
 import { toast } from "sonner";
 import { CodeBlock, CopyButton } from "@/components/CopyButton";
+import { useCustomer } from "@/components/customers";
 import { JobBadge, JobView, Output } from "@/components/jobs";
 import { AgentAddressNotice, StatusDot, UsageBar, useEnvironments } from "@/components/proxmox";
 import { Button } from "@/components/ui/button";
@@ -46,16 +47,19 @@ function worstDisk(s: ServerInfo) {
   return disks.sort((a, b) => pct(b.used, b.total) - pct(a.used, a.total))[0];
 }
 
-function useServers(os: string, env: string) {
+function useServers(os: string, env: string, role?: string) {
   const qs = new URLSearchParams();
   if (os !== "all") qs.set("os", os);
   if (env) qs.set("environment_id", env);
-  return useQuery({ queryKey: ["servers-overview", os, env], queryFn: () => get<ServersOverview>(`api/servers/overview?${qs}`), refetchInterval: 30_000 });
+  if (role) qs.set("role", role);
+  return useQuery({ queryKey: ["servers-overview", os, env, role ?? ""], queryFn: () => get<ServersOverview>(`api/servers/overview?${qs}`), refetchInterval: 30_000 });
 }
 
 /* ------------------------------------------------------------------ overview */
-export function ServersPage() {
+export function ServersPage({ role = "server" }: { role?: "server" | "workstation" }) {
   const { t, i18n } = useTranslation();
+  const ws = role === "workstation";
+  const { customerId } = useCustomer();
   const { user } = useAuth();
   const admin = user?.role === "admin";
   const navigate = useNavigate();
@@ -63,25 +67,27 @@ export function ServersPage() {
   const [os, setOs] = useState("all");
   const [env, setEnv] = useState("");
   const [add, setAdd] = useState(false);
-  const q = useServers(os, env);
+  const q = useServers(os, env, role);
   const tot = q.data?.totals;
   const rows = q.data?.servers ?? [];
   return (
     <>
       <PageHeader
-        title={t("srv.title")}
-        description={t("srv.subtitle")}
+        title={ws ? t("cust.ws_title") : t("srv.title")}
+        description={ws ? t("cust.ws_subtitle") : t("srv.subtitle")}
         actions={<>
           <Segmented value={os} onChange={setOs} options={[{ value: "all", label: t("srv.all") }, { value: "linux", label: "Linux" }, { value: "windows", label: "Windows" }]} />
-          <Select value={env} onChange={(e) => setEnv(e.target.value)} className="h-9 w-auto py-0 text-[13px]">
-            <option value="">{t("srv.all_envs")}</option>
-            {envs.data?.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
-          </Select>
-          {admin && <Button variant="primary" onClick={() => setAdd(true)}><Plus /> {t("srv.add")}</Button>}
+          {!customerId && (
+            <Select value={env} onChange={(e) => setEnv(e.target.value)} className="h-9 w-auto py-0 text-[13px]" aria-label={t("px.environment")}>
+              <option value="">{t("srv.all_envs")}</option>
+              {envs.data?.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+            </Select>
+          )}
+          {admin && <Button variant="primary" onClick={() => setAdd(true)}><Plus /> {ws ? t("cust.ws_add") : t("srv.add")}</Button>}
         </>}
       />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat label={t("srv.k_servers")} value={tot?.servers ?? "…"} hint={tot ? t("srv.k_split", { linux: tot.linux, windows: tot.windows }) : undefined} icon={<Monitor />} tone="info" />
+        <Stat label={ws ? t("cust.workstations") : t("srv.k_servers")} value={tot?.servers ?? "…"} hint={tot ? t("srv.k_split", { linux: tot.linux, windows: tot.windows }) : undefined} icon={<Monitor />} tone="info" />
         <Stat label={t("srv.k_online")} value={tot ? `${tot.online}/${tot.servers}` : "…"} hint={t("srv.k_online_hint")} icon={<KeyRound />} tone={tot && tot.online < tot.servers ? "offline" : "online"} />
         <Stat label={t("srv.k_attention")} value={tot?.attention ?? "…"} hint={tot?.failed_services ? t("srv.k_failed", { count: tot.failed_services }) : t("srv.k_attention_hint")} icon={<AlertTriangle />} tone={tot?.attention ? "warning" : "online"} />
         <Stat label={t("srv.k_updates")} value={tot?.updates ?? "…"} hint={tot ? t("srv.k_updates_hint", { count: tot.servers_with_updates }) : undefined} icon={<ArrowUpCircle />} tone={tot?.updates ? "accent" : "online"} />
@@ -89,9 +95,9 @@ export function ServersPage() {
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
         <Card className="min-w-0">
-          <CardHeader icon={<Monitor />} title={t("srv.list")} description={t("srv.list_desc")} />
+          <CardHeader icon={<Monitor />} title={ws ? t("cust.workstations") : t("srv.list")} description={ws ? t("cust.ws_list_desc") : t("srv.list_desc")} />
           {q.isLoading ? <CardBody><Spinner /></CardBody> : !rows.length ? (
-            <EmptyState icon={<Monitor />} title={t("srv.empty")} action={admin && <Button variant="primary" onClick={() => setAdd(true)}><Plus /> {t("srv.add")}</Button>}>{t("srv.empty_text")}</EmptyState>
+            <EmptyState icon={<Monitor />} title={ws ? t("cust.ws_empty") : t("srv.empty")} action={admin && <Button variant="primary" onClick={() => setAdd(true)}><Plus /> {ws ? t("cust.ws_add") : t("srv.add")}</Button>}>{ws ? t("cust.ws_empty_text") : t("srv.empty_text")}</EmptyState>
           ) : (
             <div className="overflow-x-auto">
               <Table>
@@ -144,7 +150,7 @@ export function ServersPage() {
           </Card>
         </div>
       </div>
-      <AddServerDialog open={add} onOpenChange={setAdd} />
+      <AddServerDialog open={add} onOpenChange={setAdd} role={role} customerId={customerId || env || undefined} />
     </>
   );
 }
@@ -173,11 +179,14 @@ export function ClaudeCard({ server }: { server?: NodeInfo }) {
 }
 
 /* ------------------------------------------------------------------ add a server */
-export function AddServerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+export function AddServerDialog({ open, onOpenChange, role: initialRole = "server", customerId }: {
+  open: boolean; onOpenChange: (v: boolean) => void; role?: "server" | "workstation"; customerId?: string;
+}) {
   const { t } = useTranslation();
   const envs = useEnvironments();
   const qc = useQueryClient();
   const [env, setEnv] = useState("");
+  const [role, setRole] = useState<"server" | "workstation">(initialRole);
   const [label, setLabel] = useState("");
   const [os, setOs] = useState<"linux" | "windows">("linux");
   const [result, setResult] = useState<(Pairing & { connect: ConnectInfo }) | null>(null);
@@ -185,11 +194,12 @@ export function AddServerDialog({ open, onOpenChange }: { open: boolean; onOpenC
     if (open) {
       setResult(null);
       setLabel("");
-      setEnv((e) => e || envs.data?.[0]?.id || "");
+      setRole(initialRole);
+      setEnv((e) => customerId || e || envs.data?.[0]?.id || "");
     }
-  }, [open, envs.data]);
+  }, [open, envs.data, customerId, initialRole]);
   const create = useMutation({
-    mutationFn: () => post<Pairing & { connect: ConnectInfo }>("api/pairing", { environment_id: env, label: label || null }),
+    mutationFn: () => post<Pairing & { connect: ConnectInfo }>("api/pairing", { environment_id: env, label: label || null, role }),
     onSuccess: (r) => { setResult(r); qc.invalidateQueries({ queryKey: ["pairing"] }); },
   });
   return (
@@ -209,6 +219,9 @@ export function AddServerDialog({ open, onOpenChange }: { open: boolean; onOpenC
               </Field>
               <Field label={t("px.pair_label")} hint={t("px.pair_label_hint")}><Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder={os === "windows" ? "dc01" : "www1"} /></Field>
             </div>
+            <Field label={t("cust.machine_role")} hint={t("cust.machine_role_hint")}>
+              <Segmented value={role} onChange={(v) => setRole(v as "server" | "workstation")} options={[{ value: "server", label: t("cust.role_server") }, { value: "workstation", label: t("cust.role_workstation") }]} />
+            </Field>
             <Alert tone="info">{t(os === "windows" ? "srv.add_how_win" : "srv.add_how_linux")}</Alert>
           </div>
         ) : (

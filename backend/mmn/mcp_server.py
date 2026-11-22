@@ -37,6 +37,8 @@ class Principal:
     scopes: set[str]
     ip: str | None
     client: dict[str, Any]
+    # Customers this token may see; None = all customers.
+    customers: frozenset[str] | None = None
 
 
 _principal: contextvars.ContextVar[Principal | None] = contextvars.ContextVar("mmn_mcp_principal", default=None)
@@ -112,15 +114,20 @@ def _target_of(args: dict[str, Any]) -> str | None:
         return ", ".join(map(str, args["servers"]))[:255]
     if args.get("door"):
         return f"door {args['door']}"[:255]
-    for k in ("wifi", "client", "device", "connection", "deployment", "design_id", "guest", "node", "server", "environment", "slug", "template", "task_id", "run_id", "name", "backup_id",
+    for k in ("wifi", "client", "device", "connection", "deployment", "design_id", "guest", "node", "server", "customer", "slug", "template", "task_id", "run_id", "name", "backup_id",
               "target_id", "tag", "channel", "to", "package", "transfer_id", "pattern"):
         if args.get(k):
             return str(args[k])[:255]
     return None
 
 
-def tool(scope: str, annotations: ToolAnnotations):
-    """Register an MCP tool that checks ``scope`` and writes every call to the audit log."""
+def tool(scope: str, annotations: ToolAnnotations, *, all_customers: bool = False):
+    """Register an MCP tool that checks ``scope`` and writes every call to the audit log.
+
+    ``all_customers``: the tool works on the app itself or across customers (app updates, app
+    backups, mail server, audit log, template library, scheduled tasks), so a token that is tied
+    to some customers may not use it. Every other tool only sees the token's customers.
+    """
 
     def deco(fn):
         @functools.wraps(fn)
@@ -130,6 +137,9 @@ def tool(scope: str, annotations: ToolAnnotations):
             p = _principal.get()
             try:
                 _check(scope)
+                if all_customers and p is not None and p.customers is not None:
+                    raise ToolDenied("this tool works on the whole app or across customers; this token is tied to "
+                                     "specific customers. Use a token for all customers.")
                 result = await fn(*args, **kwargs)
             except Exception as e:
                 msg = str(e) or type(e).__name__
@@ -146,10 +156,18 @@ def tool(scope: str, annotations: ToolAnnotations):
     return deco
 
 
-INSTRUCTIONS = """Stackpilot manages Proxmox VE environments and servers through an agent on
-every machine, so you can do day-to-day server administration without a separate remote session.
+INSTRUCTIONS = """Stackpilot manages the IT of several customers through an agent on every machine (Proxmox
+VE nodes, Linux and Windows servers, workstations) plus their UniFi networks, so you can do
+day-to-day administration without a separate remote session.
 
-Environments group nodes (Home, one per customer). Start with `get_overview` or `list_nodes`.
+Customers are the top layer: everything hangs under a customer ("Home" is a customer too). Start with
+`list_customers`; for "check customer X" use `get_customer_overview` and, to find improvements,
+`optimisation_scan`. Every customer has notes for you, a maintenance window and an SLA
+(`get_customer_context`, or the resource stackpilot://customers/<id>): read and follow them before
+changing anything, and plan restarts and updates inside the maintenance window. Most list tools take
+`customer` (name or id) to limit them to one customer. A token can be tied to some customers: it then
+only sees their machines. Remember facts the user tells you about a customer with `update_customer`
+(append_note). `get_overview` and `list_nodes` list all machines.
 Per node you can read status and metrics, pending package updates, logs (`read_logs`, systemd
 journal), service status (`list_services`, `get_service_status`), installed packages
 (`find_packages` across all nodes, e.g. to check a CVE), files (`read_file`), and run commands
@@ -225,7 +243,7 @@ async def check_for_updates() -> dict:
     return _jsonable(res)
 
 
-@tool("updates", WRITE)
+@tool("updates", WRITE, all_customers=True)
 async def set_update_channel(channel: str) -> dict:
     """Switch between the 'production' (main branch) and 'test' (test branch) update channel.
     This does not install anything; use install_update afterwards."""
@@ -240,7 +258,7 @@ async def set_update_channel(channel: str) -> dict:
     return {"channel": channel}
 
 
-@tool("updates", DESTRUCTIVE)
+@tool("updates", DESTRUCTIVE, all_customers=True)
 async def install_update(tag: str, confirm: str) -> dict:
     """Install release `tag` (for example v0.2.0 or v0.2.0-test.5). The app restarts.
     Set `confirm` to the same tag to confirm. A database dump is made first and the update is
@@ -269,7 +287,7 @@ async def get_update_status() -> dict:
 
 
 # ------------------------------------------------------------------ backups
-@tool("read", RO)
+@tool("read", RO, all_customers=True)
 async def list_backup_targets() -> list[dict]:
     """Remote backup locations (FTP, FTPS, SFTP, SCP) with their schedules. Secrets are never returned."""
     from mmn.services.backup.targets import list_targets, target_out
@@ -279,7 +297,7 @@ async def list_backup_targets() -> list[dict]:
     return _jsonable(out)
 
 
-@tool("read", RO)
+@tool("read", RO, all_customers=True)
 async def list_backup_runs(limit: int = 20) -> list[dict]:
     """Recent backup and restore runs with status, size and errors."""
     from mmn.services.backup.targets import list_runs
@@ -291,7 +309,7 @@ async def list_backup_runs(limit: int = 20) -> list[dict]:
     return _jsonable(runs)
 
 
-@tool("read", RO)
+@tool("read", RO, all_customers=True)
 async def list_remote_backups(target_id: str) -> list[dict]:
     """Backups that exist on a remote location (the source for restores)."""
     from mmn.models import BackupTarget
@@ -305,7 +323,7 @@ async def list_remote_backups(target_id: str) -> list[dict]:
     return _jsonable(res)
 
 
-@tool("backups", WRITE)
+@tool("backups", WRITE, all_customers=True)
 async def run_backup(target_id: str, kind: str = "auto") -> dict:
     """Start a backup now. kind: 'full', 'incremental' or 'auto' (incremental when a full exists).
     Returns when the backup has finished."""
@@ -326,7 +344,7 @@ async def run_backup(target_id: str, kind: str = "auto") -> dict:
     return _jsonable(out)
 
 
-@tool("restore", DESTRUCTIVE)
+@tool("restore", DESTRUCTIVE, all_customers=True)
 async def restore_backup(target_id: str, backup_id: str, confirm: str) -> dict:
     """Replace ALL current app data with backup `backup_id` from `target_id`. Set `confirm` to the
     backup_id to confirm. Always ask the user first."""
@@ -358,7 +376,7 @@ async def get_mail_settings() -> dict:
     return out
 
 
-@tool("settings", WRITE)
+@tool("settings", WRITE, all_customers=True)
 async def update_mail_settings(host: str | None = None, port: int | None = None, security: str | None = None,
                                username: str | None = None, from_address: str | None = None,
                                from_name: str | None = None, enabled: bool | None = None) -> dict:
@@ -376,7 +394,7 @@ async def update_mail_settings(host: str | None = None, port: int | None = None,
     return out
 
 
-@tool("settings", WRITE)
+@tool("settings", WRITE, all_customers=True)
 async def send_test_mail(to: str) -> dict:
     """Send a test email with the saved SMTP settings."""
     from mmn.services.mail_settings import send_test_mail as send
@@ -390,7 +408,7 @@ async def send_test_mail(to: str) -> dict:
 
 
 # ------------------------------------------------------------------ audit
-@tool("read", RO)
+@tool("read", RO, all_customers=True)
 async def get_audit_log(limit: int = 50) -> list[dict]:
     """Recent actions in the app (who did what, from the UI or via MCP)."""
     from sqlalchemy import select
@@ -421,18 +439,18 @@ def _agent_errors(e: Exception) -> ToolDenied:
 
 
 @tool("read", RO)
-async def get_overview(environment: str | None = None) -> dict:
+async def get_overview(customer: str | None = None) -> dict:
     """Environments, all machines with an agent (Proxmox VE nodes and standalone Linux/Windows
-    servers: online, CPU/RAM/disk, pending updates, agent version) and totals. `environment` (name
-    or id) limits it to one environment. `list_servers` gives the standalone servers in more detail."""
+    servers: online, CPU/RAM/disk, pending updates, agent version) and totals. `customer` (name
+    or id) limits it to one customer. `list_servers` gives the standalone servers in more detail."""
     from mmn.api.proxmox import overview
     from mmn.services import nodes
 
     async with sessionmaker()() as db:
         env_id = None
-        if environment:
+        if customer:
             try:
-                env_id = (await nodes.get_environment(db, environment)).id
+                env_id = (await nodes.get_environment(db, customer)).id
             except nodes.NodeError as e:
                 raise ToolDenied(str(e)) from e
         out = await overview(env_id, db, None, kind=None)
@@ -440,35 +458,129 @@ async def get_overview(environment: str | None = None) -> dict:
 
 
 @tool("read", RO)
-async def list_environments() -> list[dict]:
-    """Environments (Home, customers) with node counts and pending updates."""
-    from mmn.services import nodes
+async def list_customers() -> list[dict]:
+    """All customers you may see (Home is a customer too): status (ok, attention, empty), machines
+    online, Proxmox VE nodes, servers and workstations, pending updates, open alerts, UniFi devices
+    and firmware updates, maintenance window and SLA. Start here when the user names a customer."""
+    from mmn.services import customers
 
     async with sessionmaker()() as db:
-        return _jsonable([nodes.env_out(e) for e in await nodes.list_environments(db)])
+        rows = await customers.summaries(db)
+    keep = ("id", "name", "kind", "description", "status", "machines", "online", "counts", "updates", "alerts",
+            "unifi", "clusters", "maintenance_window", "sla", "contact_name")
+    return _jsonable([{k: r.get(k) for k in keep} | {"has_notes": bool(r.get("notes"))} for r in rows])
 
 
-@tool("nodes", WRITE)
-async def create_environment(name: str, kind: str = "customer", description: str | None = None) -> dict:
-    """Create an environment. kind: 'home' or 'customer'."""
+@tool("read", RO)
+async def get_customer_overview(customer: str) -> dict:
+    """Everything at one customer in one call: the customer context (notes for you, maintenance
+    window, SLA, contacts), every machine (Proxmox VE nodes, servers, workstations) with status,
+    OS, CPU/RAM, pending updates and what needs attention, UniFi connections, open alerts and totals.
+    Read the notes and respect the maintenance window before changing anything."""
+    from mmn.services import customers, nodes
+
+    async with sessionmaker()() as db:
+        try:
+            e = await nodes.get_environment(db, customer)
+        except nodes.NodeError as ex:
+            raise ToolDenied(str(ex)) from ex
+        out = await customers.overview(db, e)
+        out["context"] = customers.context_dict(e)
+        out.pop("ai_access", None)
+    return _jsonable(out)
+
+
+@tool("read", RO)
+async def optimisation_scan(customer: str, live_network_checks: bool = True) -> dict:
+    """"What can be optimised at customer X": one call that checks capacity (memory per node and the
+    balance inside a cluster, with a guest to move), storage and SMART health, disks of servers and
+    containers, pending updates and reboots, old agents, failed services, stopped guests, UniFi
+    devices offline, firmware updates and (live) whether the guest WiFi is isolated from the LAN.
+    Returns findings by severity with a suggestion and the tool to use next. Present them to the
+    user and ask before acting; plan changes in the maintenance window."""
+    from mmn.services import customers, nodes
+
+    async with sessionmaker()() as db:
+        try:
+            e = await nodes.get_environment(db, customer)
+        except nodes.NodeError as ex:
+            raise ToolDenied(str(ex)) from ex
+        return _jsonable(await customers.optimisation_scan(db, e, live=live_network_checks))
+
+
+@tool("read", RO)
+async def get_customer_context(customer: str) -> dict:
+    """The customer's notes for you, maintenance window, SLA and contacts (also available as the MCP
+    resource stackpilot://customers/<id>). Follow the notes, e.g. "never restart X during office hours"."""
+    from mmn.services import customers, nodes
+
+    async with sessionmaker()() as db:
+        try:
+            e = await nodes.get_environment(db, customer)
+        except nodes.NodeError as ex:
+            raise ToolDenied(str(ex)) from ex
+        return _jsonable({"id": e.id, **customers.context_dict(e), "markdown": customers.context_markdown(e)})
+
+
+@tool("nodes", WRITE, all_customers=True)
+async def create_customer(name: str, kind: str = "customer", description: str | None = None,
+                          contact_name: str | None = None, contact_email: str | None = None,
+                          contact_phone: str | None = None, maintenance_window: str | None = None,
+                          sla: str | None = None, notes: str | None = None) -> dict:
+    """Create a customer. kind: 'home' (your own environment) or 'customer'. maintenance_window
+    e.g. 'Tue 22:00-02:00'. notes: guidance for the AI and the team."""
     from mmn.services import nodes
 
     async with sessionmaker()() as db:
         try:
-            e = await nodes.create_environment(db, nodes.EnvironmentIn(name=name, kind=kind, description=description))
+            e = await nodes.create_environment(db, nodes.EnvironmentIn(
+                name=name, kind=kind, description=description, contact_name=contact_name,
+                contact_email=contact_email, contact_phone=contact_phone, maintenance_window=maintenance_window,
+                sla=sla, notes=notes))
         except (nodes.NodeError, ValueError) as ex:
             raise ToolDenied(str(ex)) from ex
         await db.commit()
         return _jsonable(nodes.env_out(e, []))
 
 
+@tool("nodes", WRITE)
+async def update_customer(customer: str, description: str | None = None, contact_name: str | None = None,
+                          contact_email: str | None = None, contact_phone: str | None = None,
+                          maintenance_window: str | None = None, sla: str | None = None,
+                          notes: str | None = None, append_note: str | None = None) -> dict:
+    """Change a customer's details. Only the fields you pass change. `append_note` adds a line to the
+    notes (e.g. something the user asked you to remember about this customer); `notes` replaces them."""
+    from mmn.services import nodes
+
+    async with sessionmaker()() as db:
+        try:
+            e = await nodes.get_environment(db, customer)
+            cur = nodes.env_out(e)
+            new_notes = notes if notes is not None else cur["notes"]
+            if append_note and append_note.strip():
+                new_notes = f"{new_notes.rstrip()}\n{append_note.strip()}" if new_notes else append_note.strip()
+            body = nodes.EnvironmentIn(**{
+                "name": e.name, "kind": e.kind, "color": e.color, "contacts": cur["contacts"],
+                "description": description if description is not None else cur["description"],
+                "contact_name": contact_name if contact_name is not None else cur["contact_name"],
+                "contact_email": contact_email if contact_email is not None else cur["contact_email"],
+                "contact_phone": contact_phone if contact_phone is not None else cur["contact_phone"],
+                "maintenance_window": maintenance_window if maintenance_window is not None else cur["maintenance_window"],
+                "sla": sla if sla is not None else cur["sla"], "notes": new_notes})
+            await nodes.update_environment(db, e, body)
+        except (nodes.NodeError, ValueError) as ex:
+            raise ToolDenied(str(ex)) from ex
+        await db.commit()
+        return _jsonable(nodes.env_out(e))
+
+
 @tool("read", RO)
-async def list_nodes(environment: str | None = None) -> list[dict]:
+async def list_nodes(customer: str | None = None) -> list[dict]:
     """Nodes with status, metrics, cluster, agent version and number of pending updates."""
     from mmn.services import nodes
 
     async with sessionmaker()() as db:
-        env_id = (await nodes.get_environment(db, environment)).id if environment else None
+        env_id = (await nodes.get_environment(db, customer)).id if customer else None
         return _jsonable([nodes.node_summary(n) for n in await nodes.list_nodes(db, env_id)])
 
 
@@ -485,20 +597,22 @@ async def get_node(node: str) -> dict:
 
 
 @tool("nodes", WRITE)
-async def create_pairing_code(environment: str, label: str | None = None) -> dict:
-    """Create a one-time pairing code (valid 24 hours) and the install command to run on a new node."""
+async def create_pairing_code(customer: str, label: str | None = None, role: str = "server") -> dict:
+    """Create a one-time pairing code (valid 24 hours) for a customer and the install command to run on
+    a new machine. role: 'server' or 'workstation' (a PC or laptop) for Linux/Windows machines."""
     from mmn.services import nodes
 
     async with sessionmaker()() as db:
         try:
-            env = await nodes.get_environment(db, environment)
+            env = await nodes.get_environment(db, customer)
             p = current_principal()
-            pc, code = await nodes.create_pairing_code(db, env, label=label, created_by=p.username if p else None)
+            pc, code = await nodes.create_pairing_code(db, env, label=label, created_by=p.username if p else None,
+                                                       role=role)
         except nodes.NodeError as e:
             raise ToolDenied(str(e)) from e
         await db.commit()
         info = await nodes.connect_info(db)
-    return _jsonable({"code": code, "expires_at": pc.expires_at, "environment": env.name,
+    return _jsonable({"code": code, "expires_at": pc.expires_at, "customer": env.name,
                       "command": nodes.install_command(info["app_url"] or "<app address>", code),
                       "agent_endpoint": info["endpoint"]})
 
@@ -577,22 +691,22 @@ async def set_cpu_governor(node: str, governor: str) -> dict:
 
 
 @tool("read", RO)
-async def get_environment_notifications(environment: str) -> dict:
-    """The Proxmox VE notification mail settings of an environment (password never returned)."""
+async def get_customer_notifications(customer: str) -> dict:
+    """The Proxmox VE notification mail settings of a customer (password never returned)."""
     from mmn.services import nodes
 
     async with sessionmaker()() as db:
         try:
-            return _jsonable(nodes.notify_public(await nodes.get_environment(db, environment)))
+            return _jsonable(nodes.notify_public(await nodes.get_environment(db, customer)))
         except nodes.NodeError as e:
             raise ToolDenied(str(e)) from e
 
 
 @tool("nodes", WRITE)
-async def update_environment_notifications(environment: str, enabled: bool, mailto: list[str],
-                                           types: list[str] | None = None, severities: list[str] | None = None,
+async def update_customer_notifications(customer: str, enabled: bool, mailto: list[str],
+                                        types: list[str] | None = None, severities: list[str] | None = None,
                                            use_app_smtp: bool = True) -> dict:
-    """Set who gets Proxmox VE notifications for an environment and push them to its nodes.
+    """Set who gets Proxmox VE notifications for a customer and push them to its nodes.
     types: vzdump, replication, fencing, package-updates, system-mail. severities: info, notice,
     warning, error, unknown. use_app_smtp sends through the app's own mail server; a different SMTP
     server can only be entered in the web interface."""
@@ -600,7 +714,7 @@ async def update_environment_notifications(environment: str, enabled: bool, mail
 
     async with sessionmaker()() as db:
         try:
-            e = await nodes.get_environment(db, environment)
+            e = await nodes.get_environment(db, customer)
             cur = nodes.notify_public(e)
             body = nodes.NotifyIn(**{**{k: v for k, v in cur.items() if k in nodes.NotifyIn.model_fields},
                                      "enabled": enabled, "mailto": mailto, "use_app_smtp": use_app_smtp,
@@ -692,7 +806,7 @@ async def manage_service(node: str, unit: str, action: str, reason: str) -> dict
 
 
 @tool("logs", RO)
-async def find_packages(pattern: str, environment: str | None = None) -> list[dict]:
+async def find_packages(pattern: str, customer: str | None = None) -> list[dict]:
     """Which machines have a package installed and which version, e.g. 'nginx*' or 'openssl':
     dpkg/rpm/apk packages on Linux, installed programs on Windows ('*sql server*'), hotfixes with
     'KB5*'. Shows whether an update is pending for it. Offline machines are listed without data.
@@ -700,10 +814,10 @@ async def find_packages(pattern: str, environment: str | None = None) -> list[di
     from mmn.services import nodes
 
     env_id = None
-    if environment:
+    if customer:
         async with sessionmaker()() as db:
             try:
-                env_id = (await nodes.get_environment(db, environment)).id
+                env_id = (await nodes.get_environment(db, customer)).id
             except nodes.NodeError as e:
                 raise ToolDenied(str(e)) from e
     return _jsonable(await nodes.find_packages(pattern, env_id))
@@ -728,19 +842,19 @@ async def run_command(node: str, command: str, reason: str, timeout: int = 60) -
 
 
 # ------------------------------------------------------------------ standalone servers + troubleshooting
-async def _targets(servers: list[str] | None, environment: str | None, os: str | None):
+async def _targets(servers: list[str] | None, customer: str | None, os: str | None):
     from mmn.services import nodes
     from mmn.services import servers as srv
 
     async with sessionmaker()() as db:
         try:
-            return await srv.resolve_targets(db, servers, environment, os)
+            return await srv.resolve_targets(db, servers, customer, os)
         except nodes.NodeError as e:
             raise ToolDenied(str(e)) from e
 
 
 @tool("read", RO)
-async def list_servers(environment: str | None = None, os: str | None = None) -> dict:
+async def list_servers(customer: str | None = None, os: str | None = None) -> dict:
     """Standalone Linux and Windows servers with an agent (not the Proxmox VE nodes): OS and version,
     online, CPU/RAM/disks, failed services, pending updates and what needs attention (offline,
     failed_services, disk_full, memory, reboot_required). os: 'linux' or 'windows'."""
@@ -749,7 +863,7 @@ async def list_servers(environment: str | None = None, os: str | None = None) ->
 
     async with sessionmaker()() as db:
         try:
-            env_id = (await nodes.get_environment(db, environment)).id if environment else None
+            env_id = (await nodes.get_environment(db, customer)).id if customer else None
         except nodes.NodeError as e:
             raise ToolDenied(str(e)) from e
         return _jsonable(await srv.overview(db, env_id, os))
@@ -772,11 +886,11 @@ async def diagnose_server(server: str) -> dict:
 
 
 @tool("logs", RO)
-async def search_logs(pattern: str, servers: list[str] | None = None, environment: str | None = None,
+async def search_logs(pattern: str, servers: list[str] | None = None, customer: str | None = None,
                       os: str | None = None, since: str = "24 hours ago", source: str = "auto",
                       unit: str | None = None, priority: str | None = None, paths: list[str] | None = None,
                       lines: int = 100, log: str | None = None) -> list[dict]:
-    """Search the logs of many machines at once (all machines when `servers` and `environment` are
+    """Search the logs of many machines at once (all machines when `servers` and `customer` are
     empty; os: linux, windows or proxmox). pattern: case-insensitive regex, e.g. 'postfix.*reject' or
     'disk full|No space left'. source: auto (systemd journal on Linux, Event Log on Windows),
     journal, eventlog or files (text log files: `paths` such as /var/log/nginx/*.log or
@@ -786,7 +900,7 @@ async def search_logs(pattern: str, servers: list[str] | None = None, environmen
     from mmn.services import nodes
     from mmn.services import servers as srv
 
-    targets = await _targets(servers, environment, os)
+    targets = await _targets(servers, customer, os)
     try:
         res = await srv.search_logs(targets, pattern, since=since, source=source, unit=unit, priority=priority,
                                     paths=paths, lines=lines, log_name=log)
@@ -809,19 +923,19 @@ async def read_event_log(server: str, log: str = "System,Application", level: st
 
 
 @tool("logs", RO)
-async def find_errors(servers: list[str] | None = None, environment: str | None = None, os: str | None = None,
+async def find_errors(servers: list[str] | None = None, customer: str | None = None, os: str | None = None,
                       since: str = "1 hour ago") -> list[dict]:
     """What is wrong where: per machine the failed services, the number of error log lines since
     `since` with the most recent ones, full disks and other findings, most broken machines first.
-    Covers all machines when `servers` and `environment` are empty."""
+    Covers all machines when `servers` and `customer` are empty."""
     from mmn.services import servers as srv
 
-    return _jsonable(await srv.find_errors(await _targets(servers, environment, os), since))
+    return _jsonable(await srv.find_errors(await _targets(servers, customer, os), since))
 
 
 @tool("logs", RO)
 async def check_cve(package: str, fixed_version: str | None = None, servers: list[str] | None = None,
-                    environment: str | None = None, os: str | None = None) -> list[dict]:
+                    customer: str | None = None, os: str | None = None) -> list[dict]:
     """Check a vulnerable package on all machines (or the given ones): the installed version per
     machine and, with `fixed_version` (the first fixed version from the advisory or the
     distribution's security tracker, e.g. '1.26.3-3' for Debian's nginx), whether it is still
@@ -829,7 +943,7 @@ async def check_cve(package: str, fixed_version: str | None = None, servers: lis
     '*7-zip*' on Windows). Most affected machines first. Install fixes with install_node_updates."""
     from mmn.services import servers as srv
 
-    return _jsonable(await srv.check_cve(await _targets(servers, environment, os), package, fixed_version))
+    return _jsonable(await srv.check_cve(await _targets(servers, customer, os), package, fixed_version))
 
 
 @tool("copy", DESTRUCTIVE)
@@ -902,16 +1016,16 @@ async def _job(coro) -> dict:
 
 
 @tool("read", RO)
-async def list_guests(environment: str | None = None, node: str | None = None, type: str | None = None,
+async def list_guests(customer: str | None = None, node: str | None = None, type: str | None = None,
                       query: str | None = None) -> list[dict]:
     """VMs (type 'qemu') and containers (type 'lxc') on all Proxmox VE nodes: VMID, name, status,
-    node, CPU/memory/disk use, tags. Filter by environment, node, type or a text `query` (name,
+    node, CPU/memory/disk use, tags. Filter by customer, node, type or a text `query` (name,
     VMID or tag). Containers made by community-scripts.org have the tag 'community-script'."""
     from mmn.services import guests, nodes
 
     async with sessionmaker()() as db:
         try:
-            env_id = (await nodes.get_environment(db, environment)).id if environment else None
+            env_id = (await nodes.get_environment(db, customer)).id if customer else None
             node_id = (await nodes.get_node(db, node)).id if node else None
         except nodes.NodeError as e:
             raise ToolDenied(str(e)) from e
@@ -922,7 +1036,7 @@ async def list_guests(environment: str | None = None, node: str | None = None, t
 @tool("read", RO)
 async def get_guest(guest: str, node: str | None = None) -> dict:
     """Details of one VM or container (by VMID or name): configuration, snapshots and, when
-    running, its IP addresses. Give `node` when the VMID exists in more than one environment."""
+    running, its IP addresses. Give `node` when the VMID exists in more than one customer."""
     from mmn.services import guests
 
     n, g = await _guest(guest, node)
@@ -1031,15 +1145,15 @@ async def delete_guest(guest: str, confirm: str, node: str | None = None) -> dic
 
 
 @tool("read", RO)
-async def suggest_node(environment: str | None = None) -> dict:
+async def suggest_node(customer: str | None = None) -> dict:
     """The least loaded online Proxmox VE node (memory 60 %, CPU 40 %), with the ranking."""
     from mmn.services import guests, nodes
 
     async with sessionmaker()() as db:
         env_id = None
-        if environment:
+        if customer:
             try:
-                env_id = (await nodes.get_environment(db, environment)).id
+                env_id = (await nodes.get_environment(db, customer)).id
             except nodes.NodeError as e:
                 raise ToolDenied(str(e)) from e
         return _jsonable(await guests.suggest_node(db, env_id) or {"error": "no Proxmox VE node is online"})
@@ -1174,7 +1288,7 @@ async def list_template_catalog(query: str | None = None) -> list[dict]:
     return _jsonable(items[:200])
 
 
-@tool("templates", WRITE)
+@tool("templates", WRITE, all_customers=True)
 async def add_official_template(filename: str, sync: bool = True) -> dict:
     """Add an official template (file name from list_template_catalog) to the library. With `sync`
     it is pushed to all nodes by the nightly sync (or run sync_templates now)."""
@@ -1190,7 +1304,7 @@ async def add_official_template(filename: str, sync: bool = True) -> dict:
         return _jsonable(templates.template_out(t))
 
 
-@tool("templates", WRITE)
+@tool("templates", WRITE, all_customers=True)
 async def sync_templates(template: str | None = None) -> dict:
     """Push the library to all online nodes now (or only one `template`). Returns a run id; follow
     it with get_task_run."""
@@ -1262,7 +1376,7 @@ async def install_community_script(slug: str, sha256: str, node: str | None = No
 
 
 # ------------------------------------------------------------------ scheduled tasks
-@tool("read", RO)
+@tool("read", RO, all_customers=True)
 async def list_scheduled_tasks() -> list[dict]:
     """Scheduled tasks (updates in containers, node updates, template sync, custom commands) with
     schedule, targets, options, last and next run."""
@@ -1276,7 +1390,7 @@ async def list_scheduled_tasks() -> list[dict]:
         return _jsonable([tasks.task_out(t) for t in rows])
 
 
-@tool("tasks", WRITE)
+@tool("tasks", WRITE, all_customers=True)
 async def save_scheduled_task(name: str, kind: str, cron: str, targets: dict | None = None,
                               options: dict | None = None, mail_to: list[str] | None = None,
                               mail_on: str = "always", enabled: bool = True, task_id: str | None = None) -> dict:
@@ -1311,7 +1425,7 @@ async def save_scheduled_task(name: str, kind: str, cron: str, targets: dict | N
     return _jsonable({**out, "targets_now": preview})
 
 
-@tool("tasks", DESTRUCTIVE)
+@tool("tasks", DESTRUCTIVE, all_customers=True)
 async def delete_scheduled_task(task_id: str, confirm: str) -> dict:
     """Delete a scheduled task. Set `confirm` to its name."""
     from mmn.services import tasks
@@ -1330,7 +1444,7 @@ async def delete_scheduled_task(task_id: str, confirm: str) -> dict:
     return {"deleted": True}
 
 
-@tool("tasks", WRITE)
+@tool("tasks", WRITE, all_customers=True)
 async def run_scheduled_task(task_id: str) -> dict:
     """Run a scheduled task now. Returns a run id; follow it with get_task_run."""
     from mmn.services import tasks
@@ -1342,7 +1456,7 @@ async def run_scheduled_task(task_id: str) -> dict:
         raise ToolDenied(str(e)) from e
 
 
-@tool("read", RO)
+@tool("read", RO, all_customers=True)
 async def get_task_run(run_id: str | None = None, task_id: str | None = None) -> dict | list[dict]:
     """A run of a scheduled task or template sync with the result per target (snapshot, rolled back,
     error, last output lines). Without run_id: the last 10 runs (optionally of one task)."""
@@ -1383,7 +1497,7 @@ async def _call(coro) -> Any:
 
 
 @tool("read", RO)
-async def get_bridge_map(environment: str | None = None, node: str | None = None) -> dict:
+async def get_bridge_map(customer: str | None = None, node: str | None = None) -> dict:
     """Bridges (vmbr) and SDN VNets with the VMs and containers on them, grouped by VLAN tag:
     VMID, name, node, NIC, MAC, firewall flag, trunks. Use it to answer 'what is on VLAN 20' or
     'which guests use vmbr1'."""
@@ -1391,7 +1505,7 @@ async def get_bridge_map(environment: str | None = None, node: str | None = None
 
     async with sessionmaker()() as db:
         try:
-            env_id = (await nodes.get_environment(db, environment)).id if environment else None
+            env_id = (await nodes.get_environment(db, customer)).id if customer else None
         except nodes.NodeError as e:
             raise ToolDenied(str(e)) from e
         node_id = (await _node_id(node))[0] if node else None
@@ -1801,14 +1915,14 @@ async def set_storage_enabled(node: str, storage: str, enabled: bool) -> dict:
 
 # ------------------------------------------------------------------ monitoring
 @tool("read", RO)
-async def get_monitoring(range: str = "24h", environment: str | None = None) -> dict:
+async def get_monitoring(range: str = "24h", customer: str | None = None) -> dict:
     """All nodes with CPU/RAM/disk now and as a trend (range 1h, 24h, 7d or 30d), storages, disk
     health (SMART) and the number of open alerts. Totals over all nodes."""
     from mmn.services import monitoring, nodes
 
     async with sessionmaker()() as db:
         try:
-            env_id = (await nodes.get_environment(db, environment)).id if environment else None
+            env_id = (await nodes.get_environment(db, customer)).id if customer else None
             return _jsonable(await monitoring.overview(db, range, env_id))
         except (ValueError, nodes.NodeError) as e:
             raise ToolDenied(str(e)) from e
@@ -1833,12 +1947,20 @@ async def get_node_metrics(node: str, range: str = "24h") -> dict:
 
 
 @tool("read", RO)
-async def list_alerts(open_only: bool = True, limit: int = 50) -> list[dict]:
-    """Monitoring alerts (node offline, CPU, memory, disk, storage full, SMART) newest first."""
-    from mmn.services import monitoring
+async def list_alerts(open_only: bool = True, limit: int = 50, customer: str | None = None) -> list[dict]:
+    """Monitoring alerts (node offline, CPU, memory, disk, storage full, SMART) newest first.
+    `customer` limits them to one customer's machines."""
+    from mmn.services import monitoring, nodes
 
     async with sessionmaker()() as db:
-        return _jsonable(await monitoring.list_alerts(db, open_only=open_only, limit=limit))
+        rows = await monitoring.list_alerts(db, open_only=open_only, limit=limit if not customer else 500)
+        if customer:
+            try:
+                ids = {n.id for n in (await nodes.get_environment(db, customer)).nodes}
+            except nodes.NodeError as e:
+                raise ToolDenied(str(e)) from e
+            rows = [a for a in rows if a["node_id"] in ids][:limit]
+        return _jsonable(rows)
 
 
 @tool("read", RO)
@@ -1874,7 +1996,7 @@ async def get_deployment(deployment: str) -> dict:
         return _jsonable({**deploy.deployment_out(d), "runs": await deploy.list_runs(db, d.id, 10)})
 
 
-@tool("deploy", RO)
+@tool("deploy", RO, all_customers=True)
 async def list_github_repos(query: str | None = None) -> list[dict]:
     """Repositories the connected GitHub token can read (name, default branch, last push)."""
     from mmn.services import deploy
@@ -1997,8 +2119,8 @@ async def _with_db(fn):
 
 
 @tool("unifi", RO)
-async def list_unifi_connections(environment: str | None = None) -> list[dict]:
-    """UniFi connections per environment/customer: kind (network = a console's local Integration API,
+async def list_unifi_connections(customer: str | None = None) -> list[dict]:
+    """UniFi connections per customer/customer: kind (network = a console's local Integration API,
     site_manager = the cloud API with all consoles of an account, access = UniFi Access doors), how they
     are reached (direct, through an agent in the customer's network, or through the cloud connector),
     status, read-only key, sites and totals of the last poll (every 5 minutes)."""
@@ -2007,14 +2129,14 @@ async def list_unifi_connections(environment: str | None = None) -> list[dict]:
 
     async with sessionmaker()() as db:
         try:
-            env_id = (await nodes.get_environment(db, environment)).id if environment else None
+            env_id = (await nodes.get_environment(db, customer)).id if customer else None
         except nodes.NodeError as e:
             raise ToolDenied(str(e)) from e
         return _jsonable([uf.connection_out(c) for c in await uf.list_connections(db, env_id)])
 
 
 @tool("unifi", RO)
-async def get_unifi_overview(environment: str | None = None, connection: str | None = None) -> dict:
+async def get_unifi_overview(customer: str | None = None, connection: str | None = None) -> dict:
     """All UniFi Network sites with their gateways, switches and access points: status (online/offline),
     model, IP, uplink device, firmware and whether an update is available, clients per device and per
     site (wired, WiFi, guests), WiFi networks with VLAN and security, WAN state and the latest events
@@ -2024,7 +2146,7 @@ async def get_unifi_overview(environment: str | None = None, connection: str | N
     from mmn.services.unifi import service as uf
 
     async def run(db):
-        env_id = (await nodes.get_environment(db, environment)).id if environment else None
+        env_id = (await nodes.get_environment(db, customer)).id if customer else None
         cid = (await _uconn(connection, ("network", "site_manager"))).id if connection else None
         res = await uf.network_overview(db, env_id, cid)
         for d in res["devices"]:
@@ -2116,14 +2238,14 @@ async def check_guest_isolation(connection: str | None = None, site: str | None 
 
 
 @tool("unifi", RO)
-async def find_firmware_updates(environment: str | None = None, type: str | None = None) -> list[dict]:
+async def find_firmware_updates(customer: str | None = None, type: str | None = None) -> list[dict]:
     """Which UniFi devices have a firmware update available, across all connections and customers
     (from the last poll). type: gateway, switch or ap."""
     from mmn.services import nodes
     from mmn.services.unifi import service as uf
 
     async def run(db):
-        env_id = (await nodes.get_environment(db, environment)).id if environment else None
+        env_id = (await nodes.get_environment(db, customer)).id if customer else None
         return uf.firmware_report(await uf.list_connections(db, env_id), type)
 
     try:
@@ -2361,6 +2483,39 @@ async def set_door_lock_rule(door: str, rule: str, reason: str, confirm: str, mi
     return await _with_db(run)
 
 
+# ------------------------------------------------------------------ resources: customer context
+async def _read_context(customer: str | None) -> str:
+    from mmn.services import customers, nodes
+
+    p = _principal.get()
+    if p is None or "read" not in p.scopes:
+        raise ToolDenied("not authenticated")
+    async with sessionmaker()() as db:
+        if customer:
+            try:
+                return customers.context_markdown(await nodes.get_environment(db, customer))
+            except nodes.NodeError as e:
+                raise ToolDenied(str(e)) from e
+        envs = await nodes.list_environments(db)
+        if not envs:
+            return "No customers."
+        return "\n\n---\n\n".join(f"{customers.context_markdown(e)}\n\n(id: {e.id})" for e in envs)
+
+
+@mcp.resource("stackpilot://customers", name="customers", title="Customer notes and maintenance windows",
+              description="Notes for the AI, maintenance window, SLA and contacts of every customer this token "
+                          "may see. Follow them before changing anything.", mime_type="text/markdown")
+async def customers_resource() -> str:
+    return await _read_context(None)
+
+
+@mcp.resource("stackpilot://customers/{customer}", name="customer", title="Customer context",
+              description="Notes for the AI, maintenance window, SLA and contacts of one customer (id or name).",
+              mime_type="text/markdown")
+async def customer_resource(customer: str) -> str:
+    return await _read_context(customer)
+
+
 def _base_url_from_scope(scope: Scope, headers: dict[str, str]) -> str:
     from mmn.config import get_settings
 
@@ -2429,7 +2584,9 @@ class BearerAuth:
                     peer = scope.get("client")
                     principal = Principal(user_id=tok.user_id, username=tok.user.username, token_id=tok.id,
                                           token_name=tok.name, token_kind=tok.kind, scopes=effective_scopes(tok),
-                                          ip=peer[0] if peer else None, client=client)
+                                          ip=peer[0] if peer else None, client=client,
+                                          customers=frozenset(tok.customer_ids) if tok.customer_ids is not None
+                                          else None)
         if principal is None:
             meta = f"{_base_url_from_scope(scope, headers)}/.well-known/oauth-protected-resource/mcp"
             payload = json.dumps({"error": "invalid_token",
@@ -2450,10 +2607,14 @@ class BearerAuth:
                 return {"type": "http.request", "body": body, "more_body": False}
             return await receive()
 
+        from mmn.services import tenancy
+
         token = _principal.set(principal)
+        limit = tenancy.set_allowed(principal.customers)
         try:
             await self.app(scope, replay if scope.get("method") == "POST" else receive, send)
         finally:
+            tenancy.reset(limit)
             _principal.reset(token)
 
 

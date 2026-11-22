@@ -7,6 +7,7 @@ import App from "./App";
 import "./i18n";
 import "./index.css";
 import { AuthProvider } from "./lib/auth";
+import { CustomerProvider } from "./components/customers";
 
 const qc = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 15_000, refetchOnWindowFocus: false } },
@@ -20,8 +21,10 @@ createRoot(document.getElementById("root")!).render(
     <QueryClientProvider client={qc}>
       <BrowserRouter basename={basename}>
         <AuthProvider>
-          <App />
-          <Toaster position="bottom-right" richColors closeButton />
+          <CustomerProvider>
+            <App />
+            <Toaster position="bottom-right" richColors closeButton />
+          </CustomerProvider>
         </AuthProvider>
       </BrowserRouter>
     </QueryClientProvider>

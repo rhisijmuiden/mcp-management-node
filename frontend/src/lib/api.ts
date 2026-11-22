@@ -24,9 +24,17 @@ export function setUnauthorizedHandler(fn: () => void) {
   onUnauthorized = fn;
 }
 
-export async function api<T = unknown>(path: string, init: RequestInit & { json?: unknown } = {}): Promise<T> {
+/* The customer picked in the switcher: the backend then limits every query to that customer. */
+let currentCustomer = "";
+export function setCurrentCustomer(id: string) {
+  currentCustomer = id;
+}
+export const getCurrentCustomer = () => currentCustomer;
+
+export async function api<T = unknown>(path: string, init: RequestInit & { json?: unknown; allCustomers?: boolean } = {}): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set("Accept", "application/json");
+  if (currentCustomer && !init.allCustomers) headers.set("X-Stackpilot-Customer", currentCustomer);
   if (init.json !== undefined) headers.set("Content-Type", "application/json");
   const method = (init.method || "GET").toUpperCase();
   if (!["GET", "HEAD"].includes(method)) headers.set("X-CSRF-Token", csrfToken());
@@ -54,6 +62,8 @@ export async function api<T = unknown>(path: string, init: RequestInit & { json?
 }
 
 export const get = <T,>(p: string) => api<T>(p);
+/** GET that ignores the customer switcher (e.g. the list of all customers). */
+export const getAll = <T,>(p: string) => api<T>(p, { allCustomers: true });
 export const post = <T,>(p: string, json?: unknown) => api<T>(p, { method: "POST", json: json ?? {} });
 export const put = <T,>(p: string, json?: unknown) => api<T>(p, { method: "PUT", json: json ?? {} });
 export const patch = <T,>(p: string, json?: unknown) => api<T>(p, { method: "PATCH", json: json ?? {} });

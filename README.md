@@ -1,7 +1,8 @@
 # Stackpilot
 
-One modern management interface for Proxmox VE environments and stand-alone servers, with a built-in
-MCP server so Claude, ChatGPT or Copilot can answer questions and carry out tasks, with every action logged.
+One modern management interface for the IT of all your customers (Proxmox VE nodes, stand-alone servers,
+workstations and UniFi networks), with a built-in MCP server so Claude, ChatGPT or Copilot can answer questions and
+carry out tasks, with every action logged.
 
 > Phase 1 laid the foundation: sign-in, users, mail server, backups with restore, updates from the interface,
 > web server / Zoraxy settings, the MCP server with OAuth, and the audit log.
@@ -22,10 +23,21 @@ MCP server so Claude, ChatGPT or Copilot can answer questions and carry out task
 > across servers for people and AI: log search on many servers at once, error overviews, health checks, a software
 > and CVE inventory, and data copies between servers.
 
-> Phase 6 (this release) adds **UniFi**: UniFi Network (local Integration API), the UniFi Site Manager cloud API and
+> Phase 6 added **UniFi**: UniFi Network (local Integration API), the UniFi Site Manager cloud API and
 > UniFi Access, per environment/customer, in a UniFi section of the menu, with MCP tools so an assistant can answer
 > "why can't this laptop get on WiFi?", "which APs need firmware?", "is guest isolated from the LAN?" and "who opened
 > the server room last night?".
+
+> Phase 7 (this release) makes **customers** the top layer. The former environments are now customers ("Home" is
+> one too) with contact details, contacts, notes, a maintenance window and an SLA. A customer switcher at the top of
+> the menu limits the whole interface to one customer; every customer has a page with Overview, Proxmox, Servers,
+> Workstations, Network, AI access, Contacts & notes and Reports. Linux and Windows machines can be marked as
+> workstation (PC or laptop). API tokens and AI apps connected through OAuth can be tied to one or more customers: they
+> then only see those customers' machines, UniFi connections, jobs and alerts, enforced in the database layer for every
+> tool. New MCP tools: `list_customers`, `get_customer_overview`, `optimisation_scan` ("what can be optimised at
+> customer X"), `get_customer_context`, `create_customer` and `update_customer`; most tools take `customer` instead of
+> `environment`; the customer notes are the MCP resources `stackpilot://customers` and `stackpilot://customers/<id>`.
+> Existing installs migrate automatically: every node, server, UniFi connection and agent stays where it was.
 
 > **Name.** The product was called *MCP Management Node* (and before that *Proxmox Management*) up to 0.6.2 and is
 > now **Stackpilot**; the repository moved to `rhisijmuiden/stackpilot` in 0.6.4 (GitHub redirects the old URLs).
@@ -66,6 +78,16 @@ Options (`--help`): `--channel production|test`, `--version vX.Y.Z`, `--tarball 
 | Data (encryption key, files, status) | `/var/lib/mcp-management-node` |
 | Services | `mcp-management-node.service`, `mcp-management-node-updater.path` |
 | Logs | `journalctl -u mcp-management-node -f` |
+
+## Customers
+
+Everything hangs under a customer: create them under **Customers**, then add machines from the customer page
+(**Add machine**: Proxmox VE node, server or workstation) or move existing ones under **Manage** on the machine's page.
+The switcher at the top of the menu limits every page to one customer. Notes on the **Contacts & notes** tab
+("never restart the SQL server during office hours") and the maintenance window are given to the AI before it works
+on that customer. Under **AI access**, or when you create a token or connect an AI app, choose *Only these customers*
+to keep an assistant inside one customer; tools that act on the whole app (app updates and backups, mail server, audit
+log, template library, scheduled tasks) are then refused.
 
 ## Behind Zoraxy
 

@@ -19,8 +19,8 @@ router = APIRouter(prefix="/api/tokens", tags=["tokens"])
 
 TOKEN_PREFIX = "mmn_"
 
-# Scopes a token can carry. Later phases add e.g. "proxmox:read", "proxmox:write", "servers:exec",
-# optionally limited to environments.
+# Scopes a token can carry. Independently a token can be tied to one or more customers
+# (customer_ids): it then only sees the machines, UniFi connections, jobs and alerts of those.
 SCOPES: dict[str, str] = {
     "read": "Read status, version, settings (without secrets), backups and audit log",
     "backups": "Run backups",
@@ -49,10 +49,24 @@ ADMIN_ONLY_SCOPES = {"restore", "updates", "settings", "backups", "nodes", "node
                      "unifi", "unifi_admin", "doors"}
 
 
+async def clean_customer_ids(db: AsyncSession, ids: list[str] | None) -> list[str] | None:
+    """None = all customers. Otherwise the ids of existing customers (at least one)."""
+    if ids is None:
+        return None
+    from mmn.models import Environment
+
+    wanted = sorted(set(ids))
+    found = set((await db.execute(select(Environment.id).where(Environment.id.in_(wanted)))).scalars()) if wanted else set()
+    if not wanted or found != set(wanted):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="unknown_customer")
+    return wanted
+
+
 class TokenCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     scopes: list[str] = Field(default_factory=lambda: ["read"])
     expires_days: int | None = Field(default=90, ge=1, le=3650)
+    customer_ids: list[str] | None = Field(default=None, max_length=500)
 
     @field_validator("scopes")
     @classmethod
@@ -75,6 +89,7 @@ class TokenOut(BaseModel):
     revoked: bool
     kind: str
     last_client: dict
+    customer_ids: list[str] | None = None
 
 
 class TokenCreated(TokenOut):
@@ -110,7 +125,7 @@ async def list_connections(db: AsyncSession = Depends(get_db), user: User = Depe
         if client.client_id in out:
             continue
         out[client.client_id] = {"client_id": client.client_id, "client_name": client.client_name,
-                                 "scopes": tok.scopes, "connected_at": client.created_at,
+                                 "scopes": tok.scopes, "customer_ids": tok.customer_ids, "connected_at": client.created_at,
                                  "last_used_at": tok.last_used_at, "last_client": tok.last_client or {}}
     return list(out.values())
 
@@ -127,18 +142,53 @@ async def disconnect(client_id: str, request: Request, db: AsyncSession = Depend
     return Response(status_code=204)
 
 
+class CustomersIn(BaseModel):
+    customer_ids: list[str] | None = Field(default=None, max_length=500)
+
+
+@router.put("/connections/{client_id}/customers")
+async def set_connection_customers(client_id: str, body: CustomersIn, request: Request,
+                                   db: AsyncSession = Depends(get_db), user: User = Depends(current_user)):
+    """Limit an AI app connected through OAuth to some customers (also for its next refresh)."""
+    ids = await clean_customer_ids(db, body.customer_ids)
+    toks = (await db.execute(select(ApiToken).where(ApiToken.user_id == user.id, ApiToken.oauth_client_id == client_id,
+                                                    ApiToken.revoked.is_(False)))).scalars().all()
+    if not toks:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    for t in toks:
+        t.customer_ids = ids
+    await audit(db, "oauth.customers", user=user, target=toks[0].name, ip=client_ip(request), customers=ids or "all")
+    await db.commit()
+    return {"customer_ids": ids}
+
+
+@router.put("/{token_id}/customers", response_model=TokenOut)
+async def set_token_customers(token_id: str, body: CustomersIn, request: Request, db: AsyncSession = Depends(get_db),
+                              user: User = Depends(current_user)):
+    tok = await db.get(ApiToken, token_id)
+    if tok is None or tok.revoked or (tok.user_id != user.id and user.role != Role.admin):
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    tok.customer_ids = await clean_customer_ids(db, body.customer_ids)
+    await audit(db, "token.customers", user=user, target=tok.name, ip=client_ip(request),
+                customers=tok.customer_ids or "all")
+    await db.commit()
+    return tok
+
+
 @router.post("", response_model=TokenCreated, status_code=201)
 async def create_token(body: TokenCreate, request: Request, db: AsyncSession = Depends(get_db),
                        user: User = Depends(current_user)):
     if user.role != Role.admin and set(body.scopes) & ADMIN_ONLY_SCOPES:
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="scope_not_allowed")
+    customer_ids = await clean_customer_ids(db, body.customer_ids)
     raw = TOKEN_PREFIX + new_token(32)
     tok = ApiToken(user_id=user.id, name=body.name, token_hash=hash_token(raw), prefix=raw[:12],
-                   scopes=body.scopes,
+                   scopes=body.scopes, customer_ids=customer_ids,
                    expires_at=datetime.now(UTC) + timedelta(days=body.expires_days) if body.expires_days else None)
     db.add(tok)
     await db.flush()
-    await audit(db, "token.create", user=user, target=body.name, ip=client_ip(request), scopes=body.scopes)
+    await audit(db, "token.create", user=user, target=body.name, ip=client_ip(request), scopes=body.scopes,
+                customers=customer_ids or "all")
     await db.commit()
     return TokenCreated(**TokenOut.model_validate(tok).model_dump(), token=raw)
 

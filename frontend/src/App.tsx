@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes, useLocation } from "react-router";
+import { Navigate, Route, Routes, useLocation, useParams } from "react-router";
 import { Layout } from "@/components/Layout";
 import { Spinner } from "@/components/ui/misc";
 import { useAuth } from "@/lib/auth";
@@ -12,7 +12,8 @@ import { HelpPage, McpCapabilitiesPage, McpHelpPage, NodesHelpPage } from "@/pag
 import { ConsolePage } from "@/pages/Console";
 import { GuestDetailPage, GuestsPage } from "@/pages/Guests";
 import { NodeDetailPage } from "@/pages/Node";
-import { EnvironmentDetailPage, EnvironmentsPage, NodesPage, ProxmoxOverviewPage, UpdatesPage } from "@/pages/Proxmox";
+import { NodesPage, ProxmoxOverviewPage, UpdatesPage } from "@/pages/Proxmox";
+import { CustomerPage, CustomersPage } from "@/pages/Customers";
 import { TaskRunPage, TasksPage } from "@/pages/Tasks";
 import { TemplatesPage } from "@/pages/Templates";
 import { GeneralPage, MailPage, NotificationsPage, WebServerPage } from "@/pages/Settings";
@@ -42,6 +43,11 @@ function RequireAuth({ admin, children }: { admin?: boolean; children: React.Rea
   return <>{children}</>;
 }
 
+function EnvRedirect() {
+  const { id = "" } = useParams();
+  return <Navigate to={`/customers/${id}?tab=proxmox`} replace />;
+}
+
 export default function App() {
   return (
     <Routes>
@@ -65,8 +71,10 @@ export default function App() {
         <Route path="help/ai-admin" element={<Navigate to="/help/capabilities" replace />} />
         <Route path="help/nodes" element={<NodesHelpPage />} />
         <Route path="proxmox" element={<ProxmoxOverviewPage />} />
-        <Route path="proxmox/environments" element={<EnvironmentsPage />} />
-        <Route path="proxmox/environments/:id" element={<EnvironmentDetailPage />} />
+        <Route path="customers" element={<CustomersPage />} />
+        <Route path="customers/:id" element={<CustomerPage />} />
+        <Route path="proxmox/environments" element={<Navigate to="/customers" replace />} />
+        <Route path="proxmox/environments/:id" element={<EnvRedirect />} />
         <Route path="proxmox/nodes" element={<NodesPage />} />
         <Route path="proxmox/nodes/:id" element={<NodeDetailPage />} />
         <Route path="proxmox/updates" element={<UpdatesPage />} />
@@ -82,6 +90,7 @@ export default function App() {
         <Route path="unifi/access" element={<L><UnifiAccessPage /></L>} />
         <Route path="unifi/connections" element={<L><UnifiConnectionsPage /></L>} />
         <Route path="servers" element={<ServersPage />} />
+        <Route path="workstations" element={<ServersPage role="workstation" />} />
         <Route path="servers/logs" element={<RequireAuth admin><LogSearchPage /></RequireAuth>} />
         <Route path="servers/software" element={<RequireAuth admin><SoftwarePage /></RequireAuth>} />
         <Route path="servers/copy" element={<RequireAuth admin><CopyPage /></RequireAuth>} />
