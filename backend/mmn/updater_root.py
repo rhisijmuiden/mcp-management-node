@@ -366,10 +366,20 @@ def _proxy_in(cfg: dict[str, Any]):
     return ProxyIn(**cfg)
 
 
+def agent_tls() -> tuple[str | None, str | None]:
+    """The agent endpoint is included once the app has written its certificates."""
+    d = data_dir() / "agent-tls"
+    if not all((d / f).is_file() for f in ("ca.crt", "server.crt", "server.key", "proxy-secret")):
+        return None, None
+    return str(d), (d / "proxy-secret").read_text().strip()
+
+
 def render(cfg: dict[str, Any]) -> str:
     from mmn.nginx import render_nginx
 
-    return render_nginx(_proxy_in(cfg), frontend=str(INSTALL_DIR / "current" / "frontend"))
+    tls_dir, secret = agent_tls()
+    return render_nginx(_proxy_in(cfg), frontend=str(INSTALL_DIR / "current" / "frontend"), agent_tls=tls_dir,
+                        agent_secret=secret)
 
 
 def apply_nginx(cfg: dict[str, Any], reload: bool = True) -> None:
@@ -419,6 +429,16 @@ def run_pending() -> None:
     req = read_request(d / "system-request.json")
     if req and req.get("action") == "reconfigure" and isinstance(req.get("config"), dict):
         do_reconfigure(req["config"])
+    req = read_request(d / "nginx-reload-request.json")
+    if req and req.get("action") == "reload-nginx" and PROXY_FILE.exists():
+        # New agent certificates: render again (picks up the agent endpoint) and reload.
+        write_status("system-status.json", {"state": "running", "at": datetime.now(UTC).isoformat()})
+        try:
+            apply_nginx(json.loads(PROXY_FILE.read_text()))
+            write_status("system-status.json", {"state": "success", "at": datetime.now(UTC).isoformat()})
+        except Exception as e:  # noqa: BLE001
+            write_status("system-status.json", {"state": "failed", "error": str(e)[-2000:],
+                                                "at": datetime.now(UTC).isoformat()})
     req = read_request(d / "update-request.json")
     if req and req.get("action") == "update":
         do_update(str(req.get("tag", "")), str(req.get("channel", "production")))

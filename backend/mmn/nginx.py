@@ -32,6 +32,8 @@ class ProxyIn(BaseModel):
     ssl_certificate: str = "/etc/ssl/certs/ssl-cert-snakeoil.pem"
     ssl_certificate_key: str = "/etc/ssl/private/ssl-cert-snakeoil.key"
     listen_ipv6: bool = True
+    # Port for agents (mutual TLS, terminated by Nginx itself, also behind Zoraxy: use a TCP stream rule).
+    agent_port: int = Field(default=8443, ge=1, le=65535)
 
     @field_validator("trusted_proxies")
     @classmethod
@@ -70,6 +72,9 @@ class ProxyIn(BaseModel):
     def check(self) -> None:
         if self.mode == "proxy" and not self.trusted_proxies:
             raise ValueError("behind a reverse proxy you must enter the proxy's IP address")
+        used = {self.http_port} | ({self.https_port} if self.mode == "direct" else set())
+        if self.agent_port in used:
+            raise ValueError("the agent port must differ from the web ports")
 
 
 SECURITY_HEADERS = """
@@ -87,7 +92,7 @@ def _locations(cfg: ProxyIn, frontend: str, hsts: bool) -> str:
                                   if hsts else "")
     proxy = """
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
+        proxy_set_header Host $http_host;
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto $mmn_proto;
         proxy_set_header Upgrade $http_upgrade;
@@ -142,7 +147,59 @@ def _locations(cfg: ProxyIn, frontend: str, hsts: bool) -> str:
 """
 
 
-def render_nginx(cfg: ProxyIn, frontend: str = "/opt/mcp-management-node/current/frontend") -> str:
+def _agent_server(cfg: ProxyIn, tls_dir: str, secret: str) -> str:
+    v6 = f"    listen [::]:{cfg.agent_port} ssl;\n" if cfg.listen_ipv6 else ""
+    proxy = f"""
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-MMN-Agent-Secret "{secret}";
+        proxy_set_header X-MMN-Client-Verify $ssl_client_verify;
+        proxy_set_header X-MMN-Client-Cert $ssl_client_escaped_cert;"""
+    return f"""# Agent endpoint: mutual TLS with the app's own agent CA. Agents connect here (outgoing from the node).
+server {{
+    listen {cfg.agent_port} ssl;
+{v6}    server_name _;
+    ssl_certificate {tls_dir}/server.crt;
+    ssl_certificate_key {tls_dir}/server.key;
+    ssl_client_certificate {tls_dir}/ca.crt;
+    ssl_verify_client optional;
+    ssl_verify_depth 1;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:mmn_agent_ssl:5m;
+    client_max_body_size 1m;
+
+    location = /agent/enroll {{
+        proxy_pass http://mmn_backend/agent/enroll;{proxy}
+    }}
+
+    location = /agent/ws {{
+        if ($ssl_client_verify != SUCCESS) {{ return 403; }}
+        proxy_pass http://mmn_backend/agent/ws;{proxy}
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_read_timeout 1h;
+        proxy_send_timeout 1h;
+    }}
+
+    location ^~ /agent/download/ {{
+        if ($ssl_client_verify != SUCCESS) {{ return 403; }}
+        proxy_pass http://mmn_backend/agent/download/;{proxy}
+    }}
+
+    location / {{
+        return 404;
+    }}
+}}"""
+
+
+SECRET_RE = re.compile(r"^[A-Za-z0-9_-]{20,128}$")
+
+
+def render_nginx(cfg: ProxyIn, frontend: str = "/opt/mcp-management-node/current/frontend",
+                 agent_tls: str | None = None, agent_secret: str | None = None) -> str:
+    """``agent_tls`` is the folder with ca.crt/server.crt/server.key; without it (or the secret) the
+    agent endpoint is left out."""
     cfg.check()
 
     def v6(port: int, extra: str = "") -> str:
@@ -193,6 +250,10 @@ def render_nginx(cfg: ProxyIn, frontend: str = "/opt/mcp-management-node/current
     ssl_session_timeout 1d;
 {_locations(cfg, frontend, hsts=True)}
 }}""")
+    if agent_tls and agent_secret:
+        if not CERT_PATH_RE.match(agent_tls) or not SECRET_RE.match(agent_secret):
+            raise ValueError("invalid agent TLS settings")
+        lines.append(_agent_server(cfg, agent_tls, agent_secret))
     return "\n\n".join(lines) + "\n"
 
 

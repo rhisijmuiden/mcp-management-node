@@ -278,6 +278,7 @@ as_app() { # run a command as the app user with the app's environment
 
 step "Migrating the database"
 ( cd "$DATA_DIR" && as_app "$CURRENT/venv/bin/mmn" migrate )
+( cd "$DATA_DIR" && as_app "$CURRENT/venv/bin/mmn" agent-tls >/dev/null ) || warn "agent certificates not written yet; the app writes them on start"
 
 step "Installing services"
 install -m 0644 "$CURRENT"/deploy/systemd/*.service "$CURRENT"/deploy/systemd/*.path /etc/systemd/system/

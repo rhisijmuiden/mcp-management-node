@@ -134,7 +134,7 @@ export function NotificationsPage() {
         <CardHeader icon={<Bell />} title={t("notifications.who")} />
         <CardBody className="space-y-4">
           {save.isError && <Alert tone="offline">{errorMessage(save.error, t)}</Alert>}
-          {["backup_failure_to", "backup_success_to", "update_to"].map((k) => (
+          {["backup_failure_to", "backup_success_to", "update_to", "node_update_to"].map((k) => (
             <Field key={k} label={t(`notifications.${k}`)} hint={t(`notifications.${k}_hint`)}>
               <Input type="email" value={f[k] ?? ""} onChange={(e) => setF({ ...f, [k]: e.target.value })} placeholder="admin@example.com" />
             </Field>

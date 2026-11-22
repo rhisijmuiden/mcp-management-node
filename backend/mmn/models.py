@@ -189,3 +189,96 @@ class BackupRun(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     log: Mapped[list] = mapped_column(JsonType, default=list)
+
+
+# ------------------------------------------------------------------ phase 2: environments and nodes
+class Environment(Base):
+    """A group of nodes: "Home", or one per customer. Notification settings live here."""
+
+    __tablename__ = "environments"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    name: Mapped[str] = mapped_column(String(100), unique=True)
+    kind: Mapped[str] = mapped_column(String(16), default="customer")  # home | customer
+    description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    color: Mapped[str] = mapped_column(String(16), default="lucht")
+    # Proxmox VE notification settings pushed to every node (password encrypted in "password_enc").
+    notify: Mapped[dict] = mapped_column(JsonType, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    nodes: Mapped[list[Node]] = relationship(back_populates="environment", lazy="selectin")
+
+
+class Node(Base):
+    """A machine with the agent: a Proxmox VE node (later also stand-alone Linux/Windows servers)."""
+
+    __tablename__ = "nodes"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    environment_id: Mapped[str] = mapped_column(ForeignKey("environments.id", ondelete="RESTRICT"), index=True)
+    name: Mapped[str] = mapped_column(String(100))
+    kind: Mapped[str] = mapped_column(String(16), default="proxmox")  # proxmox | linux | windows
+    hostname: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    cluster_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    agent_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    os: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    arch: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    install_kind: Mapped[str | None] = mapped_column(String(16), nullable=True)  # deb | binary | windows
+    capabilities: Mapped[list[str]] = mapped_column(JsonType, default=list)
+    info: Mapped[dict] = mapped_column(JsonType, default=dict)
+    metrics: Mapped[dict] = mapped_column(JsonType, default=dict)
+    updates: Mapped[dict] = mapped_column(JsonType, default=dict)
+    governor: Mapped[dict] = mapped_column(JsonType, default=dict)  # current, available, driver
+    governor_desired: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    notify_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    notify_applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    notify_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cert_fingerprint: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
+    cert_serial: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    cert_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    remote_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    enrolled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    connected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    environment: Mapped[Environment] = relationship(back_populates="nodes", lazy="joined")
+
+
+class PairingCode(Base):
+    """One-time code that lets a new agent enroll into an environment."""
+
+    __tablename__ = "pairing_codes"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    environment_id: Mapped[str] = mapped_column(ForeignKey("environments.id", ondelete="CASCADE"), index=True)
+    code_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    code_enc: Mapped[str] = mapped_column(Text)
+    label: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Pair again as an existing node (e.g. after a reinstall) instead of creating a new one.
+    node_id: Mapped[str | None] = mapped_column(ForeignKey("nodes.id", ondelete="CASCADE"), nullable=True)
+    created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    used_by_node_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+    environment: Mapped[Environment] = relationship(lazy="joined")
+
+
+class NodeJob(Base):
+    """A longer task on a node (package upgrade, agent update), with its output."""
+
+    __tablename__ = "node_jobs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    node_id: Mapped[str] = mapped_column(ForeignKey("nodes.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(32))  # updates.apply | agent.update
+    status: Mapped[str] = mapped_column(String(16), default="running")  # running | success | failed
+    source: Mapped[str] = mapped_column(String(16), default="ui")
+    requested_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    params: Mapped[dict] = mapped_column(JsonType, default=dict)
+    result: Mapped[dict] = mapped_column(JsonType, default=dict)
+    output: Mapped[str] = mapped_column(Text, default="")
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

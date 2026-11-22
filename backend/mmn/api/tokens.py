@@ -27,8 +27,13 @@ SCOPES: dict[str, str] = {
     "restore": "Restore a backup (destructive)",
     "updates": "Check for updates, switch channel and install updates",
     "settings": "Change mail settings and send test mail",
+    "nodes": "Manage environments and nodes: pairing codes, CPU governor, notifications, agent updates",
+    "node_updates": "Install package updates on nodes and reboot nodes",
+    "logs": "Read logs, service status, installed packages and files on nodes",
+    "services": "Start, stop and restart services on nodes",
+    "exec": "Run commands on nodes as root (every command is logged)",
 }
-ADMIN_ONLY_SCOPES = {"restore", "updates", "settings", "backups"}
+ADMIN_ONLY_SCOPES = {"restore", "updates", "settings", "backups", "nodes", "node_updates", "logs", "services", "exec"}
 
 
 class TokenCreate(BaseModel):

@@ -6,7 +6,8 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Badge, PageHeader, Stat } from "@/components/ui/misc";
 import { get } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import type { AuditEntry, BackupRun, Connection, MailSettings, SystemInfo } from "@/lib/types";
+import type { AuditEntry, BackupRun, Connection, MailSettings, Overview, SystemInfo } from "@/lib/types";
+import { StatusDot } from "@/components/proxmox";
 import { formatBytes, timeAgo } from "@/lib/utils";
 
 export function Dashboard() {
@@ -17,6 +18,7 @@ export function Dashboard() {
   const runs = useQuery({ queryKey: ["backup-runs", "dash"], queryFn: () => get<BackupRun[]>("api/backups/runs?limit=20"), enabled: admin });
   const mail = useQuery({ queryKey: ["mail"], queryFn: () => get<MailSettings>("api/settings/mail"), enabled: admin });
   const conns = useQuery({ queryKey: ["connections"], queryFn: () => get<Connection[]>("api/tokens/connections") });
+  const ov = useQuery({ queryKey: ["overview", "all"], queryFn: () => get<Overview>("api/proxmox/overview"), refetchInterval: 30_000 });
   const audit = useQuery({ queryKey: ["audit", "dash"], queryFn: () => get<AuditEntry[]>("api/settings/audit?limit=8"), enabled: admin });
 
   const lastBackup = runs.data?.find((r) => r.kind !== "restore" && r.status !== "running");
@@ -65,12 +67,21 @@ export function Dashboard() {
       <div className="mt-6 grid gap-6 xl:grid-cols-3">
         <div className="space-y-6 xl:col-span-2">
           <div className="grid gap-4 md:grid-cols-2">
-            <Card className="relative overflow-hidden">
-              <CardBody className="py-5">
-                <div className="flex items-center gap-2"><Boxes className="size-5 text-koraal" /><span className="font-bold">{t("nav.section.proxmox")}</span><Badge>{t("nav.soon")}</Badge></div>
-                <p className="mt-2 text-sm text-muted">{t("dashboard.proxmox_soon")}</p>
-              </CardBody>
-            </Card>
+            <Link to="/proxmox">
+              <Card className="relative h-full overflow-hidden transition-shadow hover:shadow-lg">
+                <CardBody className="py-5">
+                  <div className="flex items-center gap-2"><Boxes className="size-5 text-koraal" /><span className="font-bold">{t("nav.section.proxmox")}</span>
+                    {ov.data && <Badge tone={ov.data.totals.online < ov.data.totals.nodes ? "offline" : "online"}>{ov.data.totals.online}/{ov.data.totals.nodes} {t("px.online").toLowerCase()}</Badge>}
+                    {!!ov.data?.totals.updates && <Badge tone="accent">{t("px.updates_count", { count: ov.data.totals.updates })}</Badge>}
+                  </div>
+                  {ov.data?.nodes.length ? (
+                    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-sm">
+                      {ov.data.nodes.slice(0, 8).map((n) => <span key={n.id} className="flex items-center gap-1.5"><StatusDot online={n.online} /> {n.name}</span>)}
+                    </div>
+                  ) : <p className="mt-2 text-sm text-muted">{t("dashboard.proxmox_empty")}</p>}
+                </CardBody>
+              </Card>
+            </Link>
             <Card className="relative overflow-hidden">
               <CardBody className="py-5">
                 <div className="flex items-center gap-2"><Monitor className="size-5 text-koraal" /><span className="font-bold">{t("nav.section.servers")}</span><Badge>{t("nav.soon")}</Badge></div>

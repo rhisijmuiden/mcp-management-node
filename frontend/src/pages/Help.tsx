@@ -1,5 +1,5 @@
 import * as Tabs from "@radix-ui/react-tabs";
-import { BookOpen, Bot, DatabaseBackup, Globe, Rocket, ShieldCheck } from "lucide-react";
+import { ArrowUpCircle, BookOpen, Bot, Cpu, DatabaseBackup, FileText, Globe, Mail, Network, Plug, Rocket, ScrollText, Server, ShieldCheck, Terminal } from "lucide-react";
 import type { ReactNode } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { Link } from "react-router";
@@ -28,6 +28,8 @@ export function HelpPage() {
   const { t } = useTranslation();
   const topics = [
     { icon: <Bot />, title: t("help.topic_mcp"), text: t("help.topic_mcp_text"), to: "/help/mcp" },
+    { icon: <Terminal />, title: t("help.topic_ai_admin"), text: t("help.topic_ai_admin_text"), to: "/help/ai-admin" },
+    { icon: <Plug />, title: t("help.topic_nodes"), text: t("help.topic_nodes_text"), to: "/help/nodes" },
     { icon: <DatabaseBackup />, title: t("help.topic_backups"), text: t("help.topic_backups_text"), to: "/admin/backups" },
     { icon: <Rocket />, title: t("help.topic_updates"), text: t("help.topic_updates_text") },
     { icon: <Globe />, title: t("help.topic_proxy"), text: t("help.topic_proxy_text"), to: "/admin/web-server" },
@@ -210,6 +212,106 @@ export function McpHelpPage() {
               </ul>
             </CardBody>
           </Card>
+        </div>
+      </div>
+    </>
+  );
+}
+
+const CAPS = [
+  { key: "status", icon: <Server />, scope: "read" },
+  { key: "logs", icon: <ScrollText />, scope: "logs" },
+  { key: "packages", icon: <ShieldCheck />, scope: "logs" },
+  { key: "files", icon: <FileText />, scope: "logs" },
+  { key: "services", icon: <Cpu />, scope: "services" },
+  { key: "exec", icon: <Terminal />, scope: "exec" },
+  { key: "updates", icon: <ArrowUpCircle />, scope: "node_updates" },
+  { key: "config", icon: <Mail />, scope: "nodes" },
+  { key: "app", icon: <DatabaseBackup />, scope: "backups" },
+];
+
+export function CapabilitiesHelpPage() {
+  const { t } = useTranslation();
+  return (
+    <>
+      <PageHeader title={t("caps.title")} description={t("caps.subtitle")} />
+      <div className="grid gap-6 xl:grid-cols-3">
+        <div className="space-y-6 xl:col-span-2">
+          <Card className="bg-nacht text-white">
+            <CardBody className="space-y-3 py-5 text-sm leading-6 text-white/85">
+              <div className="display text-xl text-white">{t("caps.idea_title")}</div>
+              <p>{t("caps.idea_1")}</p>
+              <p>{t("caps.idea_2")}</p>
+            </CardBody>
+          </Card>
+          <div className="grid gap-4 md:grid-cols-2">
+            {CAPS.map((cp) => (
+              <Card key={cp.key}>
+                <CardHeader icon={cp.icon} title={t(`caps.${cp.key}_title`)} action={<code className="mono rounded bg-sunken px-1.5 py-0.5 text-[11px]">{cp.scope}</code>} />
+                <CardBody className="space-y-2 text-sm">
+                  <p className="text-muted">{t(`caps.${cp.key}_text`)}</p>
+                  <p className="rounded-md bg-sunken px-3 py-2 italic">“{t(`caps.${cp.key}_example`)}”</p>
+                </CardBody>
+              </Card>
+            ))}
+          </div>
+          <Card>
+            <CardHeader icon={<Network />} title={t("caps.soon_title")} />
+            <CardBody className="text-sm text-muted">{t("caps.soon_text")}</CardBody>
+          </Card>
+        </div>
+        <div className="space-y-6">
+          <Card>
+            <CardHeader icon={<ShieldCheck />} title={t("caps.safety_title")} />
+            <CardBody>
+              <ul className="space-y-2 text-sm">
+                {[1, 2, 3, 4, 5].map((i) => <li key={i} className="flex gap-2"><span className="mt-2 size-1.5 shrink-0 rounded-full bg-koraal" />{t(`caps.safety_${i}`)}</li>)}
+              </ul>
+              <div className="mt-4 flex flex-wrap gap-3 text-sm font-semibold">
+                <Link to="/ai/activity" className="text-accent-text hover:underline">{t("nav.ai_activity")} →</Link>
+                <Link to="/help/mcp" className="text-accent-text hover:underline">{t("help.topic_mcp")} →</Link>
+              </div>
+            </CardBody>
+          </Card>
+          <Card>
+            <CardHeader title={t("caps.scopes_title")} />
+            <CardBody className="space-y-2 text-sm">
+              {["read", "logs", "services", "exec", "node_updates", "nodes"].map((s) => (
+                <div key={s} className="flex gap-2"><code className="mono h-fit rounded bg-sunken px-1.5 py-0.5 text-[11px]">{s}</code><span className="text-muted">{t(`caps.scope_${s}`)}</span></div>
+              ))}
+            </CardBody>
+          </Card>
+        </div>
+      </div>
+    </>
+  );
+}
+
+export function NodesHelpPage() {
+  const { t } = useTranslation();
+  return (
+    <>
+      <PageHeader title={t("nodeshelp.title")} description={t("nodeshelp.subtitle")} />
+      <div className="grid gap-6 xl:grid-cols-3">
+        <Card className="xl:col-span-2">
+          <CardHeader icon={<Plug />} title={t("nodeshelp.steps_title")} />
+          <CardBody>
+            <Steps items={[1, 2, 3, 4, 5].map((i) => <Trans key={i} i18nKey={`nodeshelp.step_${i}`} components={{ b, c }} />)} />
+          </CardBody>
+        </Card>
+        <div className="space-y-6">
+          <Card>
+            <CardHeader icon={<Network />} title={t("nodeshelp.network_title")} />
+            <CardBody className="space-y-2 text-sm text-muted">
+              <p><Trans i18nKey="nodeshelp.network_1" components={{ b, c }} /></p>
+              <p><Trans i18nKey="nodeshelp.network_2" components={{ b, c }} /></p>
+            </CardBody>
+          </Card>
+          <Card>
+            <CardHeader icon={<ShieldCheck />} title={t("nodeshelp.security_title")} />
+            <CardBody className="text-sm text-muted">{t("nodeshelp.security_text")}</CardBody>
+          </Card>
+          <Alert tone="info">{t("nodeshelp.files")}</Alert>
         </div>
       </div>
     </>

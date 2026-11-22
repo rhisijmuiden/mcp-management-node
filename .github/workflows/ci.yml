@@ -67,11 +67,28 @@ jobs:
           node scripts/check-i18n.mjs
           npm run build
 
+  agent:
+    name: Agent (Go)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: agent/go.sum
+      - working-directory: agent
+        run: |
+          test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+          go vet ./...
+          GOOS=windows go vet ./...
+          go test ./...
+      - run: bash agent/build.sh --out /tmp/agent-dist && ls -l /tmp/agent-dist
+
   scripts:
     name: Shell scripts
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - run: |
-          bash -n deploy/install.sh deploy/build-release.sh
-          shellcheck -S error deploy/*.sh
+          bash -n deploy/install.sh deploy/build-release.sh agent/build.sh
+          shellcheck -S error deploy/*.sh agent/build.sh agent/packaging/debian/*

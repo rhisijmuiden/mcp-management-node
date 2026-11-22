@@ -39,12 +39,21 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "backup_failure_to": "",
         "backup_success_to": "",
         "update_to": "",
+        "node_update_to": "",
     },
     "updates": {
         "channel": "production",  # production | test
         "auto_check": True,
         "last_check": None,
         "latest": None,
+    },
+    "agents": {
+        # Address agents connect to (host or host:port), e.g. mmn.example.nl:8443. Empty: derived
+        # from the public address in General settings.
+        "address": "",
+        "port": 8443,
+        "auto_update": True,
+        "updates_check_hours": 6,
     },
     "proxy": {
         "mode": "direct",  # direct | proxy

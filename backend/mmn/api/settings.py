@@ -52,6 +52,7 @@ class NotificationsIn(BaseModel):
     backup_failure_to: EmailStr | Literal[""] | None = None
     backup_success_to: EmailStr | Literal[""] | None = None
     update_to: EmailStr | Literal[""] | None = None
+    node_update_to: EmailStr | Literal[""] | None = None
 
 
 @router.get("/notifications")

@@ -9,6 +9,7 @@
 #     backend/      Python package (mmn) with VERSION and BUILD.json inside the package
 #     frontend/     built single-page app (served by Nginx)
 #     deploy/       installer and systemd units
+#     agent/        agent binaries, .deb packages and manifest.json (needs Go)
 #     wheels/       (optional) all Python dependencies as wheels for an offline install
 set -euo pipefail
 
@@ -56,6 +57,9 @@ cp -r "$ROOT/frontend/dist" "$DEST/frontend"
 mkdir -p "$DEST/deploy"
 cp -r "$ROOT/deploy/systemd" "$DEST/deploy/systemd"
 cp "$ROOT/deploy/install.sh" "$ROOT/deploy/build-release.sh" "$DEST/deploy/"
+
+echo "==> building agent"
+bash "$ROOT/agent/build.sh" --version "${TAG#v}" --out "$DEST/agent"
 
 if [[ "$WHEELS" == 1 ]]; then
   echo "==> building wheels"

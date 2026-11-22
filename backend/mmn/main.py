@@ -7,7 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from mmn.api import auth, backups, oauth, settings, system, tokens, users, ws
+from mmn.api import agent, auth, backups, oauth, proxmox, settings, system, tokens, users, ws
 from mmn.config import get_settings
 from mmn.db import dispose_engine
 from mmn.mcp_server import build_mcp_app, mcp
@@ -44,6 +44,25 @@ async def _announce_version() -> None:
                 lang)
 
 
+async def _prepare_agent_tls() -> None:
+    """Write the agent endpoint certificates for Nginx; ask the root helper to reload Nginx when
+    they changed (first start, or after a restore with another CA)."""
+    import json
+    import os
+
+    from mmn.db import sessionmaker
+    from mmn.services.agent_ca import ensure_tls_files
+    from mmn.services.updates import updater_available
+
+    async with sessionmaker()() as db:
+        changed = await ensure_tls_files(db)
+    if changed and updater_available():
+        run = get_settings().run_dir
+        tmp = run / "nginx-reload-request.tmp"
+        tmp.write_text(json.dumps({"action": "reload-nginx"}))
+        os.replace(tmp, run / "nginx-reload-request.json")
+
+
 def create_app() -> FastAPI:
     s = get_settings()
     logging.basicConfig(level=s.log_level.upper(), format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -58,6 +77,10 @@ def create_app() -> FastAPI:
             from mmn.services import scheduler
 
             await scheduler.start()
+        try:
+            await _prepare_agent_tls()
+        except Exception:  # noqa: BLE001
+            log.exception("agent TLS files could not be written")
         try:
             await _announce_version()
         except Exception:  # noqa: BLE001
@@ -96,7 +119,7 @@ def create_app() -> FastAPI:
         return maintenance
 
     for r in (auth.router, users.router, tokens.router, settings.router, backups.router, system.router,
-              oauth.router, ws.router):
+              oauth.router, ws.router, agent.router, proxmox.router):
         app.include_router(r)
     app.mount("/mcp", mcp_app)
     return app

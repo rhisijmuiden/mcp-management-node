@@ -77,7 +77,7 @@ def _summary(result: Any) -> Any:
     if isinstance(result, list):
         return {"items": len(result)}
     if isinstance(result, dict):
-        keys = ("ok", "status", "state", "channel", "restored", "update_available", "error", "tag", "id")
+        keys = ("ok", "status", "state", "channel", "restored", "update_available", "error", "tag", "id", "exit_code")
         picked = {k: result[k] for k in keys if k in result and not isinstance(result[k], (dict, list))}
         return picked or {"keys": sorted(result)[:10]}
     return {"type": type(result).__name__}
@@ -102,7 +102,7 @@ async def _audit(p: Principal | None, tool_name: str, args: dict[str, Any], succ
 
 
 def _target_of(args: dict[str, Any]) -> str | None:
-    for k in ("backup_id", "target_id", "tag", "channel", "to"):
+    for k in ("node", "environment", "backup_id", "target_id", "tag", "channel", "to", "pattern"):
         if args.get(k):
             return str(args[k])[:255]
     return None
@@ -135,10 +135,19 @@ def tool(scope: str, annotations: ToolAnnotations):
     return deco
 
 
-INSTRUCTIONS = """MCP Management Node manages Proxmox VE environments and servers.
-Phase 1 tools cover the app itself: version and updates, backups (full/incremental to FTP/FTPS/SFTP/SCP
-with restore), the outgoing mail server and the audit log. Destructive tools need `confirm` set to the
-exact target they act on; ask the user before calling them."""
+INSTRUCTIONS = """MCP Management Node manages Proxmox VE environments and servers through an agent on
+every machine, so you can do day-to-day server administration without a separate remote session.
+
+Environments group nodes (Home, one per customer). Start with `get_overview` or `list_nodes`.
+Per node you can read status and metrics, pending package updates, logs (`read_logs`, systemd
+journal), service status (`list_services`, `get_service_status`), installed packages
+(`find_packages` across all nodes, e.g. to check a CVE), files (`read_file`), and run commands
+(`run_command`). You can also install updates, restart services, set the CPU governor, push the
+notification mail settings to the nodes and update the agent.
+
+Nodes can be named by id or by name. Every call is written to the audit log with your token's name.
+Destructive tools need `confirm` set to the exact node name, or are marked destructive: ask the user
+before calling them, and give a short `reason` for commands and service actions."""
 
 mcp = MCPServer(name="MCP Management Node", instructions=INSTRUCTIONS, version=get_build_info().version)
 
@@ -350,6 +359,319 @@ async def get_audit_log(limit: int = 50) -> list[dict]:
                 ).scalars().all()
     return _jsonable([{"at": r.at, "user": r.username, "source": r.source, "action": r.action,
                        "target": r.target, "success": r.success} for r in rows])
+
+
+# ------------------------------------------------------------------ environments and nodes
+async def _node_id(node: str) -> tuple[str, str]:
+    from mmn.services import nodes
+
+    async with sessionmaker()() as db:
+        try:
+            n = await nodes.get_node(db, node)
+        except nodes.NodeError as e:
+            raise ToolDenied(str(e)) from e
+        return n.id, n.name
+
+
+def _agent_errors(e: Exception) -> ToolDenied:
+    return ToolDenied(str(e) or type(e).__name__)
+
+
+@tool("read", RO)
+async def get_overview(environment: str | None = None) -> dict:
+    """Environments, nodes (online, CPU/RAM/disk, pending updates, agent version) and totals.
+    `environment` (name or id) limits the nodes to one environment."""
+    from mmn.api.proxmox import overview
+    from mmn.services import nodes
+
+    async with sessionmaker()() as db:
+        env_id = None
+        if environment:
+            try:
+                env_id = (await nodes.get_environment(db, environment)).id
+            except nodes.NodeError as e:
+                raise ToolDenied(str(e)) from e
+        out = await overview(env_id, db, None)
+    return _jsonable(out)
+
+
+@tool("read", RO)
+async def list_environments() -> list[dict]:
+    """Environments (Home, customers) with node counts and pending updates."""
+    from mmn.services import nodes
+
+    async with sessionmaker()() as db:
+        return _jsonable([nodes.env_out(e) for e in await nodes.list_environments(db)])
+
+
+@tool("nodes", WRITE)
+async def create_environment(name: str, kind: str = "customer", description: str | None = None) -> dict:
+    """Create an environment. kind: 'home' or 'customer'."""
+    from mmn.services import nodes
+
+    async with sessionmaker()() as db:
+        try:
+            e = await nodes.create_environment(db, nodes.EnvironmentIn(name=name, kind=kind, description=description))
+        except (nodes.NodeError, ValueError) as ex:
+            raise ToolDenied(str(ex)) from ex
+        await db.commit()
+        return _jsonable(nodes.env_out(e, []))
+
+
+@tool("read", RO)
+async def list_nodes(environment: str | None = None) -> list[dict]:
+    """Nodes with status, metrics, cluster, agent version and number of pending updates."""
+    from mmn.services import nodes
+
+    async with sessionmaker()() as db:
+        env_id = (await nodes.get_environment(db, environment)).id if environment else None
+        return _jsonable([nodes.node_summary(n) for n in await nodes.list_nodes(db, env_id)])
+
+
+@tool("read", RO)
+async def get_node(node: str) -> dict:
+    """Full details of one node, including the list of pending package updates."""
+    from mmn.services import nodes
+
+    async with sessionmaker()() as db:
+        try:
+            return _jsonable(nodes.node_out(await nodes.get_node(db, node)))
+        except nodes.NodeError as e:
+            raise ToolDenied(str(e)) from e
+
+
+@tool("nodes", WRITE)
+async def create_pairing_code(environment: str, label: str | None = None) -> dict:
+    """Create a one-time pairing code (valid 24 hours) and the install command to run on a new node."""
+    from mmn.services import nodes
+
+    async with sessionmaker()() as db:
+        try:
+            env = await nodes.get_environment(db, environment)
+            p = current_principal()
+            pc, code = await nodes.create_pairing_code(db, env, label=label, created_by=p.username if p else None)
+        except nodes.NodeError as e:
+            raise ToolDenied(str(e)) from e
+        await db.commit()
+        info = await nodes.connect_info(db)
+    return _jsonable({"code": code, "expires_at": pc.expires_at, "environment": env.name,
+                      "command": nodes.install_command(info["app_url"] or "<app address>", code),
+                      "agent_endpoint": info["endpoint"]})
+
+
+@tool("nodes", WRITE)
+async def refresh_node_updates(node: str) -> dict:
+    """Run apt update on the node and return the list of upgradable packages."""
+    from mmn.services import nodes
+
+    nid, _ = await _node_id(node)
+    try:
+        return _jsonable(await nodes.refresh_updates(nid))
+    except Exception as e:
+        raise _agent_errors(e) from e
+
+
+@tool("node_updates", DESTRUCTIVE)
+async def install_node_updates(node: str, confirm: str) -> dict:
+    """Install all package updates on the node (apt dist-upgrade, as Proxmox VE requires). Set
+    `confirm` to the node's name. Returns a job; follow it with get_node_job."""
+    from mmn.services import nodes
+
+    nid, name = await _node_id(node)
+    if confirm != name:
+        raise ToolDenied(f"confirm must equal the node name '{name}'")
+    p = current_principal()
+    try:
+        job = await nodes.apply_updates(nid, source="mcp", requested_by=p.username if p else None)
+    except Exception as e:
+        raise _agent_errors(e) from e
+    return _jsonable(nodes.job_out(job, with_output=False))
+
+
+@tool("node_updates", DESTRUCTIVE)
+async def reboot_node(node: str, confirm: str) -> dict:
+    """Reboot the node. Running guests are handled by Proxmox VE's own shutdown policy. Set
+    `confirm` to the node's name. Always ask the user first."""
+    from mmn.services import nodes
+
+    nid, name = await _node_id(node)
+    if confirm != name:
+        raise ToolDenied(f"confirm must equal the node name '{name}'")
+    try:
+        return _jsonable(await nodes.reboot(nid))
+    except Exception as e:
+        raise _agent_errors(e) from e
+
+
+@tool("read", RO)
+async def get_node_job(job_id: str) -> dict:
+    """Status and output of a node job (package upgrade, agent update)."""
+    from mmn.models import NodeJob
+    from mmn.services import nodes
+
+    async with sessionmaker()() as db:
+        j = await db.get(NodeJob, job_id)
+        if j is None:
+            raise ToolDenied("job not found")
+        out = nodes.job_out(j)
+    out["output"] = out["output"][-20000:]
+    return _jsonable(out)
+
+
+@tool("nodes", WRITE)
+async def set_cpu_governor(node: str, governor: str) -> dict:
+    """Set the CPU frequency governor (e.g. performance, schedutil, powersave). It is stored and
+    applied again after every reboot."""
+    from mmn.services import nodes
+
+    nid, _ = await _node_id(node)
+    try:
+        return _jsonable(await nodes.set_governor(nid, governor))
+    except Exception as e:
+        raise _agent_errors(e) from e
+
+
+@tool("read", RO)
+async def get_environment_notifications(environment: str) -> dict:
+    """The Proxmox VE notification mail settings of an environment (password never returned)."""
+    from mmn.services import nodes
+
+    async with sessionmaker()() as db:
+        try:
+            return _jsonable(nodes.notify_public(await nodes.get_environment(db, environment)))
+        except nodes.NodeError as e:
+            raise ToolDenied(str(e)) from e
+
+
+@tool("nodes", WRITE)
+async def update_environment_notifications(environment: str, enabled: bool, mailto: list[str],
+                                           types: list[str] | None = None, severities: list[str] | None = None,
+                                           use_app_smtp: bool = True) -> dict:
+    """Set who gets Proxmox VE notifications for an environment and push them to its nodes.
+    types: vzdump, replication, fencing, package-updates, system-mail. severities: info, notice,
+    warning, error, unknown. use_app_smtp sends through the app's own mail server; a different SMTP
+    server can only be entered in the web interface."""
+    from mmn.services import nodes
+
+    async with sessionmaker()() as db:
+        try:
+            e = await nodes.get_environment(db, environment)
+            cur = nodes.notify_public(e)
+            body = nodes.NotifyIn(**{**{k: v for k, v in cur.items() if k in nodes.NotifyIn.model_fields},
+                                     "enabled": enabled, "mailto": mailto, "use_app_smtp": use_app_smtp,
+                                     **({"types": types} if types is not None else {}),
+                                     **({"severities": severities} if severities is not None else {}),
+                                     "password": None})
+            out = await nodes.set_notify(db, e, body)
+        except (nodes.NodeError, ValueError) as ex:
+            raise ToolDenied(str(ex)) from ex
+        await db.commit()
+        env_id = e.id
+    out["push"] = await nodes.push_notify_to_environment(env_id)
+    return _jsonable(out)
+
+
+@tool("nodes", WRITE)
+async def send_node_test_notification(node: str) -> dict:
+    """Let Proxmox VE on this node send a test notification through the pushed mail settings."""
+    from mmn.services import nodes
+
+    nid, _ = await _node_id(node)
+    try:
+        return await nodes.test_notify(nid)
+    except Exception as e:
+        raise _agent_errors(e) from e
+
+
+@tool("nodes", WRITE)
+async def update_node_agent(node: str) -> dict:
+    """Update the agent on the node to the version shipped with this app."""
+    from mmn.services import nodes
+
+    nid, _ = await _node_id(node)
+    p = current_principal()
+    try:
+        job = await nodes.update_agent(nid, source="mcp", requested_by=p.username if p else None)
+    except Exception as e:
+        raise _agent_errors(e) from e
+    return _jsonable(nodes.job_out(job, with_output=False))
+
+
+# ------------------------------------------------------------------ server administration on nodes
+async def _op(node: str, method: str, params: dict) -> Any:
+    from mmn.services import nodes
+
+    nid, _ = await _node_id(node)
+    try:
+        return await nodes.node_call(nid, method, params)
+    except Exception as e:
+        raise _agent_errors(e) from e
+
+
+@tool("logs", RO)
+async def read_logs(node: str, unit: str | None = None, since: str | None = None, until: str | None = None,
+                    priority: str | None = None, grep: str | None = None, lines: int = 200,
+                    this_boot: bool = False) -> dict:
+    """Read the systemd journal of a node. unit: e.g. 'nginx' or 'pveproxy'. since/until: journalctl
+    time like '1 hour ago' or '2026-11-22 09:00'. priority: emerg, alert, crit, err, warning, notice,
+    info or debug (that level and worse). grep: case-insensitive text/regex filter. Max 5000 lines."""
+    return _jsonable(await _op(node, "logs.journal", {"unit": unit or "", "since": since or "", "until": until or "",
+                                                      "priority": priority or "", "grep": grep or "",
+                                                      "lines": lines, "boot": this_boot}))
+
+
+@tool("logs", RO)
+async def list_services(node: str, state: str | None = None) -> list[dict]:
+    """systemd services on a node. state: e.g. 'failed' or 'running' to filter."""
+    return _jsonable(await _op(node, "services.list", {"state": state or ""}))
+
+
+@tool("logs", RO)
+async def get_service_status(node: str, unit: str) -> dict:
+    """`systemctl status` of one service plus its properties (state, restarts, memory, start time)."""
+    return _jsonable(await _op(node, "services.status", {"unit": unit}))
+
+
+@tool("services", DESTRUCTIVE)
+async def manage_service(node: str, unit: str, action: str, reason: str) -> dict:
+    """start, stop, restart, reload, enable or disable a systemd service. `reason` is stored in the
+    audit log. Ask the user before stopping or restarting production services."""
+    if not reason.strip():
+        raise ToolDenied("give a reason")
+    return _jsonable(await _op(node, "services.action", {"unit": unit, "action": action}))
+
+
+@tool("logs", RO)
+async def find_packages(pattern: str, environment: str | None = None) -> list[dict]:
+    """Which nodes have a package installed and which version, e.g. 'nginx*' or 'openssl' (useful
+    for a CVE). Shows whether an update is pending for it. Offline nodes are listed without data."""
+    from mmn.services import nodes
+
+    env_id = None
+    if environment:
+        async with sessionmaker()() as db:
+            try:
+                env_id = (await nodes.get_environment(db, environment)).id
+            except nodes.NodeError as e:
+                raise ToolDenied(str(e)) from e
+    return _jsonable(await nodes.find_packages(pattern, env_id))
+
+
+@tool("logs", RO)
+async def read_file(node: str, path: str, max_bytes: int = 65536, tail: bool = False) -> dict:
+    """Read a text file (or list a directory) on a node, e.g. /etc/nginx/nginx.conf or
+    /var/log/syslog with tail=true. At most 1 MiB."""
+    return _jsonable(await _op(node, "file.read", {"path": path, "max_bytes": max_bytes, "tail": tail}))
+
+
+@tool("exec", DESTRUCTIVE)
+async def run_command(node: str, command: str, reason: str, timeout: int = 60) -> dict:
+    """Run a shell command as root on a node (/bin/sh -c) and return exit code, stdout and stderr
+    (max 256 KiB each). `reason` is stored in the audit log with the command. Prefer the read-only
+    tools when they suffice, and ask the user before changing anything. timeout: seconds, max 1800."""
+    if not reason.strip():
+        raise ToolDenied("give a reason")
+    return _jsonable(await _op(node, "exec", {"command": command, "timeout": max(1, min(timeout, 1800))}))
 
 
 # ------------------------------------------------------------------ ASGI wiring

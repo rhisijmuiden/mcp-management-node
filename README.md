@@ -3,9 +3,11 @@
 One modern management interface for Proxmox VE environments and stand-alone servers, with a built-in
 MCP server so Claude, ChatGPT or Copilot can answer questions and carry out tasks, with every action logged.
 
-> Phase 1 (this release) is the foundation: sign-in, users, mail server, backups with restore, updates
-> from the interface, web server / Zoraxy settings, the MCP server with OAuth, and the audit log.
-> Proxmox environments and agent-managed servers follow in the next phases.
+> Phase 1 laid the foundation: sign-in, users, mail server, backups with restore, updates from the interface,
+> web server / Zoraxy settings, the MCP server with OAuth, and the audit log.
+> Phase 2 (this release) adds environments (Home plus one per customer), the agent on every Proxmox node, the
+> overview dashboard, package updates from the interface, notification mail per environment, the CPU governor per
+> node, and server administration through the agent (logs, services, packages, files, commands) for people and AI.
 
 The interface is in English and Dutch, in the RHIS house style (see [`branding/`](branding/)).
 
@@ -47,6 +49,22 @@ Options (`--help`): `--channel production|test`, `--version vX.Y.Z`, `--tarball 
 Nginx trusts `X-Forwarded-For` / `X-Forwarded-Proto` only from the configured proxy addresses, and can serve the app
 under a sub-path (`--base-path /mmn`). The Web server page shows what the app receives from the proxy.
 
+Zoraxy only has to pass the agent port (default **8443**) through as a **Stream Proxy (TCP)**: agents use mutual
+TLS with this server, so Zoraxy must not terminate TLS on that port. See **Administration → Agents & pairing**.
+
+## Agents
+
+Every managed machine runs `mmn-agent` (Go, no dependencies). It opens one outgoing WebSocket to
+`<address>:8443` with a client certificate from the app's private CA, so nodes need no open ports.
+
+1. **Proxmox → Nodes → Add node** creates a one-time pairing code (valid 24 hours) and shows the install command:
+   `curl -fsSL https://<address>/api/agent/install.sh | bash -s -- --code XXXX-XXXX-XXXX`
+2. The script installs the `.deb` (systemd unit `mmn-agent`), pins the CA fingerprint and enrolls.
+3. The node appears with its status, CPU, RAM, disk, guests and available updates. Agents update themselves to
+   the version bundled with the app (can be turned off).
+
+Built for Linux amd64/arm64 (`.deb` and plain binary) and Windows amd64 (`agent/build.sh`). Source in [`agent/`](agent/).
+
 ## Updates, production and test
 
 - `main` → production releases `vX.Y.Z` (published once per `VERSION`).
@@ -60,8 +78,11 @@ switches the `current` link and restarts; when the health check fails it rolls b
 
 The MCP endpoint is `https://<your address>/mcp` (Streamable HTTP). Claude, ChatGPT and VS Code connect with
 OAuth 2.1 (dynamic client registration + PKCE); scripts can use a personal API token. Each connection only gets the
-permissions you tick (read, backups, restore, updates, settings), destructive tools require confirmation of the exact
-target, and every call is recorded in the **AI activity log**. Step-by-step instructions are in the app under
+permissions you tick (read, backups, restore, updates, settings, nodes, node updates, logs, services, exec),
+destructive tools require confirmation of the exact target, commands and service actions need a stated reason, and
+every call is recorded in the **AI activity log**. Through the agents an assistant can read logs and the journal,
+check and restart services, find which servers have a package (e.g. nginx for a CVE), read files, run commands,
+install updates and reboot nodes. **Help → What Claude can do on your servers** lists everything. Step-by-step instructions are in the app under
 **Help → Connect Claude, ChatGPT or Copilot**.
 
 ## Backups
@@ -83,4 +104,5 @@ cd frontend && npm ci && npm run dev   # http://127.0.0.1:5173, proxies /api and
 node scripts/check-i18n.mjs            # English and Dutch have the same keys
 ```
 
-Release tarballs are built by `deploy/build-release.sh` (used by the Release workflow).
+Release tarballs are built by `deploy/build-release.sh` (used by the Release workflow); it also builds the agent
+with `agent/build.sh`, so Go 1.24 is needed. Agent tests: `cd agent && go test ./...`.

@@ -23,6 +23,11 @@ STRINGS: dict[str, dict[str, str]] = {
         "update.subject": "{app} updated to {version}",
         "update.title": "Update installed",
         "update.body": "{app} was updated from {old} to {version} on the {channel} channel.",
+        "node_update.ok_subject": "Updates installed on {node}",
+        "node_update.ok_title": "Node updated",
+        "node_update.failed_subject": "Updates failed on {node}",
+        "node_update.failed_title": "Node update failed",
+        "node_update.body": "Package updates on {node} ({env}) finished. Updates still pending: {remaining}.",
         "footer": "Sent by {app}.",
     },
     "nl": {
@@ -45,6 +50,11 @@ STRINGS: dict[str, dict[str, str]] = {
         "update.subject": "{app} bijgewerkt naar {version}",
         "update.title": "Update geïnstalleerd",
         "update.body": "{app} is bijgewerkt van {old} naar {version} op het {channel}-kanaal.",
+        "node_update.ok_subject": "Updates geïnstalleerd op {node}",
+        "node_update.ok_title": "Node bijgewerkt",
+        "node_update.failed_subject": "Updates mislukt op {node}",
+        "node_update.failed_title": "Node-update mislukt",
+        "node_update.body": "De pakketupdates op {node} ({env}) zijn klaar. Nog openstaande updates: {remaining}.",
         "footer": "Verstuurd door {app}.",
     },
 }
