@@ -11,6 +11,7 @@ export function Dialog({
   children,
   footer,
   wide,
+  xl,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -19,6 +20,7 @@ export function Dialog({
   children: ReactNode;
   footer?: ReactNode;
   wide?: boolean;
+  xl?: boolean;
 }) {
   return (
     <D.Root open={open} onOpenChange={onOpenChange}>
@@ -27,7 +29,7 @@ export function Dialog({
         <D.Content
           className={cn(
             "fixed left-1/2 top-1/2 z-50 flex max-h-[90vh] w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-lg border border-line bg-raised shadow-2xl focus:outline-none",
-            wide ? "max-w-3xl" : "max-w-lg",
+            xl ? "max-w-6xl" : wide ? "max-w-3xl" : "max-w-lg",
           )}
         >
           <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">

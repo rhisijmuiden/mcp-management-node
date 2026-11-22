@@ -357,3 +357,231 @@ export interface ExecResult {
   duration_ms: number;
   timed_out: boolean;
 }
+
+/* ------------------------------------------------------------------ phase 3: guests, templates, tasks */
+export interface Guest {
+  vmid: number;
+  type: "qemu" | "lxc";
+  name: string;
+  status: string;
+  node_id: string;
+  node: string;
+  pve_node: string | null;
+  environment_id: string;
+  environment: string | null;
+  cluster: string | null;
+  online: boolean;
+  cpu: number;
+  maxcpu: number;
+  mem: number;
+  maxmem: number;
+  disk: number;
+  maxdisk: number;
+  uptime: number;
+  netin: number;
+  netout: number;
+  tags: string[];
+  template: boolean;
+  lock: string | null;
+  hastate: string | null;
+  community_script: boolean;
+}
+
+export interface Snapshot {
+  name: string;
+  description: string;
+  snaptime: number | null;
+  parent: string | null;
+  vmstate: boolean;
+}
+
+export interface GuestDetail extends Guest {
+  config: Record<string, string | number> | null;
+  snapshots: Snapshot[];
+  interfaces: { name?: string; inet?: string; inet6?: string; hwaddr?: string; "hardware-address"?: string; "ip-addresses"?: { "ip-address": string; prefix: number }[] }[] | null;
+  error?: string;
+}
+
+export interface NodeResources {
+  node_id: string;
+  node: string;
+  nextid: number | null;
+  storages: { storage: string; type: string; content: string[]; avail: number | null; total: number | null; shared: boolean; active: boolean }[];
+  bridges: string[];
+  isos: { volid: string; size: number; storage: string }[];
+  templates: { volid: string; filename: string; size: number }[];
+}
+
+export interface SuggestNode {
+  node_id?: string;
+  node?: string;
+  score?: number;
+  ranking?: { node_id: string; node: string; score: number }[];
+}
+
+export interface TemplateLocation {
+  node_id: string;
+  node: string;
+  environment: string | null;
+  online: boolean;
+  storage: string;
+  status: "current" | "outdated" | "missing" | "unknown";
+  volid?: string;
+  present?: string[];
+}
+
+export interface CtTemplate {
+  id: string;
+  name: string;
+  kind: "official" | "custom";
+  family: string;
+  filename: string;
+  version: string | null;
+  os: string | null;
+  description: string | null;
+  sha256: string | null;
+  size: number | null;
+  source_url: string | null;
+  sync: boolean;
+  storage: string | null;
+  follow_latest: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  locations?: TemplateLocation[];
+  summary?: Record<"current" | "outdated" | "missing" | "unknown", number>;
+}
+
+export interface TemplateLibrary {
+  templates: CtTemplate[];
+  settings: { storage: string };
+  catalog_checked_at: string | null;
+  nodes: { node_id: string; node: string; online: boolean; checked_at: string | null; storages: string[] }[];
+}
+
+export interface CatalogItem {
+  filename: string;
+  family: string;
+  version: string | null;
+  os: string | null;
+  section: string | null;
+  headline: string | null;
+  description: string | null;
+  infopage: string | null;
+}
+
+export interface CommunityScript {
+  slug: string;
+  kind: "ct" | "vm";
+  name: string;
+  path: string;
+  source_url: string | null;
+  tags: string[];
+  defaults: { cpu?: number | null; ram?: number | null; disk?: number | null; os?: string | null; version?: string | null; unprivileged?: boolean };
+  updated_at: string;
+  page_url: string;
+}
+
+export interface CommunityScriptFull extends CommunityScript {
+  script: string;
+  sha256: string;
+  script_url: string;
+  install_script: string | null;
+  install_url: string | null;
+  command: string;
+}
+
+export interface CommunityState {
+  synced_at?: string;
+  count?: number;
+  error?: string | null;
+  repo: string;
+  branch: string;
+}
+
+export type TaskKind = "ct_community_update" | "ct_apt_upgrade" | "node_updates" | "template_sync" | "custom_command";
+
+export interface TaskTargets {
+  scope: "all" | "environments" | "nodes" | "guests" | "tag";
+  environment_ids: string[];
+  node_ids: string[];
+  guests: { node_id: string; vmid: number }[];
+  tag: string | null;
+  exclude_vmids: number[];
+}
+
+export interface TaskOptions {
+  snapshot: boolean;
+  rollback: boolean;
+  keep_snapshots: number;
+  command: string | null;
+  run_on: "ct" | "node";
+  timeout: number;
+  parallel_nodes: number;
+}
+
+export interface ScheduledTask {
+  id: string;
+  name: string;
+  kind: TaskKind;
+  enabled: boolean;
+  cron: string;
+  targets: TaskTargets;
+  options: TaskOptions;
+  mail_to: string[];
+  mail_on: "always" | "failure" | "never";
+  created_by: string | null;
+  created_at: string;
+  last_run_at: string | null;
+  last_status: string | null;
+  next_run_at: string | null;
+}
+
+export interface TaskTarget {
+  kind: "guest" | "node";
+  node_id: string;
+  node: string;
+  vmid?: number;
+  name?: string;
+  status?: string;
+  label: string;
+}
+
+export interface TaskRunResult {
+  target: string;
+  node_id?: string;
+  vmid?: number;
+  status: "success" | "failed" | "skipped";
+  error?: string | null;
+  snapshot?: string;
+  rolled_back?: boolean;
+  job_id?: string;
+  output?: string;
+  note?: string;
+}
+
+export interface TaskRun {
+  id: string;
+  task_id: string | null;
+  name: string;
+  kind: string;
+  status: "running" | "success" | "partial" | "failed";
+  trigger: string;
+  requested_by: string | null;
+  started_at: string;
+  finished_at: string | null;
+  results: TaskRunResult[];
+  counts: { success: number; failed: number; skipped: number };
+}
+
+export interface ConsoleSession {
+  session: string;
+  kind: "vnc" | "pty";
+  mode: string;
+  password?: string | null;
+  label: string;
+  type?: "qemu" | "lxc";
+  node?: string;
+  vmid?: number;
+  job?: NodeJob;
+}

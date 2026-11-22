@@ -22,7 +22,7 @@ import (
 	"github.com/rhisijmuiden/mcp-management-node/agent/internal/enroll"
 )
 
-// version is set at build time: -ldflags "-X main.version=0.2.0".
+// version is set at build time: -ldflags "-X main.version=0.3.0".
 var version = "dev"
 
 func usage() {

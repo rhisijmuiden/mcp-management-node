@@ -1,10 +1,11 @@
 import * as Tabs from "@radix-ui/react-tabs";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowUpCircle, Bot, CheckCircle2, Cpu, FileText, History, KeyRound, Mail, Play, Power, RefreshCw, ScrollText, Server, Terminal, Trash2, XCircle } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { ArrowUpCircle, Bot, Cpu, ExternalLink, FileText, HardDrive, History, KeyRound, Mail, Play, Power, RefreshCw, ScrollText, Server, Terminal, Trash2 } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { toast } from "sonner";
+import { JobBadge, JobView, Output, useJobLabel } from "@/components/jobs";
 import { GovernorSelect, NodeMetricsBars, PairDialog, StatusDot, useEnvironments } from "@/components/proxmox";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -15,7 +16,7 @@ import { Table, Td, Th, Tr } from "@/components/ui/table";
 import { del, errorMessage, get, patch, post } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { ExecResult, NodeInfo, NodeJob } from "@/lib/types";
-import { cn, formatDate, formatDuration, timeAgo } from "@/lib/utils";
+import { formatDate, formatDuration, timeAgo } from "@/lib/utils";
 
 const tabCls = "rounded-[8px] px-3 py-1.5 text-[13px] font-semibold text-muted data-[state=active]:bg-raised data-[state=active]:text-ink data-[state=active]:shadow-sm cursor-pointer";
 
@@ -28,51 +29,14 @@ function Row({ label, children }: { label: ReactNode; children: ReactNode }) {
   );
 }
 
-function Output({ text, className }: { text: string; className?: string }) {
-  const ref = useRef<HTMLPreElement>(null);
-  useEffect(() => {
-    if (ref.current) ref.current.scrollTop = ref.current.scrollHeight;
-  }, [text]);
-  return <pre ref={ref} className={cn("max-h-[480px] overflow-auto whitespace-pre-wrap break-all rounded-md bg-nacht p-4 text-[12px] leading-5 text-[#e8edf7]", className)}>{text || " "}</pre>;
-}
-
 function useOp(nodeId: string) {
   return useMutation({ mutationFn: ({ action, params }: { action: string; params: Record<string, unknown> }) => post<unknown>(`api/nodes/${nodeId}/ops`, { action, params }) });
 }
 
 /* ------------------------------------------------------------------ jobs */
-function JobView({ jobId }: { jobId: string }) {
-  const { t } = useTranslation();
-  const job = useQuery({
-    queryKey: ["job", jobId],
-    queryFn: () => get<NodeJob>(`api/jobs/${jobId}`),
-    refetchInterval: (q) => (q.state.data?.status === "running" ? 2000 : false),
-  });
-  if (!job.data) return <Spinner />;
-  const j = job.data;
-  return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2 text-sm">
-        <JobBadge status={j.status} />
-        <span className="font-semibold">{t(`px.job_${j.kind.replace(".", "_")}`)}</span>
-        <span className="text-muted">{j.requested_by} · {formatDate(j.started_at)}</span>
-        {j.result?.reboot_required === true && <Badge tone="warning">{t("px.reboot_required")}</Badge>}
-      </div>
-      {j.error && <Alert tone="offline">{j.error}</Alert>}
-      <Output text={j.output ?? ""} />
-    </div>
-  );
-}
-
-function JobBadge({ status }: { status: string }) {
-  const { t } = useTranslation();
-  return status === "success" ? <Badge tone="online"><CheckCircle2 className="size-3.5" /> {t("common.success")}</Badge>
-    : status === "failed" ? <Badge tone="offline"><XCircle className="size-3.5" /> {t("common.failed")}</Badge>
-      : <Badge tone="warning" dot>{t("common.running")}</Badge>;
-}
-
 function JobsTab({ n }: { n: NodeInfo }) {
   const { t, i18n } = useTranslation();
+  const label = useJobLabel();
   const jobs = useQuery({ queryKey: ["node-jobs", n.id], queryFn: () => get<NodeJob[]>(`api/nodes/${n.id}/jobs?limit=50`), refetchInterval: 10_000 });
   const [open, setOpen] = useState<string | null>(null);
   return (
@@ -84,7 +48,7 @@ function JobsTab({ n }: { n: NodeInfo }) {
           <tbody>
             {jobs.data.map((j) => (
               <Tr key={j.id}>
-                <Td className="font-semibold">{t(`px.job_${j.kind.replace(".", "_")}`)}</Td>
+                <Td className="font-semibold">{label(j.kind)}</Td>
                 <Td><JobBadge status={j.status} /></Td>
                 <Td>{j.requested_by}{j.source === "mcp" && <Badge tone="info" className="ml-2"><Bot className="size-3" /> MCP</Badge>}</Td>
                 <Td className="text-muted">{timeAgo(j.started_at, i18n.language)}</Td>
@@ -429,6 +393,7 @@ export function NodeDetailPage() {
   const { id = "" } = useParams();
   const [params, setParams] = useSearchParams();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const admin = user?.role === "admin";
   const node = useQuery({ queryKey: ["node", id], queryFn: () => get<NodeInfo>(`api/nodes/${id}`), refetchInterval: 15_000 });
   if (node.isLoading) return <Spinner />;
@@ -441,6 +406,13 @@ export function NodeDetailPage() {
       <PageHeader
         title={<span className="flex items-center gap-3"><StatusDot online={n.online} /> {n.name}</span>}
         description={<><Link to={`/proxmox/environments/${n.environment_id}`} className="hover:underline">{n.environment_name}</Link>{n.cluster_name ? ` · ${t("px.cluster")} ${n.cluster_name}` : ""}{n.info?.pve_version ? ` · Proxmox VE ${n.info.pve_version}` : ""}</>}
+        actions={<>
+          {has("guests") && <Button size="sm" onClick={() => navigate(`/proxmox/guests?node=${n.id}`)}><HardDrive /> {t("gx.title")}</Button>}
+          {admin && has("terminal") && <>
+            <Button size="sm" variant="dark" disabled={!n.online} onClick={() => navigate(`/console/node/${n.id}`)}><Terminal /> {t("gx.shell")}</Button>
+            <Button size="sm" variant="ghost" disabled={!n.online} title={t("gx.new_tab")} onClick={() => window.open(`console/node/${n.id}`, "_blank", "noopener")}><ExternalLink /></Button>
+          </>}
+        </>}
       />
       {!n.online && <Alert tone="warning" className="mb-4">{t("px.offline_hint")}</Alert>}
       <Tabs.Root value={tab} onValueChange={(v) => setParams({ tab: v }, { replace: true })}>

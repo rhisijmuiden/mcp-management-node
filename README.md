@@ -5,9 +5,14 @@ MCP server so Claude, ChatGPT or Copilot can answer questions and carry out task
 
 > Phase 1 laid the foundation: sign-in, users, mail server, backups with restore, updates from the interface,
 > web server / Zoraxy settings, the MCP server with OAuth, and the audit log.
-> Phase 2 (this release) adds environments (Home plus one per customer), the agent on every Proxmox node, the
+> Phase 2 added environments (Home plus one per customer), the agent on every Proxmox node, the
 > overview dashboard, package updates from the interface, notification mail per environment, the CPU governor per
 > node, and server administration through the agent (logs, services, packages, files, commands) for people and AI.
+> Phase 3 (this release) adds VMs and containers: power actions, snapshots, migration, the console in the browser
+> (noVNC for VMs, a terminal for containers and node shells), creating guests from the template library,
+> community-scripts.org, an ISO or a cloud image, the CT template library with nightly sync to all nodes, and
+> scheduled tasks (updates in containers, node updates, template sync, custom commands) with snapshot, rollback and
+> a mailed report.
 
 The interface is in English and Dutch, in the RHIS house style (see [`branding/`](branding/)).
 
@@ -65,6 +70,24 @@ Every managed machine runs `mmn-agent` (Go, no dependencies). It opens one outgo
 
 Built for Linux amd64/arm64 (`.deb` and plain binary) and Windows amd64 (`agent/build.sh`). Source in [`agent/`](agent/).
 
+## VMs and containers
+
+- **Proxmox → VMs & containers** lists every guest of every node (reported by the agents every 20 seconds). Per guest:
+  start, shut down, stop, reboot, snapshots (take, roll back, delete), migrate within the cluster, CPU/memory/tags,
+  delete, and the console, inline or in its own tab (VMs via noVNC with Ctrl+Alt+Del, containers via xterm.js).
+- **Create** offers a container from the template library, a community script (the script is shown first and runs
+  as root on the chosen node; default or interactive mode), a VM from an ISO (existing or downloaded) and a VM from
+  a cloud image with cloud-init. The node defaults to the least loaded one (60 % memory, 40 % CPU).
+- **CT templates** keeps one list of official (pveam) and custom templates (uploaded or downloaded, stored in the app
+  and its backups) and shows per node whether each one is current, outdated or missing. "Push to all nodes" and the
+  nightly task place them on every node.
+- **Scheduled tasks** run community-script updates or `apt-get update && full-upgrade` in containers, node updates,
+  the template sync or your own command, on a cron schedule (time zone configurable), with a snapshot first,
+  rollback on failure and a report by mail. Every run is kept with its output per target.
+
+The console is relayed by the app: the browser connects to the app, the app to the agent's outgoing connection, so
+nodes still need no open ports and Zoraxy only has to pass WebSockets.
+
 ## Updates, production and test
 
 - `main` → production releases `vX.Y.Z` (published once per `VERSION`).
@@ -78,11 +101,12 @@ switches the `current` link and restarts; when the health check fails it rolls b
 
 The MCP endpoint is `https://<your address>/mcp` (Streamable HTTP). Claude, ChatGPT and VS Code connect with
 OAuth 2.1 (dynamic client registration + PKCE); scripts can use a personal API token. Each connection only gets the
-permissions you tick (read, backups, restore, updates, settings, nodes, node updates, logs, services, exec),
+permissions you tick (read, backups, restore, updates, settings, nodes, node updates, logs, services, exec, guests,
+create and remove guests, templates, scheduled tasks),
 destructive tools require confirmation of the exact target, commands and service actions need a stated reason, and
 every call is recorded in the **AI activity log**. Through the agents an assistant can read logs and the journal,
 check and restart services, find which servers have a package (e.g. nginx for a CVE), read files, run commands,
-install updates and reboot nodes. **Help → What the MCP can do** lists everything. Step-by-step instructions are in the app under
+install updates and reboot nodes, and manage VMs, containers, snapshots, templates and scheduled tasks. **Help → What the MCP can do** lists everything. Step-by-step instructions are in the app under
 **Help → Connect Claude, ChatGPT or Copilot**.
 
 ## Backups
