@@ -21,6 +21,7 @@ dependencies = [
   "httpx>=0.28",
   "jinja2>=3.1",
   "packaging>=24",
+  "mcp>=2.3,<3",
 ]
 
 [project.optional-dependencies]

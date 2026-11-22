@@ -1,0 +1,69 @@
+name: Release
+
+# main -> production release vX.Y.Z (once per VERSION)
+# test -> test build vX.Y.Z-test.<run> (prerelease)
+on:
+  push:
+    branches: [main, test]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    needs: ci
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Work out the tag
+        id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(tr -d '[:space:]' < VERSION)"
+          if [[ "$GITHUB_REF_NAME" == "main" ]]; then
+            tag="v$version"; channel="production"; pre="false"
+          else
+            tag="v$version-test.$GITHUB_RUN_NUMBER"; channel="test"; pre="true"
+          fi
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag exists already; bump VERSION to publish a new production release."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+          { echo "tag=$tag"; echo "channel=$channel"; echo "pre=$pre"; } >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@v5
+        if: steps.tag.outputs.skip == 'false'
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        if: steps.tag.outputs.skip == 'false'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build
+        if: steps.tag.outputs.skip == 'false'
+        run: |
+          bash deploy/build-release.sh --tag "${{ steps.tag.outputs.tag }}" --channel "${{ steps.tag.outputs.channel }}" \
+            --out dist --wheels --commit "$(git rev-parse --short=12 HEAD)"
+      - name: Publish
+        if: steps.tag.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ steps.tag.outputs.tag }}"
+          flags=(--target "$GITHUB_SHA" --title "MCP Management Node $tag" --generate-notes)
+          [[ "${{ steps.tag.outputs.pre }}" == "true" ]] && flags+=(--prerelease)
+          gh release create "$tag" "${flags[@]}" dist/mcp-management-node-"$tag".tar.gz dist/mcp-management-node-"$tag".tar.gz.sha256

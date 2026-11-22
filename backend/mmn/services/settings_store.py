@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mmn.models import Setting
+from mmn.version import get_build_info
 
 DEFAULTS: dict[str, dict[str, Any]] = {
     "general": {
@@ -53,9 +56,27 @@ DEFAULTS: dict[str, dict[str, Any]] = {
 }
 
 
+APPLIED_PROXY_FILE = Path("/etc/mcp-management-node/proxy.json")
+
+
+def _defaults(key: str) -> dict[str, Any]:
+    value = dict(DEFAULTS.get(key, {}))
+    if key == "updates":
+        # A fresh install follows the channel of the build it was installed from.
+        value["channel"] = get_build_info().channel
+    elif key == "proxy":
+        # Before anything is saved in the app, show what the installer configured.
+        try:
+            applied = json.loads(APPLIED_PROXY_FILE.read_text())
+            value.update({k: v for k, v in applied.items() if k != "base_path"})
+        except (OSError, ValueError):
+            pass
+    return value
+
+
 async def get_setting(db: AsyncSession, key: str) -> dict[str, Any]:
     row = await db.get(Setting, key)
-    value = dict(DEFAULTS.get(key, {}))
+    value = _defaults(key)
     if row is not None:
         value.update(row.value or {})
     return value
@@ -63,7 +84,7 @@ async def get_setting(db: AsyncSession, key: str) -> dict[str, Any]:
 
 async def set_setting(db: AsyncSession, key: str, value: dict[str, Any]) -> dict[str, Any]:
     row = await db.get(Setting, key)
-    merged = dict(DEFAULTS.get(key, {}))
+    merged = _defaults(key)
     if row is not None:
         merged.update(row.value or {})
     merged.update(value)

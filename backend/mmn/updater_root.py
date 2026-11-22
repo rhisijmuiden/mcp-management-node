@@ -24,6 +24,7 @@ import sys
 import tarfile
 import tempfile
 import time
+import urllib.error
 import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
@@ -175,7 +176,26 @@ def _github(url: str, token: str | None, accept: str = "application/vnd.github+j
                                                "X-GitHub-Api-Version": "2022-11-28"})
     if token:
         req.add_header("Authorization", f"Bearer {token}")
-    return urllib.request.urlopen(req, timeout=60)  # noqa: S310 - fixed https host
+    if accept != "application/octet-stream" or not token:
+        return urllib.request.urlopen(req, timeout=60)  # noqa: S310 - fixed https host
+    # Asset downloads redirect to storage with a signed URL; that host rejects our token header,
+    # so follow the redirect ourselves without it.
+    try:
+        return _NO_REDIRECT.open(req, timeout=60)
+    except urllib.error.HTTPError as e:
+        location = e.headers.get("Location") if e.code in (301, 302, 303, 307, 308) else None
+        if not location or not location.startswith("https://"):
+            raise
+        plain = urllib.request.Request(location, headers={"User-Agent": f"{APP}-updater"})
+        return urllib.request.urlopen(plain, timeout=60)  # noqa: S310
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):  # noqa: ANN002, ANN003
+        return None
+
+
+_NO_REDIRECT = urllib.request.build_opener(_NoRedirect)
 
 
 def download_release(tag: str, dest: Path, env: dict[str, str]) -> Path:
