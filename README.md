@@ -13,10 +13,14 @@ MCP server so Claude, ChatGPT or Copilot can answer questions and carry out task
 > community-scripts.org, an ISO or a cloud image, the CT template library with nightly sync to all nodes, and
 > scheduled tasks (updates in containers, node updates, template sync, custom commands) with snapshot, rollback and
 > a mailed report.
-> Phase 4 (this release) adds network management (bridges and VLANs with a graphical overview of which guests use
+> Phase 4 added network management (bridges and VLANs with a graphical overview of which guests use
 > them, the firewall, SDN with a step-by-step designer), cluster features (HA, replication, Proxmox backup jobs,
 > storage), monitoring of all nodes with trends, SMART and mailed alerts, and deployments from GitHub repositories
 > into containers.
+> Phase 5 (this release) adds stand-alone **Linux and Windows servers** in their own Servers section, managed by the
+> same agent (Windows service with an MSI installer, event log, PowerShell, Windows Update), plus troubleshooting
+> across servers for people and AI: log search on many servers at once, error overviews, health checks, a software
+> and CVE inventory, and data copies between servers.
 
 The interface is in English and Dutch, in the RHIS house style (see [`branding/`](branding/)).
 
@@ -72,7 +76,25 @@ Every managed machine runs `mmn-agent` (Go, no dependencies). It opens one outgo
 3. The node appears with its status, CPU, RAM, disk, guests and available updates. Agents update themselves to
    the version bundled with the app (can be turned off).
 
-Built for Linux amd64/arm64 (`.deb` and plain binary) and Windows amd64 (`agent/build.sh`). Source in [`agent/`](agent/).
+Built for Linux amd64/arm64 (`.deb` and plain binary) and Windows amd64 (`.exe` and `.msi`, see `agent/build.sh`).
+Source in [`agent/`](agent/).
+
+### Stand-alone servers (Linux and Windows)
+
+**Servers → Add server** creates the same kind of pairing code and shows the command for the chosen OS:
+
+- **Linux** (Debian, Ubuntu, RHEL/Rocky/Alma, Fedora, SUSE, Alpine), as root:
+  `curl -fsSL https://<address>/api/agent/install.sh | bash -s -- --code XXXX-XXXX-XXXX`
+  Uses the `.deb` where dpkg exists, otherwise `/usr/local/bin/mmn-agent` with a systemd unit.
+- **Windows** (Server 2016+ / Windows 10+), in PowerShell as Administrator:
+  the `powershell … install.ps1 … -Code XXXX-XXXX-XXXX` one-liner shown in the dialog
+  or silently with `msiexec /i mmn-agent.msi /qn SERVER=… FINGERPRINT=… CODE=…` (GPO, Intune, RMM).
+  The agent runs as the Windows service `mmn-agent`; logs in `C:\ProgramData\mmn-agent\agent.log`.
+
+Per server: services (systemd or Windows services), journal or event log, health check, installed software,
+updates (apt, dnf/yum or Windows Update), a shell or PowerShell in the browser, commands and files.
+Across servers: **Log search**, **Software & CVE** and **Data copy** (agent to agent through this app, so the servers
+don't need to reach each other; the size limit is set under Agents & pairing).
 
 ## VMs and containers
 

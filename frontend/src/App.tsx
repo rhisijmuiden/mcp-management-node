@@ -17,6 +17,7 @@ import { TaskRunPage, TasksPage } from "@/pages/Tasks";
 import { TemplatesPage } from "@/pages/Templates";
 import { GeneralPage, MailPage, NotificationsPage, WebServerPage } from "@/pages/Settings";
 import { UsersPage } from "@/pages/Users";
+import { CopyPage, LogSearchPage, ServersPage, SoftwarePage } from "@/pages/Servers";
 import { lazy, Suspense, type ReactNode } from "react";
 
 // Phase 4 pages are loaded on demand to keep the first load small.
@@ -73,6 +74,11 @@ export default function App() {
         <Route path="proxmox/network/sdn-designer" element={<RequireAuth admin><L><SdnDesignerPage /></L></RequireAuth>} />
         <Route path="proxmox/network/sdn-designer/:id" element={<RequireAuth admin><L><SdnDesignerPage /></L></RequireAuth>} />
         <Route path="proxmox/cluster" element={<L><ClusterPage /></L>} />
+        <Route path="servers" element={<ServersPage />} />
+        <Route path="servers/logs" element={<RequireAuth admin><LogSearchPage /></RequireAuth>} />
+        <Route path="servers/software" element={<RequireAuth admin><SoftwarePage /></RequireAuth>} />
+        <Route path="servers/copy" element={<RequireAuth admin><CopyPage /></RequireAuth>} />
+        <Route path="servers/:id" element={<NodeDetailPage section="servers" />} />
         <Route path="deployments" element={<L><DeploymentsPage /></L>} />
         <Route path="deployments/:id" element={<L><DeploymentDetailPage /></L>} />
         <Route path="monitoring" element={<L><MonitoringPage /></L>} />

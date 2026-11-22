@@ -33,6 +33,9 @@ import {
   X,
   Rocket,
   ServerCog,
+  FileSearch,
+  ShieldCheck,
+  Copy,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -68,7 +71,7 @@ function NavItem({ item, onClick }: { item: Item; onClick?: () => void }) {
   return (
     <NavLink
       to={item.to}
-      end={item.to === "/" || item.to === "/proxmox"}
+      end={item.to === "/" || item.to === "/proxmox" || item.to === "/servers"}
       onClick={onClick}
       className={({ isActive }) =>
         cn(base, isActive ? "bg-nacht text-white dark:bg-lucht/15 dark:text-ink [&_svg]:text-koraal" : "text-ink hover:bg-sunken")
@@ -123,7 +126,10 @@ export function Layout() {
     {
       title: t("nav.section.servers"),
       items: [
-        { icon: <Monitor />, label: t("nav.servers"), soon: true },
+        { to: "/servers", icon: <Monitor />, label: t("nav.servers") },
+        { to: "/servers/logs", icon: <FileSearch />, label: t("nav.srv_logs"), admin: true },
+        { to: "/servers/software", icon: <ShieldCheck />, label: t("nav.srv_software"), admin: true },
+        { to: "/servers/copy", icon: <Copy />, label: t("nav.srv_copy"), admin: true },
         { to: "/monitoring", icon: <Activity />, label: t("nav.monitoring") },
       ],
     },

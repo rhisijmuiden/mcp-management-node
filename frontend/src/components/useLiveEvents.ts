@@ -19,6 +19,7 @@ export function useLiveEvents() {
       nodeTimer = window.setTimeout(() => {
         nodeTimer = undefined;
         qc.invalidateQueries({ queryKey: ["overview"] });
+        qc.invalidateQueries({ queryKey: ["servers-overview"] });
         qc.invalidateQueries({ queryKey: ["environments"] });
         for (const nid of pending) qc.invalidateQueries({ queryKey: ["node", nid] });
         qc.invalidateQueries({ queryKey: ["guests"] });
@@ -66,6 +67,10 @@ export function useLiveEvents() {
           if (msg.event === "deploy.run") {
             qc.invalidateQueries({ queryKey: ["deployments"] });
             qc.invalidateQueries({ queryKey: ["deployment", String(msg.data.deployment_id ?? "")] });
+          }
+          if (msg.event === "transfer") {
+            qc.invalidateQueries({ queryKey: ["transfers"] });
+            qc.invalidateQueries({ queryKey: ["transfer", String(msg.data.id ?? "")] });
           }
           if (msg.event === "node.job") {
             const jid = String(msg.data.job_id ?? "");

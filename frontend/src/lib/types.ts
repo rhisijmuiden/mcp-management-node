@@ -246,6 +246,9 @@ export interface NodeMetrics {
   governor?: string;
   cpu_mhz?: number;
   guests?: { vms_running: number; vms_total: number; cts_running: number; cts_total: number };
+  disks?: { path: string; fs?: string; total: number; used: number }[];
+  failed_services?: number;
+  processes?: number;
 }
 
 export interface NodeInfo {
@@ -318,6 +321,7 @@ export interface ConnectInfo {
   address: string;
   auto_update: boolean;
   updates_check_hours: number;
+  transfer_max_gb?: number;
 }
 
 export interface Pairing {
@@ -330,6 +334,8 @@ export interface Pairing {
   code: string;
   command?: string;
   manual?: string;
+  windows_command?: string;
+  msiexec?: string;
 }
 
 export interface NotifyConfig {
@@ -898,3 +904,94 @@ export interface DeploymentRun {
   started_at: string;
   finished_at: string | null;
 }
+
+export interface ServerInfo extends NodeInfo {
+  failed_services: number | null;
+  disks: { path: string; fs?: string; total: number; used: number }[];
+  attention: string[];
+}
+
+export interface ServersOverview {
+  servers: ServerInfo[];
+  totals: { servers: number; online: number; linux: number; windows: number; attention: number; updates: number; servers_with_updates: number; failed_services: number };
+}
+
+export interface FanOutRow<T> {
+  node_id: string;
+  server: string;
+  kind: string;
+  environment: string | null;
+  online: boolean;
+  result?: T;
+  error?: string;
+}
+
+export interface WinEvent { time: string; log: string; level: string; provider: string; id: number; message: string }
+
+export interface LogSearchResult {
+  source: "journal" | "eventlog" | "files";
+  lines?: string[];
+  events?: WinEvent[];
+  matches?: { file: string; line: number; text: string }[];
+  count?: number;
+  files_scanned?: number;
+  truncated?: boolean;
+  stopped?: string;
+  errors?: string[];
+  error?: string;
+}
+
+export interface ErrorsResult {
+  failed_services?: string[];
+  error_count?: number;
+  recent_errors?: string[];
+  findings: string[];
+  disks: { path: string; used_pct: number }[];
+  services_error?: string;
+  logs_error?: string;
+}
+
+export interface CveResult {
+  installed: { name: string; version: string; source?: string; update_available?: string; status?: "vulnerable" | "fixed"; fixed_by_pending_update?: boolean }[];
+  vulnerable: number;
+}
+
+export interface Diagnosis {
+  at: string;
+  hostname: string;
+  metrics: NodeMetrics;
+  findings: string[];
+  failed_services: { name: string; description: string; active: string; sub: string }[] | null;
+  recent_errors: string;
+  top_cpu: { pid: number; name: string; user?: string; cpu: number; mem_bytes: number }[] | null;
+  top_memory: { pid: number; name: string; user?: string; cpu: number; mem_bytes: number }[] | null;
+  listening: { proto: string; address: string; process?: string }[] | null;
+  time_sync?: string;
+  errors?: string[];
+}
+
+export interface Transfer {
+  id: string;
+  source_node_id: string | null;
+  target_node_id: string | null;
+  source_server: string;
+  target_server: string;
+  source_paths: string[];
+  target_path: string;
+  overwrite: boolean;
+  status: "running" | "success" | "failed";
+  stage: "send" | "receive" | "done";
+  reason: string | null;
+  source: string;
+  requested_by: string | null;
+  send_job_id: string | null;
+  receive_job_id: string | null;
+  bytes: number | null;
+  wire_bytes: number | null;
+  files: number | null;
+  error: string | null;
+  started_at: string;
+  finished_at: string | null;
+}
+
+export interface InstalledPackage { name: string; version: string; arch?: string; status?: string; source?: string; vendor?: string }
