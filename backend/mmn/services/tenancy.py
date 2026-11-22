@@ -1,0 +1,110 @@
+"""Customer isolation.
+
+Everything in Stackpilot hangs under a customer (stored in the ``environments`` table; "Home" is
+just a customer). A request or an MCP call can be limited to a set of customers: an MCP token that
+is tied to one or more customers, or the customer picked in the switcher of the web interface.
+
+The limit lives in a context variable. While it is set, every ORM query (SELECT, UPDATE, DELETE,
+``Session.get`` and relationship loads) only sees rows that belong to those customers, through
+``with_loader_criteria``. So a token for customer A can never read, change or even name a node,
+server, UniFi connection, job, alert or deployment of customer B, whatever tool it calls.
+"""
+
+from __future__ import annotations
+
+import contextvars
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
+
+from sqlalchemy import event, select
+from sqlalchemy.orm import ORMExecuteState, Session, with_loader_criteria
+
+_allowed: contextvars.ContextVar[frozenset[str] | None] = contextvars.ContextVar("mmn_customers", default=None)
+
+HEADER = "x-stackpilot-customer"
+
+
+def allowed() -> frozenset[str] | None:
+    """The customer ids the current call may see, or None for all customers."""
+    return _allowed.get()
+
+
+def set_allowed(ids: Iterable[str] | None) -> contextvars.Token:
+    return _allowed.set(frozenset(ids) if ids is not None else None)
+
+
+def reset(token: contextvars.Token) -> None:
+    _allowed.reset(token)
+
+
+@contextmanager
+def limited_to(ids: Iterable[str] | None) -> Iterator[None]:
+    tok = set_allowed(ids)
+    try:
+        yield
+    finally:
+        _allowed.reset(tok)
+
+
+@contextmanager
+def unrestricted() -> Iterator[None]:
+    """For system work that must see everything (never around user input)."""
+    tok = _allowed.set(None)
+    try:
+        yield
+    finally:
+        _allowed.reset(tok)
+
+
+def is_allowed(customer_id: str | None) -> bool:
+    a = _allowed.get()
+    return a is None or (customer_id is not None and customer_id in a)
+
+
+def _criteria(ids: list[str]):
+    from mmn.models import (
+        Alert,
+        ConfigBackup,
+        Deployment,
+        DeploymentRun,
+        Environment,
+        MetricSample,
+        Node,
+        NodeJob,
+        PairingCode,
+        SdnDesign,
+        Transfer,
+        UnifiConnection,
+        UnifiEvent,
+    )
+
+    node_ids = select(Node.id).where(Node.environment_id.in_(ids)).scalar_subquery()
+    conn_ids = select(UnifiConnection.id).where(UnifiConnection.environment_id.in_(ids)).scalar_subquery()
+    dep_ids = (select(Deployment.id).where(Deployment.node_id.in_(
+        select(Node.id).where(Node.environment_id.in_(ids)))).scalar_subquery())
+    return [
+        with_loader_criteria(Environment, Environment.id.in_(ids), include_aliases=True),
+        with_loader_criteria(Node, Node.environment_id.in_(ids), include_aliases=True),
+        with_loader_criteria(PairingCode, PairingCode.environment_id.in_(ids), include_aliases=True),
+        with_loader_criteria(UnifiConnection, UnifiConnection.environment_id.in_(ids), include_aliases=True),
+        with_loader_criteria(UnifiEvent, UnifiEvent.connection_id.in_(conn_ids), include_aliases=True),
+        with_loader_criteria(NodeJob, NodeJob.node_id.in_(node_ids), include_aliases=True),
+        with_loader_criteria(MetricSample, MetricSample.node_id.in_(node_ids), include_aliases=True),
+        with_loader_criteria(Alert, Alert.node_id.in_(node_ids), include_aliases=True),
+        with_loader_criteria(SdnDesign, SdnDesign.node_id.in_(node_ids), include_aliases=True),
+        with_loader_criteria(ConfigBackup, ConfigBackup.node_id.in_(node_ids), include_aliases=True),
+        with_loader_criteria(Deployment, Deployment.node_id.in_(node_ids), include_aliases=True),
+        with_loader_criteria(DeploymentRun, DeploymentRun.deployment_id.in_(dep_ids), include_aliases=True),
+        with_loader_criteria(Transfer, Transfer.source_node_id.in_(node_ids) & Transfer.target_node_id.in_(node_ids),
+                             include_aliases=True),
+    ]
+
+
+@event.listens_for(Session, "do_orm_execute")
+def _limit_to_customers(state: ORMExecuteState) -> None:
+    ids = _allowed.get()
+    if ids is None:
+        return
+    if not (state.is_select or state.is_update or state.is_delete):
+        return
+    state.statement = state.statement.options(*_criteria(sorted(ids)))

@@ -1,4 +1,4 @@
-"""Environments, nodes and the actions on them. Used by the REST API and the MCP server alike."""
+"""Customers (stored as environments), nodes and the actions on them. Used by the REST API and the MCP server alike."""
 
 from __future__ import annotations
 
@@ -43,8 +43,9 @@ def node_out(n: Node, bundled: str | None = None) -> dict[str, Any]:
     upd = n.updates or {}
     m = n.metrics or {}
     return {
-        "id": n.id, "name": n.name, "kind": n.kind, "hostname": n.hostname,
+        "id": n.id, "name": n.name, "kind": n.kind, "role": n.role or "server", "hostname": n.hostname,
         "environment_id": n.environment_id, "environment_name": n.environment.name if n.environment else None,
+        "customer_id": n.environment_id, "customer": n.environment.name if n.environment else None,
         "cluster_name": n.cluster_name, "online": agent_hub.is_online(n.id),
         "agent_version": n.agent_version, "agent_update_available": bool(bundled and n.agent_version
                                                                           and n.agent_version != bundled),
@@ -73,6 +74,12 @@ def env_out(e: Environment, nodes: list[Node] | None = None) -> dict[str, Any]:
     online = sum(1 for n in nodes if agent_hub.is_online(n.id))
     return {"id": e.id, "name": e.name, "kind": e.kind, "description": e.description, "color": e.color,
             "created_at": e.created_at, "node_count": len(nodes), "nodes_online": online,
+            "contact_name": e.contact_name, "contact_email": e.contact_email, "contact_phone": e.contact_phone,
+            "contacts": e.contacts or [], "notes": e.notes, "maintenance_window": e.maintenance_window,
+            "sla": e.sla,
+            "counts": {"proxmox": sum(1 for n in nodes if n.kind == "proxmox"),
+                       "servers": sum(1 for n in nodes if n.kind != "proxmox" and (n.role or "server") == "server"),
+                       "workstations": sum(1 for n in nodes if n.kind != "proxmox" and n.role == "workstation")},
             "updates": sum(len((n.updates or {}).get("packages") or []) for n in nodes),
             "notify_enabled": bool((e.notify or {}).get("enabled")),
             "clusters": sorted({n.cluster_name for n in nodes if n.cluster_name})}
@@ -88,11 +95,36 @@ def job_out(j: NodeJob, with_output: bool = True) -> dict[str, Any]:
 
 
 # ------------------------------------------------------------------ environments
+class ContactIn(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    role: str | None = Field(default=None, max_length=100)
+    email: str | None = Field(default=None, max_length=255)
+    phone: str | None = Field(default=None, max_length=50)
+
+
 class EnvironmentIn(BaseModel):
+    """A customer. ``kind`` home is your own environment, customer is someone you manage for."""
+
     name: str = Field(min_length=1, max_length=100)
     kind: Literal["home", "customer"] = "customer"
     description: str | None = Field(default=None, max_length=500)
     color: str = Field(default="lucht", pattern=r"^[a-z]{3,16}$")
+    contact_name: str | None = Field(default=None, max_length=200)
+    contact_email: str | None = Field(default=None, max_length=255)
+    contact_phone: str | None = Field(default=None, max_length=50)
+    contacts: list[ContactIn] = Field(default_factory=list, max_length=50)
+    notes: str | None = Field(default=None, max_length=20000)
+    maintenance_window: str | None = Field(default=None, max_length=200)
+    sla: str | None = Field(default=None, max_length=200)
+
+    def details(self) -> dict[str, Any]:
+        def clean(v: str | None) -> str | None:
+            return v.strip() or None if v else None
+
+        return {"contact_name": clean(self.contact_name), "contact_email": clean(self.contact_email),
+                "contact_phone": clean(self.contact_phone), "notes": clean(self.notes),
+                "maintenance_window": clean(self.maintenance_window), "sla": clean(self.sla),
+                "contacts": [c.model_dump() for c in self.contacts]}
 
 
 async def list_environments(db: AsyncSession) -> list[Environment]:
@@ -104,14 +136,15 @@ async def get_environment(db: AsyncSession, env_id: str) -> Environment:
     if e is None:
         e = (await db.execute(select(Environment).where(func.lower(Environment.name) == env_id.lower()))).scalar_one_or_none()
     if e is None:
-        raise NodeError("environment not found")
+        raise NodeError("customer not found")
     return e
 
 
 async def create_environment(db: AsyncSession, body: EnvironmentIn) -> Environment:
     if (await db.execute(select(Environment).where(func.lower(Environment.name) == body.name.lower()))).first():
-        raise NodeError("an environment with this name exists already")
-    e = Environment(name=body.name.strip(), kind=body.kind, description=body.description, color=body.color, notify={})
+        raise NodeError("a customer with this name exists already")
+    e = Environment(name=body.name.strip(), kind=body.kind, description=body.description, color=body.color, notify={},
+                    **body.details())
     db.add(e)
     await db.flush()
     return e
@@ -121,19 +154,21 @@ async def update_environment(db: AsyncSession, e: Environment, body: Environment
     other = (await db.execute(select(Environment).where(func.lower(Environment.name) == body.name.lower(),
                                                         Environment.id != e.id))).first()
     if other:
-        raise NodeError("an environment with this name exists already")
+        raise NodeError("a customer with this name exists already")
     e.name, e.kind, e.description, e.color = body.name.strip(), body.kind, body.description, body.color
+    for k, v in body.details().items():
+        setattr(e, k, v)
     await db.flush()
     return e
 
 
 async def delete_environment(db: AsyncSession, e: Environment) -> None:
     if e.nodes:
-        raise NodeError("move or remove the nodes of this environment first")
+        raise NodeError("move or remove the machines of this customer first")
     from mmn.models import UnifiConnection
 
     if (await db.execute(select(UnifiConnection.id).where(UnifiConnection.environment_id == e.id))).first():
-        raise NodeError("remove the UniFi connections of this environment first")
+        raise NodeError("remove the UniFi connections of this customer first")
     await db.delete(e)
     await db.flush()
 
@@ -281,11 +316,12 @@ def normalize_code(code: str) -> str:
 
 
 async def create_pairing_code(db: AsyncSession, env: Environment, *, label: str | None = None,
-                              node_id: str | None = None, hours: int = 24, created_by: str | None = None
-                              ) -> tuple[PairingCode, str]:
+                              node_id: str | None = None, hours: int = 24, created_by: str | None = None,
+                              role: str | None = None) -> tuple[PairingCode, str]:
     code = _new_code()
     pc = PairingCode(environment_id=env.id, code_hash=hash_token(code), code_enc=encrypt_secret(code),
                      label=label, node_id=node_id, created_by=created_by,
+                     role=role if role in ("server", "workstation") else None,
                      expires_at=datetime.now(UTC) + timedelta(hours=max(1, min(hours, 24 * 7))))
     db.add(pc)
     await db.flush()
@@ -294,6 +330,7 @@ async def create_pairing_code(db: AsyncSession, env: Environment, *, label: str 
 
 def pairing_out(pc: PairingCode) -> dict[str, Any]:
     return {"id": pc.id, "environment_id": pc.environment_id, "environment_name": pc.environment.name,
+            "customer_id": pc.environment_id, "customer": pc.environment.name, "role": pc.role,
             "label": pc.label, "node_id": pc.node_id, "created_by": pc.created_by, "created_at": pc.created_at,
             "expires_at": pc.expires_at, "used_at": pc.used_at, "code": decrypt_secret(pc.code_enc)}
 
@@ -357,6 +394,7 @@ async def enroll(db: AsyncSession, body: EnrollIn, remote_ip: str | None,
     node = await db.get(Node, pc.node_id) if pc.node_id else None
     if node is None:
         node = Node(environment_id=pc.environment_id, name=name, kind=body.kind, hostname=body.hostname or None,
+                    role="workstation" if pc.role == "workstation" and body.kind != "proxmox" else "server",
                     capabilities=[], info={}, metrics={}, updates={}, governor={})
         db.add(node)
         await db.flush()
@@ -612,6 +650,7 @@ async def find_packages(pattern: str, environment_id: str | None = None) -> list
     out = []
     for n in nodes:
         row: dict[str, Any] = {"node_id": n.id, "node": n.name, "environment": n.environment.name,
+                               "customer": n.environment.name,
                                "online": agent_hub.is_online(n.id)}
         if row["online"]:
             try:

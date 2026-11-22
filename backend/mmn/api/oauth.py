@@ -155,6 +155,8 @@ class ApproveIn(BaseModel):
     state: str | None = Field(default=None, max_length=2000)
     resource: str | None = Field(default=None, max_length=500)
     scopes: list[str] = Field(default_factory=lambda: ["read"])
+    # None = all customers; otherwise the AI app only sees these customers.
+    customer_ids: list[str] | None = Field(default=None, max_length=500)
     approve: bool = True
 
 
@@ -173,8 +175,12 @@ async def approve(body: ApproveIn, request: Request, db: AsyncSession = Depends(
     scopes = sorted({s for s in body.scopes if s in SCOPES} | {"read"})
     if user.role != Role.admin:
         scopes = [s for s in scopes if s not in ADMIN_ONLY_SCOPES]
+    from mmn.api.tokens import clean_customer_ids
+
+    customer_ids = await clean_customer_ids(db, body.customer_ids)
     code = new_token(32)
     db.add(OAuthCode(code_hash=hash_token(code), client_id=client.client_id, user_id=user.id,
+                     customer_ids=customer_ids,
                      redirect_uri=body.redirect_uri, scopes=scopes, code_challenge=body.code_challenge,
                      resource=body.resource, expires_at=datetime.now(UTC) + CODE_TTL))
     await audit(db, "oauth.approve", user=user, target=client.client_name, ip=client_ip(request), scopes=scopes)
@@ -183,11 +189,12 @@ async def approve(body: ApproveIn, request: Request, db: AsyncSession = Depends(
 
 
 # ------------------------------------------------------------------ token
-def _issue(db: AsyncSession, user_id: str, client: OAuthClient, scopes: list[str]) -> dict:
+def _issue(db: AsyncSession, user_id: str, client: OAuthClient, scopes: list[str],
+           customer_ids: list[str] | None = None) -> dict:
     access, refresh = TOKEN_PREFIX + new_token(32), "mmnr_" + new_token(32)
     now = datetime.now(UTC)
     db.add(ApiToken(user_id=user_id, name=client.client_name, token_hash=hash_token(access), prefix=access[:12],
-                    scopes=scopes, kind="oauth", oauth_client_id=client.client_id,
+                    scopes=scopes, kind="oauth", oauth_client_id=client.client_id, customer_ids=customer_ids,
                     expires_at=now + ACCESS_TTL, refresh_hash=hash_token(refresh),
                     refresh_expires_at=now + REFRESH_TTL))
     return {"access_token": access, "token_type": "Bearer", "expires_in": int(ACCESS_TTL.total_seconds()),
@@ -214,7 +221,7 @@ async def token(request: Request, db: AsyncSession = Depends(get_db), grant_type
         if digest != row.code_challenge:
             await db.commit()
             return _err("invalid_grant", "PKCE verification failed")
-        result = _issue(db, row.user_id, client, row.scopes)
+        result = _issue(db, row.user_id, client, row.scopes, row.customer_ids)
         await audit(db, "oauth.token", source="mcp", target=client.client_name, ip=client_ip(request))
         await db.commit()
         return JSONResponse(result, headers={"Cache-Control": "no-store"})
@@ -226,7 +233,8 @@ async def token(request: Request, db: AsyncSession = Depends(get_db), grant_type
                 or not old.user.is_active):
             return _err("invalid_grant", "refresh token is invalid")
         old.revoked, old.refresh_hash = True, None
-        result = _issue(db, old.user_id, client, list(old.scopes))
+        result = _issue(db, old.user_id, client, list(old.scopes),
+                        list(old.customer_ids) if old.customer_ids is not None else None)
         await db.commit()
         return JSONResponse(result, headers={"Cache-Control": "no-store"})
     return _err("unsupported_grant_type", grant_type)

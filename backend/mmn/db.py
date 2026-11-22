@@ -41,3 +41,7 @@ async def dispose_engine() -> None:
 async def get_db() -> AsyncIterator[AsyncSession]:
     async with sessionmaker()() as session:
         yield session
+
+
+# Customer isolation: registers the ORM filter for calls limited to some customers.
+from mmn.services import tenancy as _tenancy  # noqa: E402,F401

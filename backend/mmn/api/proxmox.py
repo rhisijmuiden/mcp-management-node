@@ -164,6 +164,7 @@ async def push_notify(env_id: str, request: Request, db: AsyncSession = Depends(
 # ------------------------------------------------------------------ pairing / agent settings
 class PairingIn(BaseModel):
     environment_id: str
+    role: Literal["server", "workstation"] | None = None
     label: str | None = Field(default=None, max_length=100)
     node_id: str | None = None
     hours: int = Field(default=24, ge=1, le=168)
@@ -222,7 +223,7 @@ async def create_pairing(body: PairingIn, request: Request, db: AsyncSession = D
         if body.node_id:
             await nodes.get_node(db, body.node_id)
         pc, code = await nodes.create_pairing_code(db, env, label=body.label, node_id=body.node_id,
-                                                   hours=body.hours, created_by=admin.username)
+                                                   hours=body.hours, created_by=admin.username, role=body.role)
     except nodes.NodeError as ex:
         raise _err(ex) from ex
     await audit(db, "pairing.create", user=admin, target=env.name, ip=client_ip(request), label=body.label)
@@ -266,6 +267,7 @@ async def get_node(node_id: str, db: AsyncSession = Depends(get_db), _: User = D
 class NodePatch(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100, pattern=r"^[A-Za-z0-9._ -]+$")
     environment_id: str | None = None
+    role: Literal["server", "workstation"] | None = None
 
 
 @router.patch("/api/nodes/{node_id}")
@@ -280,6 +282,8 @@ async def patch_node(node_id: str, body: NodePatch, request: Request, db: AsyncS
         except nodes.NodeError as ex:
             raise _err(ex) from ex
         n.environment_id, n.notify_hash = env.id, None
+    if body.role and n.kind != "proxmox":
+        n.role = body.role
     await audit(db, "node.update", user=admin, target=n.name, ip=client_ip(request))
     await db.commit()
     await db.refresh(n)

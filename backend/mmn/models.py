@@ -88,6 +88,8 @@ class ApiToken(Base):
     refresh_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # What the AI client said about itself in the MCP "initialize" call, and its User-Agent.
     last_client: Mapped[dict] = mapped_column(JsonType, default=dict)
+    # Customers this token may see (environment ids). None = all customers.
+    customer_ids: Mapped[list[str] | None] = mapped_column(JsonType, nullable=True, default=None)
 
     user: Mapped[User] = relationship(lazy="joined")
 
@@ -114,6 +116,7 @@ class OAuthCode(Base):
     scopes: Mapped[list[str]] = mapped_column(JsonType, default=list)
     code_challenge: Mapped[str] = mapped_column(String(128))
     resource: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    customer_ids: Mapped[list[str] | None] = mapped_column(JsonType, nullable=True, default=None)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
@@ -193,7 +196,9 @@ class BackupRun(Base):
 
 # ------------------------------------------------------------------ phase 2: environments and nodes
 class Environment(Base):
-    """A group of nodes: "Home", or one per customer. Notification settings live here."""
+    """A customer ("Home" is a customer too). Everything hangs under it: Proxmox VE nodes, servers,
+    workstations and UniFi connections. Stored as "environments" for compatibility; the interface
+    and the MCP tools call it a customer. Notification settings live here."""
 
     __tablename__ = "environments"
 
@@ -205,6 +210,15 @@ class Environment(Base):
     # Proxmox VE notification settings pushed to every node (password encrypted in "password_enc").
     notify: Mapped[dict] = mapped_column(JsonType, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # Phase 7: customer details.
+    contact_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    contact_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    contact_phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    contacts: Mapped[list] = mapped_column(JsonType, default=list)  # [{name, role, email, phone}]
+    # Shown to the AI (MCP resource and get_customer_overview): "never restart X during office hours".
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    maintenance_window: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    sla: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     nodes: Mapped[list[Node]] = relationship(back_populates="environment", lazy="selectin")
 
@@ -218,6 +232,7 @@ class Node(Base):
     environment_id: Mapped[str] = mapped_column(ForeignKey("environments.id", ondelete="RESTRICT"), index=True)
     name: Mapped[str] = mapped_column(String(100))
     kind: Mapped[str] = mapped_column(String(16), default="proxmox")  # proxmox | linux | windows
+    role: Mapped[str] = mapped_column(String(16), default="server")  # server | workstation (linux/windows)
     hostname: Mapped[str | None] = mapped_column(String(255), nullable=True)
     cluster_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     agent_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -262,6 +277,7 @@ class PairingCode(Base):
     label: Mapped[str | None] = mapped_column(String(100), nullable=True)
     # Pair again as an existing node (e.g. after a reinstall) instead of creating a new one.
     node_id: Mapped[str | None] = mapped_column(ForeignKey("nodes.id", ondelete="CASCADE"), nullable=True)
+    role: Mapped[str | None] = mapped_column(String(16), nullable=True)  # server | workstation
     created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

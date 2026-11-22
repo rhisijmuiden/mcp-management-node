@@ -12,6 +12,7 @@ from mmn.api import (
     auth,
     backups,
     cluster,
+    customers,
     deploy,
     guests,
     library,
@@ -31,6 +32,7 @@ from mmn.config import get_settings
 from mmn.db import dispose_engine
 from mmn.mcp_server import build_mcp_app, mcp
 from mmn.security import load_or_create_secret_key
+from mmn.services import tenancy
 from mmn.services.backup.engine import maintenance
 from mmn.version import get_build_info
 
@@ -124,6 +126,21 @@ def create_app() -> FastAPI:
             return JSONResponse({"detail": "maintenance", "reason": maintenance["reason"]}, status_code=503)
         return await call_next(request)
 
+    @app.middleware("http")
+    async def customer_filter(request: Request, call_next):
+        """The customer picked in the switcher of the web interface limits every query of the request."""
+        cid = request.headers.get(tenancy.HEADER, "").strip()
+        path = request.url.path
+        if not cid or not path.startswith("/api/") or path in ("/api/customers", "/api/environments") \
+                or path.startswith(("/api/auth/", "/api/agent/", "/api/tokens", "/api/oauth/", "/api/users",
+                                    "/api/system/")):
+            return await call_next(request)
+        tok = tenancy.set_allowed([cid[:64]])
+        try:
+            return await call_next(request)
+        finally:
+            tenancy.reset(tok)
+
     @app.exception_handler(RequestValidationError)
     async def validation_handler(_: Request, exc: RequestValidationError):
         errors = [{"field": ".".join(str(p) for p in e["loc"][1:]), "msg": e["msg"]} for e in exc.errors()]
@@ -139,7 +156,7 @@ def create_app() -> FastAPI:
 
     for r in (auth.router, users.router, tokens.router, settings.router, backups.router, system.router,
               oauth.router, ws.router, agent.router, proxmox.router, guests.router, library.router, network.router,
-              cluster.router, monitoring.router, deploy.router, servers.router, unifi.router):
+              cluster.router, monitoring.router, deploy.router, servers.router, unifi.router, customers.router):
         app.include_router(r)
     app.mount("/mcp", mcp_app)
     return app

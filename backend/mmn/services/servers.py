@@ -69,8 +69,12 @@ def server_summary(n: Node) -> dict[str, Any]:
     return d
 
 
-async def overview(db: AsyncSession, environment_id: str | None = None, os_filter: str | None = None) -> dict[str, Any]:
+async def overview(db: AsyncSession, environment_id: str | None = None, os_filter: str | None = None,
+                   role: str | None = None) -> dict[str, Any]:
+    """Standalone Linux/Windows machines; ``role`` server or workstation limits to one of the two."""
     q = select(Node).where(Node.kind.in_(SERVER_KINDS)).order_by(Node.name)
+    if role in ("server", "workstation"):
+        q = q.where(Node.role == role)
     if environment_id:
         q = q.where(Node.environment_id == environment_id)
     if os_filter in SERVER_KINDS:
@@ -82,6 +86,7 @@ async def overview(db: AsyncSession, environment_id: str | None = None, os_filte
             "servers": len(rows), "online": sum(1 for r in rows if r["online"]),
             "linux": sum(1 for r in rows if r["kind"] == "linux"), "windows": sum(1 for r in rows if r["kind"] == "windows"),
             "attention": sum(1 for r in rows if r["attention"]),
+            "workstations": sum(1 for r in rows if r["role"] == "workstation"),
             "updates": sum(r["updates"]["count"] for r in rows),
             "servers_with_updates": sum(1 for r in rows if r["updates"]["count"]),
             "failed_services": sum(r["failed_services"] or 0 for r in rows),

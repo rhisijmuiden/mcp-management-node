@@ -24,8 +24,9 @@ OsFilter = Literal["linux", "windows", "proxmox"]
 
 @router.get("/api/servers/overview")
 async def overview(environment_id: str | None = None, os: Literal["linux", "windows"] | None = None,
+                   role: Literal["server", "workstation"] | None = None,
                    db: AsyncSession = Depends(get_db), _: User = Depends(current_user)):
-    return await servers.overview(db, environment_id, os)
+    return await servers.overview(db, environment_id, os, role)
 
 
 class TargetsIn(BaseModel):
