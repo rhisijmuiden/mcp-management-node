@@ -19,6 +19,23 @@ func TestBuildArgs(t *testing.T) {
 	if _, err := buildArgs(map[string]any{"--evil": "x"}); err == nil {
 		t.Fatal("bad key accepted")
 	}
+	for _, bad := range []string{"Force", "a b", "a=b", "-x", ""} {
+		if _, err := buildArgs(map[string]any{bad: "x"}); err == nil {
+			t.Fatalf("bad key %q accepted", bad)
+		}
+	}
+}
+
+// Graceful shutdown of a VM sends forceStop (camelCase in the Proxmox VE API).
+func TestBuildArgsCamelCase(t *testing.T) {
+	got, err := buildArgs(map[string]any{"forceStop": true, "timeout": float64(180), "keepActive": false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "--forceStop 1 --keepActive 0 --timeout 180"
+	if strings.Join(got, " ") != want {
+		t.Fatalf("got %q", strings.Join(got, " "))
+	}
 }
 
 func TestAPIValidation(t *testing.T) {

@@ -17,8 +17,9 @@ import (
 // (it checks permissions and writes the audit log); the agent only validates the shape.
 
 var (
-	pathRE   = regexp.MustCompile(`^/[A-Za-z0-9/_.:@%=+-]{0,400}$`)
-	argKeyRE = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
+	pathRE = regexp.MustCompile(`^/[A-Za-z0-9/_.:@%=+-]{0,400}$`)
+	// Proxmox VE uses some camelCase names (forceStop, keepActive, ...), so capitals are allowed after the first letter.
+	argKeyRE = regexp.MustCompile(`^[a-z][A-Za-z0-9_-]{0,63}$`)
 )
 
 func methodOK(m string) bool {

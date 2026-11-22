@@ -1,6 +1,6 @@
 [project]
 name = "mcp-management-node"
-version = "0.6.1"  # informational; the app reads mmn/VERSION or ../VERSION at runtime
+version = "0.6.2"  # informational; the app reads mmn/VERSION or ../VERSION at runtime
 description = "MCP Management Node: one modern interface for Proxmox VE environments and managed servers, with an MCP endpoint for Claude"
 requires-python = ">=3.13"
 dependencies = [
