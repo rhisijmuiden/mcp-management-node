@@ -82,7 +82,7 @@ permissions you tick (read, backups, restore, updates, settings, nodes, node upd
 destructive tools require confirmation of the exact target, commands and service actions need a stated reason, and
 every call is recorded in the **AI activity log**. Through the agents an assistant can read logs and the journal,
 check and restart services, find which servers have a package (e.g. nginx for a CVE), read files, run commands,
-install updates and reboot nodes. **Help → What Claude can do on your servers** lists everything. Step-by-step instructions are in the app under
+install updates and reboot nodes. **Help → What the MCP can do** lists everything. Step-by-step instructions are in the app under
 **Help → Connect Claude, ChatGPT or Copilot**.
 
 ## Backups

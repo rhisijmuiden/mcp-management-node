@@ -8,7 +8,7 @@ import { AiActivityPage, AuditPage, ConnectionsPage, TokensPage } from "@/pages/
 import { ConsentPage, ForgotPage, LoginPage, ResetPage, SetupPage } from "@/pages/AuthPages";
 import { BackupsPage } from "@/pages/Backups";
 import { Dashboard } from "@/pages/Dashboard";
-import { CapabilitiesHelpPage, HelpPage, McpHelpPage, NodesHelpPage } from "@/pages/Help";
+import { HelpPage, McpCapabilitiesPage, McpHelpPage, NodesHelpPage } from "@/pages/Help";
 import { NodeDetailPage } from "@/pages/Node";
 import { EnvironmentDetailPage, EnvironmentsPage, NodesPage, ProxmoxOverviewPage, UpdatesPage } from "@/pages/Proxmox";
 import { GeneralPage, MailPage, NotificationsPage, WebServerPage } from "@/pages/Settings";
@@ -40,7 +40,8 @@ export default function App() {
         <Route path="ai/activity" element={<RequireAuth admin><AiActivityPage /></RequireAuth>} />
         <Route path="help" element={<HelpPage />} />
         <Route path="help/mcp" element={<McpHelpPage />} />
-        <Route path="help/ai-admin" element={<CapabilitiesHelpPage />} />
+        <Route path="help/capabilities" element={<McpCapabilitiesPage />} />
+        <Route path="help/ai-admin" element={<Navigate to="/help/capabilities" replace />} />
         <Route path="help/nodes" element={<NodesHelpPage />} />
         <Route path="proxmox" element={<ProxmoxOverviewPage />} />
         <Route path="proxmox/environments" element={<EnvironmentsPage />} />

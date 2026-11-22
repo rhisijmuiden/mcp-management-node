@@ -1,11 +1,11 @@
 import * as Tabs from "@radix-ui/react-tabs";
-import { ArrowUpCircle, BookOpen, Bot, Cpu, DatabaseBackup, FileText, Globe, Mail, Network, Plug, Rocket, ScrollText, Server, ShieldCheck, Terminal } from "lucide-react";
+import { ArrowUpCircle, BookOpen, Bot, Boxes, DatabaseBackup, Globe, Mail, MessageSquare, Network, Plug, Rocket, ScrollText, Server, ShieldCheck, Sparkles, Terminal } from "lucide-react";
 import type { ReactNode } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { Link } from "react-router";
 import { CodeBlock, CopyButton } from "@/components/CopyButton";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
-import { Alert, PageHeader } from "@/components/ui/misc";
+import { Alert, Badge, PageHeader } from "@/components/ui/misc";
 import { appUrl } from "@/lib/utils";
 
 function Steps({ items }: { items: ReactNode[] }) {
@@ -27,8 +27,8 @@ const c = <code className="mono rounded bg-sunken px-1 py-0.5 text-[12.5px]" />;
 export function HelpPage() {
   const { t } = useTranslation();
   const topics = [
+    { icon: <Sparkles />, title: t("help.topic_caps"), text: t("help.topic_caps_text"), to: "/help/capabilities" },
     { icon: <Bot />, title: t("help.topic_mcp"), text: t("help.topic_mcp_text"), to: "/help/mcp" },
-    { icon: <Terminal />, title: t("help.topic_ai_admin"), text: t("help.topic_ai_admin_text"), to: "/help/ai-admin" },
     { icon: <Plug />, title: t("help.topic_nodes"), text: t("help.topic_nodes_text"), to: "/help/nodes" },
     { icon: <DatabaseBackup />, title: t("help.topic_backups"), text: t("help.topic_backups_text"), to: "/admin/backups" },
     { icon: <Rocket />, title: t("help.topic_updates"), text: t("help.topic_updates_text") },
@@ -91,6 +91,10 @@ export function McpHelpPage() {
             </CardBody>
           </Card>
           {isLocal && <Alert tone="warning" title={t("mcphelp.local_title")}>{t("mcphelp.local_text")}</Alert>}
+          <Alert tone="info" title={t("help.topic_caps")}>
+            {t("help.topic_caps_text")}{" "}
+            <Link to="/help/capabilities" className="font-semibold text-accent-text hover:underline">{t("mcpcaps.read_more")} →</Link>
+          </Alert>
 
           <Tabs.Root defaultValue="claude">
             <Tabs.List className="mb-4 inline-flex flex-wrap rounded-md border border-line bg-sunken p-0.5">
@@ -218,67 +222,133 @@ export function McpHelpPage() {
   );
 }
 
-const CAPS = [
-  { key: "status", icon: <Server />, scope: "read" },
-  { key: "logs", icon: <ScrollText />, scope: "logs" },
-  { key: "packages", icon: <ShieldCheck />, scope: "logs" },
-  { key: "files", icon: <FileText />, scope: "logs" },
-  { key: "services", icon: <Cpu />, scope: "services" },
-  { key: "exec", icon: <Terminal />, scope: "exec" },
-  { key: "updates", icon: <ArrowUpCircle />, scope: "node_updates" },
-  { key: "config", icon: <Mail />, scope: "nodes" },
-  { key: "app", icon: <DatabaseBackup />, scope: "backups" },
+type Cap = { tool: string; scope: "read" | "backups" | "restore" | "updates" | "settings" | "nodes" | "node_updates" | "logs" | "services" | "exec" };
+const NOW: { key: string; icon: ReactNode; tools: Cap[] }[] = [
+  { key: "system", icon: <Rocket />, tools: [
+    { tool: "get_system_info", scope: "read" }, { tool: "check_for_updates", scope: "read" }, { tool: "get_update_status", scope: "read" },
+    { tool: "set_update_channel", scope: "updates" }, { tool: "install_update", scope: "updates" },
+  ] },
+  { key: "backups", icon: <DatabaseBackup />, tools: [
+    { tool: "list_backup_targets", scope: "read" }, { tool: "list_backup_runs", scope: "read" }, { tool: "list_remote_backups", scope: "read" },
+    { tool: "run_backup", scope: "backups" }, { tool: "restore_backup", scope: "restore" },
+  ] },
+  { key: "mail", icon: <Mail />, tools: [
+    { tool: "get_mail_settings", scope: "read" }, { tool: "update_mail_settings", scope: "settings" }, { tool: "send_test_mail", scope: "settings" },
+  ] },
+  { key: "audit", icon: <ScrollText />, tools: [{ tool: "get_audit_log", scope: "read" }] },
+  { key: "proxmox", icon: <Server />, tools: [
+    { tool: "get_overview", scope: "read" }, { tool: "list_environments", scope: "read" }, { tool: "list_nodes", scope: "read" },
+    { tool: "get_node", scope: "read" }, { tool: "create_environment", scope: "nodes" }, { tool: "create_pairing_code", scope: "nodes" },
+    { tool: "set_cpu_governor", scope: "nodes" }, { tool: "get_environment_notifications", scope: "read" },
+    { tool: "update_environment_notifications", scope: "nodes" }, { tool: "send_node_test_notification", scope: "nodes" },
+    { tool: "update_node_agent", scope: "nodes" },
+  ] },
+  { key: "node_updates", icon: <ArrowUpCircle />, tools: [
+    { tool: "refresh_node_updates", scope: "read" }, { tool: "get_node_job", scope: "read" },
+    { tool: "install_node_updates", scope: "node_updates" }, { tool: "reboot_node", scope: "node_updates" },
+  ] },
+  { key: "servers", icon: <Terminal />, tools: [
+    { tool: "read_logs", scope: "logs" }, { tool: "find_packages", scope: "logs" }, { tool: "read_file", scope: "logs" },
+    { tool: "list_services", scope: "logs" }, { tool: "get_service_status", scope: "logs" },
+    { tool: "manage_service", scope: "services" }, { tool: "run_command", scope: "exec" },
+  ] },
+];
+const NEXT: { key: string; icon: ReactNode; items: number }[] = [
+  { key: "guests", icon: <Boxes />, items: 4 },
+  { key: "servers", icon: <Terminal />, items: 3 },
+  { key: "network", icon: <Network />, items: 3 },
 ];
 
-export function CapabilitiesHelpPage() {
+export function McpCapabilitiesPage() {
   const { t } = useTranslation();
   return (
     <>
-      <PageHeader title={t("caps.title")} description={t("caps.subtitle")} />
+      <PageHeader title={t("mcpcaps.title")} description={t("mcpcaps.subtitle")} />
       <div className="grid gap-6 xl:grid-cols-3">
         <div className="space-y-6 xl:col-span-2">
-          <Card className="bg-nacht text-white">
-            <CardBody className="space-y-3 py-5 text-sm leading-6 text-white/85">
-              <div className="display text-xl text-white">{t("caps.idea_title")}</div>
-              <p>{t("caps.idea_1")}</p>
-              <p>{t("caps.idea_2")}</p>
+          <Card className="bg-nacht text-white dark:bg-raised">
+            <CardBody className="space-y-3 py-6">
+              <div className="display text-xl">{t("mcpcaps.idea_title")}</div>
+              <p className="text-sm leading-6 text-white/80 dark:text-muted">{t("mcpcaps.idea_1")}</p>
+              <p className="text-sm leading-6 text-white/80 dark:text-muted">{t("mcpcaps.idea_2")}</p>
             </CardBody>
           </Card>
-          <div className="grid gap-4 md:grid-cols-2">
-            {CAPS.map((cp) => (
-              <Card key={cp.key}>
-                <CardHeader icon={cp.icon} title={t(`caps.${cp.key}_title`)} action={<code className="mono rounded bg-sunken px-1.5 py-0.5 text-[11px]">{cp.scope}</code>} />
-                <CardBody className="space-y-2 text-sm">
-                  <p className="text-muted">{t(`caps.${cp.key}_text`)}</p>
-                  <p className="rounded-md bg-sunken px-3 py-2 italic">“{t(`caps.${cp.key}_example`)}”</p>
-                </CardBody>
-              </Card>
-            ))}
+
+          <div>
+            <div className="mb-3 flex items-center gap-2">
+              <h2 className="display text-lg">{t("mcpcaps.now_title")}</h2>
+              <Badge tone="online" dot>{t("mcpcaps.available")}</Badge>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              {NOW.map((g) => (
+                <Card key={g.key}>
+                  <CardHeader icon={g.icon} title={t(`mcpcaps.now_${g.key}`)} description={t(`mcpcaps.now_${g.key}_desc`)} />
+                  <CardBody className="space-y-2">
+                    {g.tools.map((c) => (
+                      <div key={c.tool} className="flex items-center justify-between gap-3 text-sm">
+                        <code className="mono truncate text-[12.5px]">{c.tool}</code>
+                        <Badge tone={c.scope === "read" ? "neutral" : c.scope === "restore" || c.scope === "exec" ? "offline" : "accent"}>{t(`scopes.${c.scope}`)}</Badge>
+                      </div>
+                    ))}
+                  </CardBody>
+                </Card>
+              ))}
+            </div>
           </div>
-          <Card>
-            <CardHeader icon={<Network />} title={t("caps.soon_title")} />
-            <CardBody className="text-sm text-muted">{t("caps.soon_text")}</CardBody>
-          </Card>
+
+          <div>
+            <div className="mb-3 flex items-center gap-2">
+              <h2 className="display text-lg">{t("mcpcaps.next_title")}</h2>
+              <Badge tone="info">{t("nav.soon")}</Badge>
+            </div>
+            <p className="mb-4 text-sm text-muted">{t("mcpcaps.next_intro")}</p>
+            <div className="grid gap-4 md:grid-cols-2">
+              {NEXT.map((g) => (
+                <Card key={g.key}>
+                  <CardHeader icon={g.icon} title={t(`mcpcaps.next_${g.key}`)} description={t(`mcpcaps.next_${g.key}_when`)} />
+                  <CardBody>
+                    <ul className="space-y-2 text-sm leading-6">
+                      {Array.from({ length: g.items }, (_, i) => (
+                        <li key={i} className="flex gap-2">
+                          <span className="mt-2 size-1.5 shrink-0 rounded-full bg-koraal" />
+                          <span>{t(`mcpcaps.next_${g.key}_${i + 1}`)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </CardBody>
+                </Card>
+              ))}
+            </div>
+          </div>
         </div>
+
         <div className="space-y-6">
           <Card>
-            <CardHeader icon={<ShieldCheck />} title={t("caps.safety_title")} />
+            <CardHeader icon={<MessageSquare />} title={t("mcpcaps.ask_title")} description={t("mcpcaps.ask_desc")} />
+            <CardBody className="space-y-2">
+              {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                <div key={i} className="rounded-md bg-sunken px-3 py-2 text-sm">
+                  <div className="italic">“{t(`mcpcaps.ask_${i}`)}”</div>
+                  <div className="mt-1 text-xs text-muted">{t(i <= 7 ? "mcpcaps.ask_now" : "mcpcaps.ask_later")}</div>
+                </div>
+              ))}
+            </CardBody>
+          </Card>
+          <Card>
+            <CardHeader icon={<ShieldCheck />} title={t("mcpcaps.trail_title")} />
             <CardBody>
-              <ul className="space-y-2 text-sm">
-                {[1, 2, 3, 4, 5].map((i) => <li key={i} className="flex gap-2"><span className="mt-2 size-1.5 shrink-0 rounded-full bg-koraal" />{t(`caps.safety_${i}`)}</li>)}
+              <ul className="space-y-2 text-sm leading-6">
+                {[1, 2, 3, 4].map((i) => (
+                  <li key={i} className="flex gap-2">
+                    <span className="mt-2 size-1.5 shrink-0 rounded-full bg-koraal" />
+                    <span>{t(`mcpcaps.trail_${i}`)}</span>
+                  </li>
+                ))}
               </ul>
-              <div className="mt-4 flex flex-wrap gap-3 text-sm font-semibold">
+              <div className="mt-4 flex flex-wrap gap-4 text-sm font-semibold">
                 <Link to="/ai/activity" className="text-accent-text hover:underline">{t("nav.ai_activity")} →</Link>
                 <Link to="/help/mcp" className="text-accent-text hover:underline">{t("help.topic_mcp")} →</Link>
               </div>
-            </CardBody>
-          </Card>
-          <Card>
-            <CardHeader title={t("caps.scopes_title")} />
-            <CardBody className="space-y-2 text-sm">
-              {["read", "logs", "services", "exec", "node_updates", "nodes"].map((s) => (
-                <div key={s} className="flex gap-2"><code className="mono h-fit rounded bg-sunken px-1.5 py-0.5 text-[11px]">{s}</code><span className="text-muted">{t(`caps.scope_${s}`)}</span></div>
-              ))}
             </CardBody>
           </Card>
         </div>
