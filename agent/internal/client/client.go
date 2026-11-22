@@ -29,7 +29,9 @@ import (
 	"github.com/rhisijmuiden/mcp-management-node/agent/internal/ops"
 	"github.com/rhisijmuiden/mcp-management-node/agent/internal/proto"
 	"github.com/rhisijmuiden/mcp-management-node/agent/internal/pve"
+	"github.com/rhisijmuiden/mcp-management-node/agent/internal/script"
 	"github.com/rhisijmuiden/mcp-management-node/agent/internal/selfupdate"
+	"github.com/rhisijmuiden/mcp-management-node/agent/internal/stream"
 	"github.com/rhisijmuiden/mcp-management-node/agent/internal/sysinfo"
 	"github.com/rhisijmuiden/mcp-management-node/agent/internal/tlsutil"
 )
@@ -38,6 +40,7 @@ var (
 	MetricsInterval = 15 * time.Second
 	UpdatesInterval = 6 * time.Hour
 	ClusterInterval = 5 * time.Minute
+	GuestsInterval  = 20 * time.Second
 )
 
 type Agent struct {
@@ -130,12 +133,7 @@ func (a *Agent) applyStoredGovernor() {
 func (a *Agent) session(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	hdr := http.Header{}
-	hdr.Set("User-Agent", "mmn-agent/"+a.Version)
-	c, _, err := websocket.Dial(ctx, "wss://"+a.cfg.Server+"/agent/ws", &websocket.DialOptions{
-		HTTPClient: &http.Client{Timeout: 30 * time.Second, Transport: &http.Transport{TLSClientConfig: a.tls, Proxy: http.ProxyFromEnvironment}},
-		HTTPHeader: hdr,
-	})
+	c, err := a.dial(ctx, "/agent/ws")
 	if err != nil {
 		return err
 	}
@@ -219,6 +217,17 @@ func (a *Agent) session(ctx context.Context) error {
 	return err
 }
 
+// dial opens a WebSocket to the app with the agent's client certificate.
+func (a *Agent) dial(ctx context.Context, path string) (*websocket.Conn, error) {
+	hdr := http.Header{}
+	hdr.Set("User-Agent", "mmn-agent/"+a.Version)
+	c, _, err := websocket.Dial(ctx, "wss://"+a.cfg.Server+path, &websocket.DialOptions{
+		HTTPClient: &http.Client{Timeout: 30 * time.Second, Transport: &http.Transport{TLSClientConfig: a.tls, Proxy: http.ProxyFromEnvironment}},
+		HTTPHeader: hdr,
+	})
+	return c, err
+}
+
 func (a *Agent) queuePending(m proto.Envelope) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -255,8 +264,9 @@ func (a *Agent) capabilities() []string {
 		if _, err := governor.Get(); err == nil {
 			caps = append(caps, "governor")
 		}
+		caps = append(caps, "terminal", "scripts")
 		if pve.Available() {
-			caps = append(caps, "pve", "pve-notifications")
+			caps = append(caps, "pve", "pve-notifications", "guests", "console", "pve-api")
 		}
 	}
 	return caps
@@ -309,14 +319,19 @@ func (a *Agent) tickers(ctx context.Context, out chan<- proto.Envelope) {
 	}
 	mt := time.NewTicker(MetricsInterval)
 	ct := time.NewTicker(ClusterInterval)
+	gt := time.NewTicker(GuestsInterval)
 	defer mt.Stop()
 	defer ct.Stop()
+	defer gt.Stop()
+	a.sendGuests(ctx)
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-mt.C:
 			a.send(proto.Envelope{Type: "metrics", Data: a.metrics(ctx)})
+		case <-gt.C:
+			a.sendGuests(ctx)
 		case <-ct.C:
 			if pve.Available() {
 				if cl, err := pve.ClusterStatus(ctx); err == nil {
@@ -325,6 +340,19 @@ func (a *Agent) tickers(ctx context.Context, out chan<- proto.Envelope) {
 			}
 		}
 	}
+}
+
+func (a *Agent) sendGuests(ctx context.Context) *pve.GuestList {
+	if !pve.Available() {
+		return nil
+	}
+	gl, err := pve.ListGuests(ctx)
+	if err != nil {
+		log.Printf("guest list: %v", err)
+		return nil
+	}
+	a.send(proto.Envelope{Type: "guests", Data: gl})
+	return gl
 }
 
 func (a *Agent) checkUpdates(ctx context.Context, refresh bool) proto.Updates {
@@ -487,6 +515,95 @@ func (a *Agent) handle(ctx context.Context, m proto.Envelope) {
 		_ = json.Unmarshal(m.Params, &q)
 		r, err := ops.ReadFile(q.Path, q.MaxBytes, q.Tail)
 		a.reply(m, r, err)
+	case "guests.list":
+		gl := a.sendGuests(ctx)
+		if gl == nil {
+			a.reply(m, nil, errors.New("guests are only available on a Proxmox VE node"))
+			return
+		}
+		a.reply(m, gl, nil)
+	case "pve.api":
+		var q struct {
+			Method  string         `json:"method"`
+			Path    string         `json:"path"`
+			Args    map[string]any `json:"args"`
+			Timeout int            `json:"timeout"`
+		}
+		if err := json.Unmarshal(m.Params, &q); err != nil {
+			a.reply(m, nil, err)
+			return
+		}
+		out, err := pve.API(ctx, q.Method, q.Path, q.Args, time.Duration(q.Timeout)*time.Second)
+		a.reply(m, out, err)
+	case "pve.task":
+		var q struct {
+			Method string         `json:"method"`
+			Path   string         `json:"path"`
+			Args   map[string]any `json:"args"`
+		}
+		if err := json.Unmarshal(m.Params, &q); err != nil {
+			a.reply(m, nil, err)
+			return
+		}
+		a.reply(m, map[string]any{"started": true}, nil)
+		a.job(str("job_id"), func(line func(string)) (any, error) {
+			res, err := pve.RunTask(context.Background(), q.Method, q.Path, q.Args, line)
+			a.sendGuests(context.Background())
+			return res, err
+		})
+	case "script.run":
+		var q struct {
+			Script  string            `json:"script"`
+			Env     map[string]string `json:"env"`
+			Timeout int               `json:"timeout"`
+		}
+		if err := json.Unmarshal(m.Params, &q); err != nil {
+			a.reply(m, nil, err)
+			return
+		}
+		a.reply(m, map[string]any{"started": true}, nil)
+		a.job(str("job_id"), func(line func(string)) (any, error) {
+			r, err := script.Run(context.Background(), q.Script, q.Env, time.Duration(q.Timeout)*time.Second, line)
+			a.sendGuests(context.Background())
+			return r, err
+		})
+	case "file.fetch":
+		var q fetchRequest
+		if err := json.Unmarshal(m.Params, &q); err != nil {
+			a.reply(m, nil, err)
+			return
+		}
+		if strings.HasPrefix(q.URL, "/") {
+			q.URL = "https://" + a.cfg.Server + q.URL
+		}
+		a.reply(m, map[string]any{"started": true}, nil)
+		a.job(str("job_id"), func(line func(string)) (any, error) {
+			return fetchFile(context.Background(), a.http, q, line)
+		})
+	case "stream.open":
+		var q stream.Request
+		if err := json.Unmarshal(m.Params, &q); err != nil {
+			a.reply(m, nil, err)
+			return
+		}
+		prep, err := stream.Prepare(ctx, &q)
+		if err != nil {
+			a.reply(m, nil, err)
+			return
+		}
+		a.reply(m, prep, nil)
+		go func() {
+			sctx, cancel := context.WithTimeout(context.Background(), 12*time.Hour)
+			defer cancel()
+			c, err := a.dial(sctx, "/agent/stream/"+q.Session)
+			if err != nil {
+				log.Printf("stream %s: %v", q.Session, err)
+				return
+			}
+			if err := stream.Serve(sctx, c, &q, prep); err != nil {
+				log.Printf("stream %s ended: %v", q.Session, err)
+			}
+		}()
 	case "reboot":
 		if runtime.GOOS != "linux" {
 			a.reply(m, nil, errors.New("reboot is not supported on this system yet"))

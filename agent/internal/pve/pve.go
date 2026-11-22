@@ -29,7 +29,8 @@ var Pvesh = func(ctx context.Context, args ...string) ([]byte, error) {
 	return out, nil
 }
 
-func Available() bool {
+// Available reports whether pvesh exists; replaced in tests.
+var Available = func() bool {
 	_, err := exec.LookPath("pvesh")
 	return err == nil
 }

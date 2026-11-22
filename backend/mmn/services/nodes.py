@@ -29,6 +29,9 @@ CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 CODE_RE = re.compile(r"^[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}$")
 
 
+SECRET_ARGS = {"password", "cipassword", "ssh-public-keys", "sshkeys"}
+
+
 class NodeError(Exception):
     """A refusal with a message for the user (HTTP 400/409, MCP error)."""
 
@@ -399,17 +402,38 @@ async def refresh_updates(node_id: str) -> dict[str, Any]:
     return res or {}
 
 
-async def start_job(node_id: str, kind: str, method: str, params: dict[str, Any], *, source: str,
-                    requested_by: str | None) -> NodeJob:
+async def create_job(node_id: str, kind: str, params: dict[str, Any], *, source: str, requested_by: str | None,
+                     exclusive: bool = True, busy_key: str | None = None) -> NodeJob:
+    """Store a running job. ``exclusive`` refuses a second running job of the same kind on the node;
+    ``busy_key`` (e.g. ``guest:101``) refuses a second job for the same guest."""
     async with sessionmaker()() as db:
-        busy = (await db.execute(select(NodeJob).where(NodeJob.node_id == node_id, NodeJob.status == "running",
-                                                       NodeJob.kind == kind))).scalars().first()
-        if busy is not None:
+        running = (await db.execute(select(NodeJob).where(NodeJob.node_id == node_id,
+                                                          NodeJob.status == "running"))).scalars().all()
+        if exclusive and any(j.kind == kind for j in running):
             raise NodeError("this task is already running on the node")
+        if busy_key and any((j.params or {}).get("busy") == busy_key for j in running):
+            raise NodeError("another task is still running for this guest")
+        stored = {k: v for k, v in params.items() if k not in ("url", "script", "password", "env")}
+        if isinstance(stored.get("args"), dict):
+            stored["args"] = {k: ("***" if k in SECRET_ARGS else v) for k, v in stored["args"].items()}
+        if busy_key:
+            stored["busy"] = busy_key
         job = NodeJob(node_id=node_id, kind=kind, source=source, requested_by=requested_by,
-                      params={k: v for k, v in params.items() if k not in ("url",)}, result={}, output="")
+                      params=stored, result={}, output="")
         db.add(job)
         await db.commit()
+    events.publish("node.job", {"node_id": node_id, "job_id": job.id, "started": True})
+    return job
+
+
+async def start_job(node_id: str, kind: str, method: str, params: dict[str, Any], *, source: str,
+                    requested_by: str | None, exclusive: bool = True, busy_key: str | None = None,
+                    parent: str | None = None, label: dict[str, Any] | None = None) -> NodeJob:
+    """Start a long task on the agent; its output and result arrive as job messages."""
+    job = await create_job(node_id, kind, {**params, **(label or {})}, source=source, requested_by=requested_by,
+                           exclusive=exclusive, busy_key=busy_key)
+    if parent:
+        agent_hub.forward(job.id, parent)
     try:
         await agent_hub.request(node_id, method, {**params, "job_id": job.id}, timeout=60)
     except AgentError as e:
@@ -417,8 +441,8 @@ async def start_job(node_id: str, kind: str, method: str, params: dict[str, Any]
             j = await db.get(NodeJob, job.id)
             agent_hub._finish(j, "failed", {}, str(e))
             await db.commit()
+        agent_hub._resolve(job.id, "failed", {}, str(e))
         raise
-    events.publish("node.job", {"node_id": node_id, "job_id": job.id, "started": True})
     return job
 
 

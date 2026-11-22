@@ -90,6 +90,63 @@ def next_runs(target_id: str) -> dict[str, str | None]:
     return out
 
 
+# ------------------------------------------------------------------ scheduled tasks
+_tz = "Europe/Amsterdam"
+
+
+async def _task_job(task_id: str) -> None:
+    from mmn.services import tasks
+    from mmn.services.nodes import NodeError
+
+    try:
+        await tasks.run_task(task_id, trigger="schedule")
+    except NodeError as e:
+        log.info("scheduled task %s skipped: %s", task_id, e)
+    except Exception:  # noqa: BLE001
+        log.exception("scheduled task %s failed to start", task_id)
+
+
+async def _community_sync_job() -> None:
+    from mmn.services import community
+
+    await community.sync_safe()
+
+
+async def reload_task_jobs() -> None:
+    global _tz
+    from mmn.models import ScheduledTask
+    from mmn.services.settings_store import get_setting
+
+    if not scheduler.running:
+        return
+    for job in scheduler.get_jobs():
+        if job.id.startswith("task:"):
+            job.remove()
+    async with sessionmaker()() as db:
+        _tz = (await get_setting(db, "schedules")).get("timezone") or "UTC"
+        community_cron = (await get_setting(db, "community")).get("sync_cron") or "15 3 * * *"
+        rows = (await db.execute(select(ScheduledTask).where(ScheduledTask.enabled.is_(True)))).scalars().all()
+    for t in rows:
+        try:
+            trigger = CronTrigger.from_crontab(t.cron, timezone=_tz)
+        except ValueError:
+            log.warning("Invalid cron %r on task %s", t.cron, t.name)
+            continue
+        scheduler.add_job(_task_job, trigger, args=[t.id], id=f"task:{t.id}", max_instances=1, coalesce=True,
+                          misfire_grace_time=3600, replace_existing=True)
+    try:
+        scheduler.add_job(_community_sync_job, CronTrigger.from_crontab(community_cron, timezone=_tz),
+                          id="community-sync", replace_existing=True, coalesce=True, max_instances=1)
+    except ValueError:
+        log.warning("Invalid community sync schedule %r", community_cron)
+
+
+def next_task_run(task_id: str) -> str | None:
+    job = scheduler.get_job(f"task:{task_id}") if scheduler.running else None
+    nrt = getattr(job, "next_run_time", None) if job else None
+    return nrt.isoformat() if nrt else None
+
+
 async def start() -> None:
     scheduler.add_job(_update_check_job, CronTrigger(hour="*/6", minute=17, timezone="UTC"), id="update-check",
                       replace_existing=True, coalesce=True)
@@ -97,6 +154,13 @@ async def start() -> None:
                       coalesce=True)
     scheduler.start()
     await reload_backup_jobs()
+    from mmn.services import tasks
+
+    try:
+        await tasks.ensure_defaults()
+    except Exception:  # noqa: BLE001
+        log.exception("default scheduled tasks")
+    await reload_task_jobs()
     from mmn.services.settings_store import get_setting
 
     async with sessionmaker()() as db:

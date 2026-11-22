@@ -240,6 +240,10 @@ class Node(Base):
     enrolled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     connected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Proxmox VE: the node's own name, its guests (VMs/CTs) and what is in its template storages.
+    pve_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    guests: Mapped[dict] = mapped_column(JsonType, default=dict)
+    storage_scan: Mapped[dict] = mapped_column(JsonType, default=dict)
 
     environment: Mapped[Environment] = relationship(back_populates="nodes", lazy="joined")
 
@@ -280,5 +284,84 @@ class NodeJob(Base):
     result: Mapped[dict] = mapped_column(JsonType, default=dict)
     output: Mapped[str] = mapped_column(Text, default="")
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class CtTemplate(Base):
+    """An entry of the central container template library (official Proxmox VE or custom)."""
+
+    __tablename__ = "ct_templates"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    name: Mapped[str] = mapped_column(String(200))
+    kind: Mapped[str] = mapped_column(String(16))  # official | custom
+    family: Mapped[str] = mapped_column(String(200), index=True)  # e.g. debian-13-standard
+    filename: Mapped[str] = mapped_column(String(255))  # current file, e.g. debian-13-standard_13.1-2_amd64.tar.zst
+    version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    os: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    source_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    previous_filenames: Mapped[list[str]] = mapped_column(JsonType, default=list)
+    sync: Mapped[bool] = mapped_column(Boolean, default=True)
+    storage: Mapped[str | None] = mapped_column(String(100), nullable=True)  # None = library default
+    follow_latest: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class CommunityScript(Base):
+    """A script from community-scripts.org (ProxmoxVE repository), synced nightly."""
+
+    __tablename__ = "community_scripts"
+
+    slug: Mapped[str] = mapped_column(String(100), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(8), default="ct")  # ct | vm
+    name: Mapped[str] = mapped_column(String(200))
+    path: Mapped[str] = mapped_column(String(255))  # ct/debian.sh
+    blob_sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    tags: Mapped[list[str]] = mapped_column(JsonType, default=list)
+    defaults: Mapped[dict] = mapped_column(JsonType, default=dict)  # cpu, ram, disk, os, version, unprivileged
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ScheduledTask(Base):
+    """A recurring job: updates in containers, node updates, template sync or a custom command."""
+
+    __tablename__ = "scheduled_tasks"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    name: Mapped[str] = mapped_column(String(200))
+    kind: Mapped[str] = mapped_column(String(32))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    cron: Mapped[str] = mapped_column(String(100))
+    targets: Mapped[dict] = mapped_column(JsonType, default=dict)
+    options: Mapped[dict] = mapped_column(JsonType, default=dict)
+    mail_to: Mapped[list[str]] = mapped_column(JsonType, default=list)
+    mail_on: Mapped[str] = mapped_column(String(16), default="always")  # always | failure | never
+    created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+
+
+class TaskRun(Base):
+    """One run of a scheduled task (or of the nightly template sync), with a result per target."""
+
+    __tablename__ = "task_runs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    task_id: Mapped[str | None] = mapped_column(ForeignKey("scheduled_tasks.id", ondelete="SET NULL"),
+                                                nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    kind: Mapped[str] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(16), default="running")  # running | success | partial | failed
+    trigger: Mapped[str] = mapped_column(String(16), default="manual")  # schedule | manual | mcp
+    requested_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    results: Mapped[list] = mapped_column(JsonType, default=list)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

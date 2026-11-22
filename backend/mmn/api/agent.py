@@ -133,6 +133,35 @@ async def agent_ws(ws: WebSocket) -> None:
         await agent_hub.unregister(conn)
 
 
+@router.websocket("/agent/stream/{sid}")
+async def agent_stream(ws: WebSocket, sid: str) -> None:
+    """Second connection of an agent for one interactive session (console, terminal)."""
+    from mmn.services import console
+
+    async with sessionmaker()() as db:
+        node = await _authenticate(db, ws.headers)
+        node_id = node.id if node else None
+    if node_id is None:
+        await ws.close(code=4403)
+        return
+    await console.attach_agent(sid, node_id, ws)
+
+
+@router.get("/agent/templates/{tpl_id}/{filename}", include_in_schema=False)
+async def agent_template(tpl_id: str, filename: str, request: Request, db: AsyncSession = Depends(get_db)):
+    """Custom container templates for the nodes (mTLS only)."""
+    from mmn.models import CtTemplate
+    from mmn.services import templates
+
+    if await _authenticate(db, request.headers) is None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN)
+    t = await db.get(CtTemplate, tpl_id)
+    p = templates.custom_file(t) if t is not None and t.filename == filename else None
+    if p is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    return FileResponse(p, media_type="application/octet-stream", filename=filename)
+
+
 # ------------------------------------------------------------------ public: install script + packages
 def _request_base(request: Request) -> str:
     bp = get_settings().base_path
