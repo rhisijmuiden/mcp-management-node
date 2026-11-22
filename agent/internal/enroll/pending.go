@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/rhisijmuiden/mcp-management-node/agent/internal/config"
+	"github.com/rhisijmuiden/stackpilot/agent/internal/config"
 )
 
 // Pending is a pairing that an installer left for the service to finish: the Windows MSI writes

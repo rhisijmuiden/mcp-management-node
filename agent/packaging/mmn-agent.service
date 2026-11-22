@@ -1,6 +1,6 @@
 [Unit]
 Description=Stackpilot agent
-Documentation=https://github.com/rhisijmuiden/mcp-management-node
+Documentation=https://github.com/rhisijmuiden/stackpilot
 After=network-online.target
 Wants=network-online.target
 

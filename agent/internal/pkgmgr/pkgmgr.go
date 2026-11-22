@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rhisijmuiden/mcp-management-node/agent/internal/apt"
-	"github.com/rhisijmuiden/mcp-management-node/agent/internal/proto"
+	"github.com/rhisijmuiden/stackpilot/agent/internal/apt"
+	"github.com/rhisijmuiden/stackpilot/agent/internal/proto"
 )
 
 var mu sync.Mutex // one dnf / Windows Update operation at a time (apt has its own lock)

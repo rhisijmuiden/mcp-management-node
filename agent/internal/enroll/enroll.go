@@ -23,8 +23,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rhisijmuiden/mcp-management-node/agent/internal/config"
-	"github.com/rhisijmuiden/mcp-management-node/agent/internal/tlsutil"
+	"github.com/rhisijmuiden/stackpilot/agent/internal/config"
+	"github.com/rhisijmuiden/stackpilot/agent/internal/tlsutil"
 )
 
 type Request struct {

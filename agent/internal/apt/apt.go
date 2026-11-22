@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rhisijmuiden/mcp-management-node/agent/internal/proto"
+	"github.com/rhisijmuiden/stackpilot/agent/internal/proto"
 )
 
 var (

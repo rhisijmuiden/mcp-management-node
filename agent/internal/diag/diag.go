@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rhisijmuiden/mcp-management-node/agent/internal/ops"
-	"github.com/rhisijmuiden/mcp-management-node/agent/internal/sysinfo"
+	"github.com/rhisijmuiden/stackpilot/agent/internal/ops"
+	"github.com/rhisijmuiden/stackpilot/agent/internal/sysinfo"
 )
 
 type Report struct {

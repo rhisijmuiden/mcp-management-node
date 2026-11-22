@@ -2,10 +2,10 @@
 # Stackpilot installer for Debian 13 (trixie). Native install, no Docker.
 #
 # Quick start (production channel):
-#   curl -fsSL https://raw.githubusercontent.com/rhisijmuiden/mcp-management-node/main/deploy/install.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/rhisijmuiden/stackpilot/main/deploy/install.sh | sudo bash
 #
 # Test channel, behind Zoraxy at 10.10.4.2:
-#   curl -fsSL https://raw.githubusercontent.com/rhisijmuiden/mcp-management-node/test/deploy/install.sh \
+#   curl -fsSL https://raw.githubusercontent.com/rhisijmuiden/stackpilot/test/deploy/install.sh \
 #     | sudo bash -s -- --channel test --proxy 10.10.4.2
 #
 # Options:
@@ -25,7 +25,7 @@
 set -euo pipefail
 
 APP="mcp-management-node"
-REPO="${MMN_GITHUB_REPO:-rhisijmuiden/mcp-management-node}"
+REPO="${MMN_GITHUB_REPO:-rhisijmuiden/stackpilot}"
 INSTALL_DIR="/opt/$APP"
 DATA_DIR="/var/lib/$APP"
 ETC_DIR="/etc/$APP"

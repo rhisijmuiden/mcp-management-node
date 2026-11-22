@@ -1,4 +1,4 @@
-module github.com/rhisijmuiden/mcp-management-node/agent
+module github.com/rhisijmuiden/stackpilot/agent
 
 go 1.24
 

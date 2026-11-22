@@ -14,7 +14,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/rhisijmuiden/mcp-management-node/agent/internal/proto"
+	"github.com/rhisijmuiden/stackpilot/agent/internal/proto"
 )
 
 // SysRoot lets tests use a fake sysfs.

@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rhisijmuiden/mcp-management-node/agent/internal/config"
+	"github.com/rhisijmuiden/stackpilot/agent/internal/config"
 )
 
 type Request struct {

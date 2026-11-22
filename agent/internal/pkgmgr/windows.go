@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rhisijmuiden/mcp-management-node/agent/internal/proto"
-	"github.com/rhisijmuiden/mcp-management-node/agent/internal/winps"
+	"github.com/rhisijmuiden/stackpilot/agent/internal/proto"
+	"github.com/rhisijmuiden/stackpilot/agent/internal/winps"
 )
 
 const isWindows = true

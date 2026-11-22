@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rhisijmuiden/mcp-management-node/agent/internal/sysinfo"
+	"github.com/rhisijmuiden/stackpilot/agent/internal/sysinfo"
 )
 
 // Pvesh runs pvesh; replaced in tests.

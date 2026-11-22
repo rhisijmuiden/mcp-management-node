@@ -18,9 +18,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/rhisijmuiden/mcp-management-node/agent/internal/client"
-	"github.com/rhisijmuiden/mcp-management-node/agent/internal/config"
-	"github.com/rhisijmuiden/mcp-management-node/agent/internal/enroll"
+	"github.com/rhisijmuiden/stackpilot/agent/internal/client"
+	"github.com/rhisijmuiden/stackpilot/agent/internal/config"
+	"github.com/rhisijmuiden/stackpilot/agent/internal/enroll"
 )
 
 // version is set at build time: -ldflags "-X main.version=0.4.0".
