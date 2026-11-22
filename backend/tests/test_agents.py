@@ -150,18 +150,22 @@ async def test_enroll_connect_and_actions(admin_client, client, live_server):
 
     script = (await client.get("/api/agent/install.sh")).text
     assert fp in script and "mmn-agent_0.2.0_amd64.deb" in script
+    # The web address may use a self-signed certificate; the package is checked by its SHA-256 instead.
+    assert 'curl -fsSL --insecure -o "$TMP/$PKG"' in script and "sha256sum -c" in script
 
     key, csr = _csr()
     body = {"code": code.lower().replace("-", ""), "csr": csr, "hostname": "pve-test.lan", "agent_version": "0.1.9"}
     # Without the Nginx secret the endpoint does not exist.
     assert (await client.post("/agent/enroll", json=body)).status_code == 404
-    hdr = {"x-mmn-agent-secret": _secret()}
+    hdr = {"x-mmn-agent-secret": _secret(), "host": "pve-mmn.lan"}
     bad = await client.post("/agent/enroll", json={**body, "code": "AAAA-BBBB-CCCC"}, headers=hdr)
     assert bad.status_code == 403
     r = await client.post("/agent/enroll", json=body, headers=hdr)
     assert r.status_code == 200, r.text
     enrolled = r.json()
     assert enrolled["node_name"] == "pve-test" and enrolled["environment"] == "Home"
+    # No agent or public address configured: the agent keeps the host it reached us on.
+    assert enrolled["server"] == "pve-mmn.lan:8443"
     ca = x509.load_pem_x509_certificate(enrolled["ca"].encode())
     assert hashlib.sha256(ca.public_bytes(serialization.Encoding.DER)).hexdigest() == fp
     cert = x509.load_pem_x509_certificate(enrolled["certificate"].encode())

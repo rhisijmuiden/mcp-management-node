@@ -103,7 +103,9 @@ PKG="mmn-agent_${VERSION}_${ARCH}.deb"
 [[ -n "${SHA[$PKG]:-}" ]] || { echo "no agent package for architecture $ARCH" >&2; exit 1; }
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 echo "==> downloading $PKG"
-curl -fsSL -o "$TMP/$PKG" "$APP_URL/api/agent/download/$PKG"
+# --insecure: the web address may use a self-signed certificate; the SHA-256 below (from this script)
+# is what makes the download trustworthy.
+curl -fsSL --insecure -o "$TMP/$PKG" "$APP_URL/api/agent/download/$PKG"
 echo "${SHA[$PKG]}  $TMP/$PKG" | sha256sum -c --quiet - || { echo "checksum mismatch, aborting" >&2; exit 1; }
 echo "==> installing"
 DEBIAN_FRONTEND=noninteractive dpkg -i "$TMP/$PKG" >/dev/null
