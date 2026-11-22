@@ -1,5 +1,5 @@
 import * as Tabs from "@radix-ui/react-tabs";
-import { Activity, ArrowUpCircle, BookOpen, Bot, Boxes, CalendarClock, Copy, DatabaseBackup, GitBranch, Layers, Globe, Mail, MessageSquare, Network, Plug, Rocket, ScrollText, Server, ShieldCheck, Sparkles, Stethoscope, Terminal, Wifi } from "lucide-react";
+import { Activity, ArrowUpCircle, BookOpen, Bot, Boxes, CalendarClock, Copy, DatabaseBackup, GitBranch, Layers, Globe, Mail, MessageSquare, Network, Plug, Rocket, ScrollText, Server, ShieldCheck, Sparkles, Stethoscope, Terminal, Wifi, DoorClosed } from "lucide-react";
 import type { ReactNode } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { Link } from "react-router";
@@ -222,7 +222,7 @@ export function McpHelpPage() {
   );
 }
 
-type Cap = { tool: string; scope: "read" | "backups" | "restore" | "updates" | "settings" | "nodes" | "node_updates" | "logs" | "services" | "exec" | "guests" | "guests_admin" | "templates" | "tasks" | "network" | "cluster" | "deploy" | "copy" };
+type Cap = { tool: string; scope: "read" | "backups" | "restore" | "updates" | "settings" | "nodes" | "node_updates" | "logs" | "services" | "exec" | "guests" | "guests_admin" | "templates" | "tasks" | "network" | "cluster" | "deploy" | "copy" | "unifi" | "unifi_admin" | "doors" };
 const NOW: { key: string; icon: ReactNode; tools: Cap[] }[] = [
   { key: "system", icon: <Rocket />, tools: [
     { tool: "get_system_info", scope: "read" }, { tool: "check_for_updates", scope: "read" }, { tool: "get_update_status", scope: "read" },
@@ -295,6 +295,18 @@ const NOW: { key: string; icon: ReactNode; tools: Cap[] }[] = [
     { tool: "list_deployments", scope: "read" }, { tool: "get_deployment", scope: "read" },
     { tool: "list_github_repos", scope: "deploy" }, { tool: "save_deployment", scope: "deploy" }, { tool: "run_deployment", scope: "deploy" },
   ] },
+  { key: "unifi", icon: <Wifi />, tools: [
+    { tool: "list_unifi_connections", scope: "unifi" }, { tool: "get_unifi_overview", scope: "unifi" }, { tool: "refresh_unifi", scope: "unifi" },
+    { tool: "get_unifi_device", scope: "unifi" }, { tool: "list_unifi_clients", scope: "unifi" }, { tool: "diagnose_wifi_client", scope: "unifi" },
+    { tool: "list_wifi_networks", scope: "unifi" }, { tool: "check_guest_isolation", scope: "unifi" }, { tool: "find_firmware_updates", scope: "unifi" },
+    { tool: "list_unifi_events", scope: "unifi" }, { tool: "get_unifi_cloud", scope: "unifi" },
+    { tool: "restart_unifi_device", scope: "unifi_admin" }, { tool: "power_cycle_switch_port", scope: "unifi_admin" },
+    { tool: "set_guest_access", scope: "unifi_admin" }, { tool: "set_wifi_enabled", scope: "unifi_admin" },
+  ] },
+  { key: "doors", icon: <DoorClosed />, tools: [
+    { tool: "list_doors", scope: "unifi" }, { tool: "get_access_log", scope: "unifi" }, { tool: "list_door_schedules", scope: "unifi" },
+    { tool: "unlock_door", scope: "doors" }, { tool: "set_door_lock_rule", scope: "doors" },
+  ] },
 ];
 const SCENARIOS: { key: string; tools: string[] }[] = [
   { key: "mail", tools: ["diagnose_server", "get_service_status", "search_logs", "manage_service"] },
@@ -303,11 +315,14 @@ const SCENARIOS: { key: string; tools: string[] }[] = [
   { key: "windows", tools: ["read_event_log", "get_service_status", "manage_service"] },
   { key: "copy", tools: ["copy_data", "get_transfer", "run_command"] },
   { key: "errors", tools: ["find_errors", "search_logs", "diagnose_server"] },
+  { key: "wifi", tools: ["diagnose_wifi_client", "list_unifi_clients", "get_unifi_device"] },
+  { key: "firmware", tools: ["find_firmware_updates", "get_unifi_overview"] },
+  { key: "guest", tools: ["check_guest_isolation", "list_wifi_networks"] },
+  { key: "door", tools: ["get_access_log", "list_doors"] },
 ];
 
-const NEXT: { key: string; icon: ReactNode; items: number }[] = [
-  { key: "unifi", icon: <Wifi />, items: 3 },
-];
+// Everything planned is available now; later phases add their groups here.
+const NEXT: { key: string; icon: ReactNode; items: number }[] = [];
 
 export function McpCapabilitiesPage() {
   const { t } = useTranslation();
@@ -353,7 +368,7 @@ export function McpCapabilitiesPage() {
                     {g.tools.map((c) => (
                       <div key={c.tool} className="flex items-center justify-between gap-3 text-sm">
                         <code className="mono truncate text-[12.5px]">{c.tool}</code>
-                        <Badge tone={c.scope === "read" ? "neutral" : c.scope === "restore" || c.scope === "exec" || c.scope === "copy" ? "offline" : "accent"}>{t(`scopes.${c.scope}`)}</Badge>
+                        <Badge tone={c.scope === "read" ? "neutral" : c.scope === "restore" || c.scope === "exec" || c.scope === "copy" || c.scope === "doors" ? "offline" : "accent"}>{t(`scopes.${c.scope}`)}</Badge>
                       </div>
                     ))}
                   </CardBody>
@@ -362,7 +377,7 @@ export function McpCapabilitiesPage() {
             </div>
           </div>
 
-          <div>
+          {NEXT.length > 0 && <div>
             <div className="mb-3 flex items-center gap-2">
               <h2 className="display text-lg">{t("mcpcaps.next_title")}</h2>
               <Badge tone="info">{t("nav.soon")}</Badge>
@@ -385,17 +400,17 @@ export function McpCapabilitiesPage() {
                 </Card>
               ))}
             </div>
-          </div>
+          </div>}
         </div>
 
         <div className="space-y-6">
           <Card>
             <CardHeader icon={<MessageSquare />} title={t("mcpcaps.ask_title")} description={t("mcpcaps.ask_desc")} />
             <CardBody className="space-y-2">
-              {[4, 5, 7, 11, 12, 6, 8, 1, 2, 3, 9, 10, 13].map((i) => (
+              {[4, 5, 14, 15, 16, 17, 7, 11, 12, 6, 8, 1, 2, 3, 9, 10, 13].map((i) => (
                 <div key={i} className="rounded-md bg-sunken px-3 py-2 text-sm">
                   <div className="italic">“{t(`mcpcaps.ask_${i}`)}”</div>
-                  <div className="mt-1 text-xs text-muted">{t(i !== 13 ? "mcpcaps.ask_now" : "mcpcaps.ask_later")}</div>
+                  <div className="mt-1 text-xs text-muted">{t("mcpcaps.ask_now")}</div>
                 </div>
               ))}
             </CardBody>

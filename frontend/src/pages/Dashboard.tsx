@@ -8,6 +8,7 @@ import { get } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { AuditEntry, BackupRun, Connection, MailSettings, Overview, SystemInfo, ServersOverview } from "@/lib/types";
 import { StatusDot } from "@/components/proxmox";
+import { UnifiDashboardCard } from "@/components/UnifiTile";
 import { formatBytes, timeAgo } from "@/lib/utils";
 
 export function Dashboard() {
@@ -135,6 +136,7 @@ export function Dashboard() {
               </Link>
             </CardBody>
           </Card>
+          <UnifiDashboardCard />
           {admin && (
             <Card>
               <CardHeader icon={<ShieldCheck />} title={t("dashboard.activity")} action={<Link to="/admin/audit" className="text-sm font-semibold text-accent-text hover:underline">{t("common.view_all")}</Link>} />

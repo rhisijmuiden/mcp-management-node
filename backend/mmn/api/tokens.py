@@ -40,9 +40,13 @@ SCOPES: dict[str, str] = {
     "network": "Change bridges, firewall rules and SDN on Proxmox VE nodes (applied with backup and roll back)",
     "cluster": "Manage HA, replication, Proxmox backup jobs and storage",
     "deploy": "Deploy GitHub repositories into containers and change deployments",
+    "unifi": "Read UniFi Network and Access: devices, clients, WiFi, firewall zones, events, doors and the access log",
+    "unifi_admin": "UniFi Network actions: restart devices, power-cycle switch ports, authorize guests, switch WiFi on or off",
+    "doors": "UniFi Access: unlock doors and change door lock rules (every action is logged)",
 }
 ADMIN_ONLY_SCOPES = {"restore", "updates", "settings", "backups", "nodes", "node_updates", "logs", "services", "exec", "copy",
-                     "guests", "guests_admin", "templates", "tasks", "network", "cluster", "deploy"}
+                     "guests", "guests_admin", "templates", "tasks", "network", "cluster", "deploy",
+                     "unifi", "unifi_admin", "doors"}
 
 
 class TokenCreate(BaseModel):

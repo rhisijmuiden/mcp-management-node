@@ -47,6 +47,7 @@ class MonitoringSettings(BaseModel):
     offline_minutes: int = Field(default=5, ge=1, le=1440)
     smart: bool = True
     wearout_pct: int = Field(default=10, ge=0, le=100)  # alert when an SSD has this much life left or less
+    unifi: bool = True  # alert on offline UniFi devices and unreachable UniFi connections
 
 
 async def get_settings(db: AsyncSession) -> MonitoringSettings:
@@ -246,7 +247,7 @@ async def overview(db: AsyncSession, range_: str = "24h", environment_id: str | 
 
 
 def alert_out(a: Alert, names: dict[str, str] | None = None) -> dict[str, Any]:
-    return {"id": a.id, "node_id": a.node_id, "node": (names or {}).get(a.node_id or "", None), "kind": a.kind,
+    return {"id": a.id, "node_id": a.node_id, "node": (names or {}).get(a.node_id or "") or (a.detail or {}).get("source"), "kind": a.kind,
             "key": a.key, "severity": a.severity, "message": a.message, "value": a.value, "detail": a.detail or {},
             "started_at": a.started_at.isoformat(), "resolved_at": a.resolved_at.isoformat() if a.resolved_at else None,
             "notified_at": a.notified_at.isoformat() if a.notified_at else None}
@@ -322,6 +323,35 @@ async def _conditions(db: AsyncSession, cfg: MonitoringSettings) -> dict[str, di
                         "node_id": n.id, "kind": "smart", "severity": "warning", "value": d["wearout"],
                         "detail": {"disk": d["devpath"]},
                         "message": f"SSD {d['devpath']} ({d['model']}) has {d['wearout']}% life left"}
+    if cfg.unifi:
+        want.update(await _unifi_conditions(db, cfg, now))
+    return want
+
+
+UNIFI_DOWN = {"OFFLINE", "CONNECTION_INTERRUPTED", "ISOLATED"}
+
+
+async def _unifi_conditions(db: AsyncSession, cfg: MonitoringSettings, now: datetime) -> dict[str, dict[str, Any]]:
+    from mmn.models import UnifiConnection
+
+    want: dict[str, dict[str, Any]] = {}
+    for c in (await db.execute(select(UnifiConnection).where(UnifiConnection.enabled.is_(True)))).scalars():
+        src = {"source": f"UniFi {c.name}", "connection_id": c.id}
+        if c.status == "error":
+            since = c.last_ok_at or c.created_at
+            if since and now - since > timedelta(minutes=cfg.offline_minutes):
+                want[f"unifi:{c.id}"] = {"node_id": None, "kind": "unifi", "severity": "warning", "detail": src,
+                                         "message": f"UniFi connection {c.name} unreachable: {(c.last_error or '')[:200]}"}
+            continue
+        snap = c.snapshot or {}
+        devs = [(s.get("name"), d) for s in snap.get("sites") or [] for d in s.get("devices") or []]
+        devs += [(d.get("host_name"), d) for d in snap.get("devices") or []]
+        for site, d in devs:
+            if str(d.get("state") or "").upper() in UNIFI_DOWN:
+                want[f"unifi:{c.id}:{d.get('id')}"] = {
+                    "node_id": None, "kind": "unifi", "severity": "critical" if d.get("type") == "gateway" else "warning",
+                    "detail": {**src, "device": d.get("name"), "site": site},
+                    "message": f"UniFi {d.get('type') or 'device'} {d.get('name')} ({site}) is {str(d.get('state')).lower()}"}
     return want
 
 
@@ -368,12 +398,14 @@ async def _mail(db: AsyncSession, to: list[str], opened: list[Alert], resolved: 
 
     general = await get_setting(db, "general")
     lang = general["default_language"]
-    lines = [f"✖ {names.get(a.node_id or '', '-')}: {a.message}" for a in opened]
-    lines += [f"✔ {names.get(a.node_id or '', '-')}: {t(lang, 'alert.resolved_line', message=a.message)}"
-              for a in resolved]
+    def who(a: Alert) -> str:
+        return names.get(a.node_id or "") or (a.detail or {}).get("source") or "-"
+
+    lines = [f"✖ {who(a)}: {a.message}" for a in opened]
+    lines += [f"✔ {who(a)}: {t(lang, 'alert.resolved_line', message=a.message)}" for a in resolved]
     first = opened[0] if opened else resolved[0]
     subject = t(lang, "alert.subject_open" if opened else "alert.subject_resolved",
-                node=names.get(first.node_id or "", "-"), message=first.message, count=len(opened) + len(resolved))
+                node=who(first), message=first.message, count=len(opened) + len(resolved))
     base = (general.get("base_url") or "").rstrip("/")
     return await try_send_mail(db, to, MailContent(
         subject=subject, title=t(lang, "alert.title"), paragraphs=[t(lang, "alert.body"), *lines],

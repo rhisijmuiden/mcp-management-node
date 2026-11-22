@@ -166,6 +166,10 @@ async def start() -> None:
                       replace_existing=True, coalesce=True)
     scheduler.add_job(_deploy_poll_job, "interval", minutes=5, id="deploy-poll", replace_existing=True,
                       coalesce=True, max_instances=1)
+    scheduler.add_job(_unifi_poll_job, "interval", minutes=5, id="unifi-poll", replace_existing=True,
+                      coalesce=True, max_instances=1)
+    scheduler.add_job(_unifi_prune_job, CronTrigger(hour=4, minute=53, timezone="UTC"), id="unifi-prune",
+                      replace_existing=True, coalesce=True)
     scheduler.start()
     await reload_backup_jobs()
     from mmn.services import tasks
@@ -215,6 +219,24 @@ async def _deploy_poll_job() -> None:
         await deploy.poll_all()
     except Exception:  # noqa: BLE001
         log.exception("polling deployments failed")
+
+
+async def _unifi_poll_job() -> None:
+    from mmn.services.unifi import service
+
+    try:
+        await service.poll_all()
+    except Exception:  # noqa: BLE001
+        log.exception("polling UniFi failed")
+
+
+async def _unifi_prune_job() -> None:
+    from mmn.services.unifi import service
+
+    try:
+        await service.prune_events()
+    except Exception:  # noqa: BLE001
+        log.exception("pruning UniFi events failed")
 
 
 def stop() -> None:

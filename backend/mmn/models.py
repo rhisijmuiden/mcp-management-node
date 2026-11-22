@@ -516,3 +516,55 @@ class Transfer(Base):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+# ------------------------------------------------------------------ phase 6: UniFi
+class UnifiConnection(Base):
+    """A UniFi API connection of an environment: a Network console (Integration API), the Site Manager
+    cloud API (all consoles of an account) or an Access console (developer API)."""
+
+    __tablename__ = "unifi_connections"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    environment_id: Mapped[str] = mapped_column(ForeignKey("environments.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True)
+    kind: Mapped[str] = mapped_column(String(16))  # network | site_manager | access
+    # How the app reaches the API: direct (from this server), agent (an agent in the customer's network makes the
+    # HTTPS call) or cloud (Network API through the Site Manager connector of another connection).
+    transport: Mapped[str] = mapped_column(String(16), default="direct")
+    base_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    agent_node_id: Mapped[str | None] = mapped_column(ForeignKey("nodes.id", ondelete="SET NULL"), nullable=True)
+    cloud_connection_id: Mapped[str | None] = mapped_column(
+        ForeignKey("unifi_connections.id", ondelete="SET NULL"), nullable=True)
+    console_id: Mapped[str | None] = mapped_column(String(200), nullable=True)  # Site Manager host id
+    api_key_enc: Mapped[str | None] = mapped_column(Text, nullable=True)  # Fernet, never returned by the API
+    read_only: Mapped[bool] = mapped_column(Boolean, default=False)
+    tls_mode: Mapped[str] = mapped_column(String(16), default="verify")  # verify | pin | insecure
+    tls_fingerprint: Mapped[str | None] = mapped_column(String(100), nullable=True)  # SHA-256 hex
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    status: Mapped[str] = mapped_column(String(16), default="unknown")  # unknown | ok | error
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_ok_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_poll_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    info: Mapped[dict] = mapped_column(JsonType, default=dict)  # application version, sites
+    snapshot: Mapped[dict] = mapped_column(JsonType, default=dict)  # last poll: devices, clients, WiFi per site
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    environment: Mapped[Environment] = relationship(lazy="joined")
+
+
+class UnifiEvent(Base):
+    """Something that changed between two polls: a device went offline, came back, a WAN changed, new firmware."""
+
+    __tablename__ = "unifi_events"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    connection_id: Mapped[str] = mapped_column(ForeignKey("unifi_connections.id", ondelete="CASCADE"), index=True)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    site_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    site_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    kind: Mapped[str] = mapped_column(String(32))
+    severity: Mapped[str] = mapped_column(String(16), default="info")  # info | warning | critical
+    subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    message: Mapped[str] = mapped_column(String(500))
+    detail: Mapped[dict] = mapped_column(JsonType, default=dict)

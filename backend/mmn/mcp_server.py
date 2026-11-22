@@ -110,7 +110,9 @@ def _target_of(args: dict[str, Any]) -> str | None:
         return f"{args['source']} → {args['target']}"[:255]
     if isinstance(args.get("servers"), list) and args["servers"]:
         return ", ".join(map(str, args["servers"]))[:255]
-    for k in ("deployment", "design_id", "guest", "node", "server", "environment", "slug", "template", "task_id", "run_id", "name", "backup_id",
+    if args.get("door"):
+        return f"door {args['door']}"[:255]
+    for k in ("wifi", "client", "device", "connection", "deployment", "design_id", "guest", "node", "server", "environment", "slug", "template", "task_id", "run_id", "name", "backup_id",
               "target_id", "tag", "channel", "to", "package", "transfer_id", "pattern"):
         if args.get(k):
             return str(args[k])[:255]
@@ -176,6 +178,15 @@ machines (journal, Windows Event Log or log files), `read_event_log` (Windows), 
 version vs the fixed version on every machine), services, `install_node_updates` (apt, dnf or Windows
 Update), `run_command` (sh on Linux, PowerShell on Windows) and `copy_data` between machines
 (`get_transfer`).
+
+UniFi (Network, Site Manager cloud and Access, per customer): start with `get_unifi_overview` (all
+gateways, switches and APs with status, uplink, firmware and clients, WiFi with VLAN, events) or
+`list_unifi_connections`. Troubleshooting: `diagnose_wifi_client` ("why can't this laptop get on WiFi"),
+`find_firmware_updates`, `check_guest_isolation` ("is guest isolated from the LAN"), `list_unifi_clients`,
+`get_unifi_device`, `list_unifi_events` (offline, WAN failover). Doors: `list_doors`, `get_access_log`
+("who opened the server room last night"), `list_door_schedules`. Actions (restart a device,
+power-cycle a PoE port, guest access, switch an SSID, unlock a door, lock rules) need a key with write
+rights, `confirm` and the user's go-ahead; unlocking a door is physical security, always ask.
 
 Nodes and servers can be named by id or by name. Every call is written to the audit log with your token's name.
 Destructive tools need `confirm` set to the exact node name, or are marked destructive: ask the user
@@ -1937,6 +1948,419 @@ async def run_deployment(deployment: str, run_setup: bool = False, channel: str 
 
 
 # ------------------------------------------------------------------ ASGI wiring
+# ------------------------------------------------------------------ UniFi (phase 6)
+async def _uconn(connection: str | None, kind: str | tuple[str, ...]):
+    """The connection named (id or name), or the only one of that kind."""
+    from mmn.services.unifi import service as uf
+    from mmn.services.unifi.transport import UnifiError
+
+    kinds = (kind,) if isinstance(kind, str) else kind
+    async with sessionmaker()() as db:
+        try:
+            if connection:
+                return await uf.get_connection(db, connection, kinds)
+            rows = [c for c in await uf.list_connections(db) if c.kind in kinds]
+        except UnifiError as e:
+            raise ToolDenied(str(e)) from e
+    if len(rows) == 1:
+        return rows[0]
+    if not rows:
+        raise ToolDenied("no UniFi connection of this kind; add one under UniFi → Connections")
+    raise ToolDenied("several UniFi connections, name one: " + ", ".join(c.name for c in rows))
+
+
+def _uerr(e: Exception) -> ToolDenied:
+    return ToolDenied(str(e))
+
+
+async def _usite(connection: str | None, site: str | None):
+    from mmn.services.unifi import service as uf
+    from mmn.services.unifi.transport import UnifiError
+
+    c = await _uconn(connection, "network")
+    try:
+        return c, uf.site_of(c, site)
+    except UnifiError as e:
+        raise ToolDenied(str(e)) from e
+
+
+async def _with_db(fn):
+    from mmn.services.unifi.transport import UnifiError
+
+    async with sessionmaker()() as db:
+        try:
+            res = await fn(db)
+            await db.commit()
+            return _jsonable(res)
+        except UnifiError as e:
+            raise _uerr(e) from e
+
+
+@tool("unifi", RO)
+async def list_unifi_connections(environment: str | None = None) -> list[dict]:
+    """UniFi connections per environment/customer: kind (network = a console's local Integration API,
+    site_manager = the cloud API with all consoles of an account, access = UniFi Access doors), how they
+    are reached (direct, through an agent in the customer's network, or through the cloud connector),
+    status, read-only key, sites and totals of the last poll (every 5 minutes)."""
+    from mmn.services import nodes
+    from mmn.services.unifi import service as uf
+
+    async with sessionmaker()() as db:
+        try:
+            env_id = (await nodes.get_environment(db, environment)).id if environment else None
+        except nodes.NodeError as e:
+            raise ToolDenied(str(e)) from e
+        return _jsonable([uf.connection_out(c) for c in await uf.list_connections(db, env_id)])
+
+
+@tool("unifi", RO)
+async def get_unifi_overview(environment: str | None = None, connection: str | None = None) -> dict:
+    """All UniFi Network sites with their gateways, switches and access points: status (online/offline),
+    model, IP, uplink device, firmware and whether an update is available, clients per device and per
+    site (wired, WiFi, guests), WiFi networks with VLAN and security, WAN state and the latest events
+    (device offline/online, WAN change/failover, new firmware). Data from the last poll; use
+    refresh_unifi first when it must be live. Offline devices are listed first."""
+    from mmn.services import nodes
+    from mmn.services.unifi import service as uf
+
+    async def run(db):
+        env_id = (await nodes.get_environment(db, environment)).id if environment else None
+        cid = (await _uconn(connection, ("network", "site_manager"))).id if connection else None
+        res = await uf.network_overview(db, env_id, cid)
+        for d in res["devices"]:
+            d.pop("radios", None)
+        return res
+
+    try:
+        return await _with_db(run)
+    except nodes.NodeError as e:
+        raise ToolDenied(str(e)) from e
+
+
+@tool("unifi", RO)
+async def refresh_unifi(connection: str) -> dict:
+    """Poll one UniFi connection now (devices, clients, WiFi, WAN or doors) instead of waiting for the
+    5-minute poll. Returns the totals."""
+    from mmn.services.unifi import service as uf
+    from mmn.services.unifi.transport import UnifiError
+
+    c = await _uconn(connection, ("network", "site_manager", "access"))
+    try:
+        snap = await uf.poll(c.id)
+    except UnifiError as e:
+        raise _uerr(e) from e
+    return _jsonable({"connection": c.name, "totals": snap.get("totals"), "polled_at": snap.get("polled_at")})
+
+
+@tool("unifi", RO)
+async def get_unifi_device(device: str, connection: str | None = None, site: str | None = None) -> dict:
+    """Live details of one UniFi device (by name, id or MAC): state, firmware and update, uplink, ports
+    (state, speed, PoE), radios, uptime, CPU/memory, uplink throughput, radio retries and the clients
+    connected to it."""
+    from mmn.services.unifi import service as uf
+
+    c, s = await _usite(connection, site)
+
+    async def run(db):
+        d = uf.find_device(c, s["id"], device)
+        return await uf.device_detail(db, c, s["id"], d["id"])
+
+    return await _with_db(run)
+
+
+@tool("unifi", RO)
+async def list_unifi_clients(connection: str | None = None, site: str | None = None, query: str | None = None,
+                             limit: int = 200) -> list[dict]:
+    """Clients connected now (live): name, MAC, IP, wired/wireless/VPN, connected since, the device it
+    hangs on (AP or switch) and guest access. query: part of a name, a MAC or an IP."""
+    from mmn.services.unifi import service as uf
+
+    c, s = await _usite(connection, site)
+    return await _with_db(lambda db: uf.clients(db, c, s["id"], query, max(1, min(limit, 2000))))
+
+
+@tool("unifi", RO)
+async def diagnose_wifi_client(client: str, connection: str | None = None, site: str | None = None) -> dict:
+    """Why can't a device (laptop, phone, printer) get on WiFi? client: its name, MAC or IP. Checks
+    whether it is connected now and where, whether it has an IP (DHCP), guest portal authorization, its
+    AP's state, and per SSID: disabled, hidden, WPA3-only, 802.1X, MAC allow/block lists that refuse
+    this MAC, blackout schedules and AP filters; plus offline APs and recent events. Give the MAC when
+    the device is not connected, so MAC filters can be checked."""
+    from mmn.services.unifi import service as uf
+
+    c, s = await _usite(connection, site)
+    return await _with_db(lambda db: uf.diagnose_client(db, c, s["id"], client))
+
+
+@tool("unifi", RO)
+async def list_wifi_networks(connection: str | None = None, site: str | None = None) -> dict:
+    """WiFi networks (SSIDs) of a site, live: enabled, security (WPA2/WPA3/enterprise/open), the network
+    and VLAN they use, hidden, client isolation, MAC filtering, blackout schedule and whether it looks
+    like a guest network."""
+    from mmn.services.unifi import service as uf
+
+    c, s = await _usite(connection, site)
+    return await _with_db(lambda db: uf.live_wifi(db, c, s["id"]))
+
+
+@tool("unifi", RO)
+async def check_guest_isolation(connection: str | None = None, site: str | None = None) -> dict:
+    """Is the guest network isolated from the LAN? Finds the guest networks (by name, zone or SSID) and,
+    from the zone-based firewall policies, says per LAN network: isolated, partial (exceptions allow some
+    traffic), open (same zone or an allow policy) or unknown, with the policy that decides it. Also shows
+    client isolation of the guest SSIDs."""
+    from mmn.services.unifi import service as uf
+
+    c, s = await _usite(connection, site)
+    return await _with_db(lambda db: uf.guest_isolation(db, c, s["id"]))
+
+
+@tool("unifi", RO)
+async def find_firmware_updates(environment: str | None = None, type: str | None = None) -> list[dict]:
+    """Which UniFi devices have a firmware update available, across all connections and customers
+    (from the last poll). type: gateway, switch or ap."""
+    from mmn.services import nodes
+    from mmn.services.unifi import service as uf
+
+    async def run(db):
+        env_id = (await nodes.get_environment(db, environment)).id if environment else None
+        return uf.firmware_report(await uf.list_connections(db, env_id), type)
+
+    try:
+        return await _with_db(run)
+    except nodes.NodeError as e:
+        raise ToolDenied(str(e)) from e
+
+
+@tool("unifi", RO)
+async def list_unifi_events(connection: str | None = None, since_hours: int = 24, kind: str | None = None,
+                            limit: int = 100) -> list[dict]:
+    """What changed in UniFi: device_offline, device_online, wan_change (WAN failover), uplink_changed,
+    firmware_available, device_added, console_state, connection_error/restored. Detected by comparing the
+    5-minute polls. kind filters on one of these."""
+    from mmn.services.unifi import service as uf
+
+    cid = (await _uconn(connection, ("network", "site_manager", "access"))).id if connection else None
+    return await _with_db(lambda db: uf.list_events(db, cid, max(1, min(since_hours, 24 * 90)), kind,
+                                                    max(1, min(limit, 1000))))
+
+
+@tool("unifi", RO)
+async def get_unifi_cloud(connection: str | None = None, isp_metrics: bool = False) -> dict:
+    """UniFi Site Manager (cloud): all consoles (hosts) of the account with their state and version, all
+    sites with device/offline/client counts, ISP and WAN uptime, and all devices with firmware status.
+    isp_metrics=true adds hourly WAN latency, packet loss and downtime of the last 7 days."""
+    from mmn.services.unifi import service as uf
+
+    c = await _uconn(connection, "site_manager")
+
+    async def run(db):
+        out = {"connection": c.name, **(c.snapshot or {})}
+        if isp_metrics:
+            out["isp_metrics"] = await (await uf.cloud_api(db, c)).isp_metrics("1h", "7d")
+        return out
+
+    return await _with_db(run)
+
+
+@tool("unifi_admin", DESTRUCTIVE)
+async def restart_unifi_device(device: str, confirm: str, reason: str, connection: str | None = None,
+                               site: str | None = None) -> dict:
+    """Restart a UniFi device (AP, switch or gateway). Clients on it lose their connection for a few
+    minutes; restarting the gateway takes the whole site offline. Set `confirm` to the device's exact
+    name. Ask the user first."""
+    from mmn.services.unifi import service as uf
+
+    c, s = await _usite(connection, site)
+
+    async def run(db):
+        d = uf.find_device(c, s["id"], device)
+        if confirm != d["name"]:
+            raise ToolDenied(f"confirm must equal the device name '{d['name']}'")
+        if not reason.strip():
+            raise ToolDenied("give a reason")
+        uf.require_writable(c)
+        await (await uf.network_api(db, c)).device_action(s["id"], d["id"], "RESTART")
+        return {"ok": True, "device": d["name"], "site": s["name"], "action": "restart"}
+
+    return await _with_db(run)
+
+
+@tool("unifi_admin", DESTRUCTIVE)
+async def power_cycle_switch_port(device: str, port: int, confirm: str, reason: str, connection: str | None = None,
+                                  site: str | None = None) -> dict:
+    """Power-cycle the PoE of one switch port (e.g. to reboot a hung AP, camera or phone). `confirm`
+    is '<switch name> port <n>'. Ask the user first."""
+    from mmn.services.unifi import service as uf
+
+    c, s = await _usite(connection, site)
+
+    async def run(db):
+        d = uf.find_device(c, s["id"], device)
+        if confirm != f"{d['name']} port {port}":
+            raise ToolDenied(f"confirm must be '{d['name']} port {port}'")
+        if not reason.strip():
+            raise ToolDenied("give a reason")
+        uf.require_writable(c)
+        await (await uf.network_api(db, c)).port_action(s["id"], d["id"], port, "POWER_CYCLE")
+        return {"ok": True, "device": d["name"], "port": port, "action": "power_cycle"}
+
+    return await _with_db(run)
+
+
+@tool("unifi_admin", WRITE)
+async def set_guest_access(client: str, authorize: bool, connection: str | None = None,
+                           site: str | None = None) -> dict:
+    """Authorize (or revoke) guest portal access for a connected client (name, MAC or IP)."""
+    from mmn.services.unifi import service as uf
+
+    c, s = await _usite(connection, site)
+
+    async def run(db):
+        rows = await uf.clients(db, c, s["id"], client)
+        if len(rows) != 1:
+            raise ToolDenied(f"{len(rows)} clients match '{client}'; be more specific (MAC)")
+        uf.require_writable(c)
+        await (await uf.network_api(db, c)).client_action(
+            s["id"], rows[0]["id"], "AUTHORIZE_GUEST_ACCESS" if authorize else "UNAUTHORIZE_GUEST_ACCESS")
+        return {"ok": True, "client": rows[0]["name"], "authorized": authorize}
+
+    return await _with_db(run)
+
+
+@tool("unifi_admin", DESTRUCTIVE)
+async def set_wifi_enabled(wifi: str, enabled: bool, confirm: str, connection: str | None = None,
+                           site: str | None = None) -> dict:
+    """Switch a WiFi network (SSID) on or off. Turning it off disconnects all its clients. `confirm`
+    is the exact SSID name. Ask the user first."""
+    from mmn.api.unifi import set_wifi
+    from mmn.services.unifi import service as uf
+
+    c, s = await _usite(connection, site)
+
+    async def run(db):
+        rows = [w for w in await uf.live_wifi(db, c, s["id"]) or [] if wifi in (w["id"], w["name"])]
+        if not rows:
+            raise ToolDenied("WiFi network not found")
+        if confirm != rows[0]["name"]:
+            raise ToolDenied(f"confirm must equal the SSID '{rows[0]['name']}'")
+        uf.require_writable(c)
+        return await set_wifi(await uf.network_api(db, c), s["id"], rows[0]["id"], enabled)
+
+    return await _with_db(run)
+
+
+@tool("unifi", RO)
+async def list_doors(connection: str | None = None) -> list[dict]:
+    """UniFi Access doors, live: name, lock relay (lock/unlock), door position (open/close, when a door
+    sensor is fitted) and whether a hub is bound. Without `connection` all Access connections."""
+    from mmn.services.unifi import service as uf
+    from mmn.services.unifi.transport import UnifiError
+
+    async with sessionmaker()() as db:
+        conns = [await _uconn(connection, "access")] if connection else await uf.list_connections(db, kind="access")
+    out = []
+    for c in conns:
+        try:
+            snap = await uf.poll(c.id)
+            out += [{"connection": c.name, **d} for d in snap["doors"]]
+        except UnifiError as e:
+            out.append({"connection": c.name, "error": str(e)})
+    return _jsonable(out)
+
+
+@tool("unifi", RO)
+async def get_access_log(connection: str | None = None, door: str | None = None, actor: str | None = None,
+                         since: str | None = None, until: str | None = None, hours: float = 24,
+                         topic: str = "door_openings", limit: int = 100) -> list[dict]:
+    """UniFi Access log: who opened which door when, how (NFC card, PIN, mobile, remote) and whether it
+    was granted or blocked. For "who opened the server room last night": door='server room',
+    since='2026-11-21T18:00:00+01:00', until='2026-11-22T07:00:00+01:00' (ISO 8601 with time zone) or
+    hours=12. topic: door_openings (default), critical, updates, device_events, admin_activity, visitor
+    or all. actor: part of a person's name."""
+    from mmn.services.unifi import service as uf
+
+    c = await _uconn(connection, "access")
+
+    def parse(v: str | None):
+        if not v:
+            return None
+        from datetime import UTC, datetime
+
+        try:
+            d = datetime.fromisoformat(v)
+        except ValueError as e:
+            raise ToolDenied(f"invalid time '{v}', use ISO 8601 like 2026-11-21T22:00:00+01:00") from e
+        return d if d.tzinfo else d.replace(tzinfo=UTC)
+
+    return await _with_db(lambda db: uf.access_log(db, c, hours=hours, since=parse(since), until=parse(until),
+                                                   topic=topic, door=door, actor=actor, limit=max(1, min(limit, 500))))
+
+
+@tool("unifi", RO)
+async def list_door_schedules(connection: str | None = None) -> dict:
+    """UniFi Access schedules (when doors are unlocked or who may enter when) and access policies."""
+    from mmn.services.unifi import service as uf
+
+    c = await _uconn(connection, "access")
+
+    async def run(db):
+        api = await uf.access_api(db, c)
+        return {"schedules": await api.schedules(), "policies": await uf._optional(api.policies()) or []}
+
+    return await _with_db(run)
+
+
+@tool("doors", DESTRUCTIVE)
+async def unlock_door(door: str, confirm: str, reason: str, connection: str | None = None) -> dict:
+    """Unlock a door remotely (one momentary unlock, like pressing the button in UniFi Access).
+    Physical security: ALWAYS ask the user first. `confirm` is the exact door name; `reason` is
+    logged here and the unlock shows in UniFi's own access log under this app's name."""
+    from mmn.services.unifi import service as uf
+
+    c = await _uconn(connection, "access")
+    p = current_principal()
+
+    async def run(db):
+        d = await uf.find_door(db, c, door)
+        if confirm != d["name"]:
+            raise ToolDenied(f"confirm must equal the door name '{d['name']}'")
+        if not reason.strip():
+            raise ToolDenied("give a reason")
+        uf.require_writable(c)
+        await (await uf.access_api(db, c)).unlock(d["id"], f"{p.username if p else 'mcp'} via Claude (MCP)")
+        return {"ok": True, "door": d["name"], "action": "unlock"}
+
+    return await _with_db(run)
+
+
+@tool("doors", DESTRUCTIVE)
+async def set_door_lock_rule(door: str, rule: str, reason: str, confirm: str, minutes: int | None = None,
+                             connection: str | None = None) -> dict:
+    """Change a door's temporary lock rule: keep_lock (stay locked), keep_unlock (stay unlocked),
+    custom (unlocked for `minutes`), lock_early (end an unlock schedule now) or reset (back to the
+    normal schedule). `confirm` is the exact door name. Ask the user first."""
+    from mmn.services.unifi import service as uf
+
+    if rule not in uf.LOCK_RULES:
+        raise ToolDenied("rule must be one of " + ", ".join(uf.LOCK_RULES))
+    if rule == "custom" and not minutes:
+        raise ToolDenied("custom needs minutes")
+    c = await _uconn(connection, "access")
+
+    async def run(db):
+        d = await uf.find_door(db, c, door)
+        if confirm != d["name"]:
+            raise ToolDenied(f"confirm must equal the door name '{d['name']}'")
+        if not reason.strip():
+            raise ToolDenied("give a reason")
+        uf.require_writable(c)
+        await (await uf.access_api(db, c)).set_lock_rule(d["id"], rule, minutes)
+        return {"ok": True, "door": d["name"], "rule": rule, "minutes": minutes}
+
+    return await _with_db(run)
+
+
 def _base_url_from_scope(scope: Scope, headers: dict[str, str]) -> str:
     from mmn.config import get_settings
 

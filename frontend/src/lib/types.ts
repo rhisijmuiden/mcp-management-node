@@ -853,7 +853,7 @@ export interface MonAlert {
   notified_at: string | null;
 }
 
-export interface MonitoringSettings { enabled: boolean; mail_to: string[]; cpu_pct: number; cpu_minutes: number; mem_pct: number; disk_pct: number; storage_pct: number; offline_minutes: number; smart: boolean; wearout_pct: number }
+export interface MonitoringSettings { enabled: boolean; mail_to: string[]; cpu_pct: number; cpu_minutes: number; mem_pct: number; disk_pct: number; storage_pct: number; offline_minutes: number; smart: boolean; wearout_pct: number; unifi?: boolean }
 
 export interface GithubStatus { configured: boolean; login: string | null; checked_at: string | null }
 export interface GithubRepo { full_name: string; private: boolean; default_branch: string; description: string; pushed_at: string | null; html_url: string; archived: boolean }
@@ -995,3 +995,92 @@ export interface Transfer {
 }
 
 export interface InstalledPackage { name: string; version: string; arch?: string; status?: string; source?: string; vendor?: string }
+
+/* ------------------------------------------------------------------ UniFi (phase 6) */
+export type UnifiKind = "network" | "site_manager" | "access";
+export interface UnifiConnection {
+  id: string;
+  name: string;
+  kind: UnifiKind;
+  transport: "direct" | "agent" | "cloud";
+  base_url: string | null;
+  environment_id: string;
+  environment_name: string | null;
+  agent_node_id: string | null;
+  cloud_connection_id: string | null;
+  console_id: string | null;
+  has_key: boolean;
+  read_only: boolean;
+  tls_mode: "verify" | "pin" | "insecure";
+  tls_fingerprint: string | null;
+  enabled: boolean;
+  status: "unknown" | "ok" | "error";
+  last_error: string | null;
+  last_ok_at: string | null;
+  last_poll_at: string | null;
+  version: string | null;
+  sites: { id: string; name: string }[];
+  totals: Record<string, number>;
+}
+export interface UnifiPort { idx: number; state: string; connector?: string; speed_mbps?: number | null; max_speed_mbps?: number | null; poe?: boolean; poe_state?: string | null }
+export interface UnifiDevice {
+  id: string;
+  name: string;
+  model: string | null;
+  mac: string | null;
+  ip: string | null;
+  state: string;
+  online: boolean;
+  type: "gateway" | "switch" | "ap" | "other";
+  firmware: string | null;
+  firmware_updatable: boolean;
+  uplink_device_id: string | null;
+  uplink_name?: string | null;
+  uplink_port?: number | null;
+  clients: number;
+  ports_up?: number;
+  ports_total?: number;
+  connection_id: string;
+  connection: string;
+  environment: string | null;
+  site_id?: string;
+  site?: string | null;
+  source: "network" | "cloud";
+}
+export interface UnifiClient { id: string; name: string | null; mac: string | null; ip: string | null; type: string; connected_at: string | null; uplink_device_id: string | null; uplink_name: string | null; access: string; authorized: boolean | null }
+export interface UnifiDeviceDetail extends Omit<UnifiDevice, "connection_id" | "connection" | "environment" | "source"> {
+  ports: UnifiPort[];
+  radios: { standard: string | null; frequency_ghz: number | null; channel: number | null; channel_width_mhz: number | null }[];
+  stats: { uptime_sec: number | null; cpu_pct: number | null; mem_pct: number | null; uplink_tx_bps: number | null; uplink_rx_bps: number | null; radios: { frequency_ghz: number; tx_retries_pct: number | null }[] };
+  client_list: UnifiClient[];
+}
+export interface UnifiWifi {
+  id: string; name: string; enabled: boolean; security: string | null; vlan: number | null; network_name: string | null; hidden: boolean;
+  client_isolation: boolean; mac_filter: { action: string; macs: string[] } | null; blackout_days: number; guest: boolean;
+  connection_id: string; connection: string; site_id: string; site: string;
+}
+export interface UnifiEvent { id: number; at: string; connection_id: string; connection: string | null; site: string | null; kind: string; severity: "info" | "warning" | "critical"; subject: string | null; message: string }
+export interface UnifiSite {
+  connection_id: string; connection: string; environment: string | null; site_id: string; site: string; host?: string | null;
+  clients: { total: number; wired?: number | null; wireless?: number | null; guest?: number | null };
+  devices: number | null; offline: number | null; wan_uptime?: number | null; isp?: string | null; cloud?: boolean;
+  wans?: { id: string; name: string; status: Record<string, unknown> }[];
+}
+export interface UnifiOverview {
+  connections: UnifiConnection[];
+  sites: UnifiSite[];
+  devices: UnifiDevice[];
+  wifi: UnifiWifi[];
+  events: UnifiEvent[];
+  totals: { devices: number; offline: number; firmware: number; clients: number; connections: number; errors: number };
+}
+export interface UnifiFinding { severity: "info" | "warning" | "critical"; text: string }
+export interface UnifiDiagnosis { query: string; matches: UnifiClient[]; findings: UnifiFinding[]; ssids: { name: string; enabled: boolean; security: string | null; vlan: number | null; notes: string[] }[] }
+export interface UnifiIsolation {
+  verdict: "isolated" | "partial" | "open" | "unknown" | "no_guest_network";
+  guest_networks: { network: string; vlan: number | null; zone: string | null; ssids: { name: string; client_isolation: boolean }[]; to: { network: string; vlan: number | null; zone: string | null; verdict: string; why: string }[] }[];
+  note: string;
+}
+export interface UnifiDoor { id: string; name: string; full_name: string | null; lock: string | null; position: string | null; has_hub: boolean }
+export interface UnifiAccessConn extends UnifiConnection { doors: UnifiDoor[] }
+export interface UnifiLogRow { at: string; actor: string | null; actor_type: string | null; event: string | null; result: string | null; message: string | null; method: string | null; targets: { type: string; id: string; name: string }[] }

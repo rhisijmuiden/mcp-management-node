@@ -129,6 +129,10 @@ async def update_environment(db: AsyncSession, e: Environment, body: Environment
 async def delete_environment(db: AsyncSession, e: Environment) -> None:
     if e.nodes:
         raise NodeError("move or remove the nodes of this environment first")
+    from mmn.models import UnifiConnection
+
+    if (await db.execute(select(UnifiConnection.id).where(UnifiConnection.environment_id == e.id))).first():
+        raise NodeError("remove the UniFi connections of this environment first")
     await db.delete(e)
     await db.flush()
 

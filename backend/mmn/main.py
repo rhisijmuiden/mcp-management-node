@@ -23,6 +23,7 @@ from mmn.api import (
     settings,
     system,
     tokens,
+    unifi,
     users,
     ws,
 )
@@ -138,7 +139,7 @@ def create_app() -> FastAPI:
 
     for r in (auth.router, users.router, tokens.router, settings.router, backups.router, system.router,
               oauth.router, ws.router, agent.router, proxmox.router, guests.router, library.router, network.router,
-              cluster.router, monitoring.router, deploy.router, servers.router):
+              cluster.router, monitoring.router, deploy.router, servers.router, unifi.router):
         app.include_router(r)
     app.mount("/mcp", mcp_app)
     return app
