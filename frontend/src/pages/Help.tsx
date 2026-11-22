@@ -63,7 +63,7 @@ export function McpHelpPage() {
   const vscode = JSON.stringify({ servers: { "mcp-node": { type: "http", url } } }, null, 2);
   const vscodeToken = JSON.stringify(
     {
-      inputs: [{ type: "promptString", id: "mmn-token", description: "MCP Management Node API token", password: true }],
+      inputs: [{ type: "promptString", id: "mmn-token", description: "Stackpilot API token", password: true }],
       servers: { "mcp-node": { type: "http", url, headers: { Authorization: "Bearer ${input:mmn-token}" } } },
     },
     null,

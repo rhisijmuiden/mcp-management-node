@@ -130,7 +130,7 @@ def serve(_: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(prog="mmn", description="MCP Management Node")
+    p = argparse.ArgumentParser(prog="mmn", description="Stackpilot")
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("migrate", help="upgrade the database schema").set_defaults(fn=migrate)
     sub.add_parser("serve", help="run the web app").set_defaults(fn=serve)

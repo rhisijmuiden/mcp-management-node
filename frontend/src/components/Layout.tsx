@@ -192,7 +192,7 @@ export function Layout() {
       <div className="flex h-16 items-center gap-3 px-5">
         <img src="brand/rhis-icon.svg" alt="" className="size-8 rounded-[8px]" />
         <div className="min-w-0 leading-tight">
-          <div className="display line-clamp-2 text-[14px] leading-tight">{status?.app_name || "MCP Management Node"}</div>
+          <div className="display line-clamp-2 text-[14px] leading-tight">{status?.app_name || "Stackpilot"}</div>
           <div className="text-[11px] font-semibold uppercase tracking-wider text-muted">Powered by RHIS</div>
         </div>
       </div>

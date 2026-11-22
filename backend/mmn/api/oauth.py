@@ -49,7 +49,7 @@ async def resource_metadata(request: Request, db: AsyncSession = Depends(get_db)
     base = await _base(db, request)
     return {"resource": f"{base}/mcp", "authorization_servers": [base],
             "scopes_supported": list(SCOPES), "bearer_methods_supported": ["header"],
-            "resource_name": "MCP Management Node"}
+            "resource_name": "Stackpilot"}
 
 
 async def as_metadata(request: Request, db: AsyncSession = Depends(get_db)):

@@ -51,8 +51,8 @@ Depends: systemd
 Section: admin
 Priority: optional
 Homepage: https://github.com/rhisijmuiden/mcp-management-node
-Description: Agent for MCP Management Node
- Connects this Proxmox VE node or Linux server to MCP Management Node over an
+Description: Agent for Stackpilot
+ Connects this Proxmox VE node or Linux server to Stackpilot over an
  outgoing mutual-TLS connection: status, metrics, logs, services, package
  updates, commands and data copies, managed from one interface and through
  its MCP server.

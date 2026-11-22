@@ -17,7 +17,7 @@ const isWindows = true
 
 // The Windows Update Agent API (COM), the same one Settings > Windows Update and PSWindowsUpdate use.
 const wuSearch = `$s = New-Object -ComObject Microsoft.Update.Session
-$s.ClientApplicationID = 'MCP Management Node'
+$s.ClientApplicationID = 'Stackpilot'
 $r = $s.CreateUpdateSearcher().Search("IsInstalled=0 and IsHidden=0 and Type='Software'")
 `
 

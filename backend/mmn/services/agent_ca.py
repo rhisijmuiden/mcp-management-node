@@ -47,14 +47,14 @@ def pretty_fingerprint(fp: str) -> str:
 
 
 def _name(cn: str) -> x509.Name:
-    return x509.Name([x509.NameAttribute(NameOID.ORGANIZATION_NAME, "MCP Management Node"),
+    return x509.Name([x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Stackpilot"),
                       x509.NameAttribute(NameOID.COMMON_NAME, cn)])
 
 
 def _new_ca() -> tuple[str, str]:
     key = ec.generate_private_key(ec.SECP256R1())
     now = datetime.now(UTC)
-    name = _name(f"MCP Management Node agent CA {secrets.token_hex(3)}")
+    name = _name(f"Stackpilot agent CA {secrets.token_hex(3)}")
     cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(key.public_key())
             .serial_number(x509.random_serial_number())
             .not_valid_before(now - timedelta(minutes=5)).not_valid_after(now + timedelta(days=365 * CA_YEARS))

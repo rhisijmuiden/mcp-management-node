@@ -1,4 +1,4 @@
-// Package enroll pairs this machine with MCP Management Node using a one-time code.
+// Package enroll pairs this machine with Stackpilot using a one-time code.
 //
 // The agent creates its own private key (it never leaves the machine), sends a certificate
 // request with the code to the app's agent endpoint, and receives a client certificate signed

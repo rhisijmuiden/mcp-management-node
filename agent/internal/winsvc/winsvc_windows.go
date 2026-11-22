@@ -19,8 +19,8 @@ import (
 
 const (
 	Name        = "mmn-agent"
-	DisplayName = "MCP Management Node agent"
-	Description = "Connects this server to MCP Management Node over an outgoing mutual-TLS connection."
+	DisplayName = "Stackpilot agent"
+	Description = "Connects this server to Stackpilot over an outgoing mutual-TLS connection."
 )
 
 // IsService reports whether the process was started by the Service Control Manager.

@@ -34,7 +34,7 @@ func selfSignedCA(t *testing.T, cn string) *x509.Certificate {
 func TestWrongServerIsExplained(t *testing.T) {
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	defer srv.Close()
-	ca := selfSignedCA(t, "MCP Management Node agent CA")
+	ca := selfSignedCA(t, "Stackpilot agent CA")
 	server := strings.TrimPrefix(srv.URL, "https://")
 
 	hc := &http.Client{Transport: &http.Transport{TLSClientConfig: ClientConfig(tls.Certificate{}, ca)}}

@@ -112,7 +112,7 @@ def create_app() -> FastAPI:
             scheduler.stop()
         await dispose_engine()
 
-    app = FastAPI(title="MCP Management Node", version=get_build_info().version, lifespan=lifespan,
+    app = FastAPI(title="Stackpilot", version=get_build_info().version, lifespan=lifespan,
                   docs_url="/api/docs", openapi_url="/api/openapi.json", redoc_url=None)
 
     @app.middleware("http")

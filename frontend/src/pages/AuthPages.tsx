@@ -39,7 +39,7 @@ export function AuthShell({ title, subtitle, children }: { title: ReactNode; sub
           <div className="mb-5 inline-flex items-center gap-2 rounded-full bg-lucht/15 px-3 py-1 text-xs font-semibold text-lucht">
             <Bot className="size-3.5" /> {t("auth.pill")}
           </div>
-          <h1 className="display text-[44px] leading-[48px]">MCP Management Node</h1>
+          <h1 className="display text-[44px] leading-[48px]">Stackpilot</h1>
           <p className="mt-4 text-lg text-white/75">{t("auth.tagline")}</p>
         </div>
         <img src="brand/rhis-antenne.svg" alt="" className="pointer-events-none absolute -bottom-24 -right-24 size-[420px] opacity-[0.07]" />

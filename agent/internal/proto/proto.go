@@ -1,4 +1,4 @@
-// Package proto defines the JSON messages exchanged with MCP Management Node over the WebSocket.
+// Package proto defines the JSON messages exchanged with Stackpilot over the WebSocket.
 //
 // Agent -> app: hello, metrics, updates, res (answer to a req), job (progress of a long task).
 // App -> agent: req (method + params), welcome.

@@ -26,7 +26,7 @@ def test_latest_for_channel():
 async def test_info_and_channel(admin_client):
     c = admin_client
     info = (await c.get("/api/system/info")).json()
-    assert info["name"] == "MCP Management Node" and info["channel"] == "production"
+    assert info["name"] == "Stackpilot" and info["channel"] == "production"
     assert info["updater_available"] is False
     r = await c.put("/api/system/updates/channel", json={"channel": "test"})
     assert r.status_code == 200
@@ -81,3 +81,27 @@ def test_proxy_validation():
         ProxyIn(base_path="/a b")
     with pytest.raises(ValueError):
         ProxyIn(trusted_proxies=["not-an-ip"])
+
+
+async def test_legacy_default_names_show_as_stackpilot(app):
+    from mmn.db import sessionmaker
+    from mmn.models import Setting
+    from mmn.services.settings_store import get_setting, set_setting
+
+    async with sessionmaker()() as db:  # never committed: rolled back when the session closes
+        for key in ("general", "mail"):
+            row = await db.get(Setting, key)
+            if row is not None:
+                await db.delete(row)
+        await db.flush()
+        db.add(Setting(key="general", value={"app_name": "MCP Management Node", "default_language": "nl"}))
+        db.add(Setting(key="mail", value={"from_name": "MCP Management Node", "host": "smtp.example.nl"}))
+        await db.flush()
+        general = await get_setting(db, "general")
+        assert general["app_name"] == "Stackpilot" and general["default_language"] == "nl"
+        assert (await get_setting(db, "mail"))["from_name"] == "Stackpilot"
+        saved = await set_setting(db, "general", {"base_url": "https://sp.example.nl"})
+        assert saved["app_name"] == "Stackpilot"
+        await set_setting(db, "general", {"app_name": "Halewijn Ops"})
+        assert (await get_setting(db, "general"))["app_name"] == "Halewijn Ops"
+        await db.rollback()

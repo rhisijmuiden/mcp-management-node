@@ -146,7 +146,7 @@ def tool(scope: str, annotations: ToolAnnotations):
     return deco
 
 
-INSTRUCTIONS = """MCP Management Node manages Proxmox VE environments and servers through an agent on
+INSTRUCTIONS = """Stackpilot manages Proxmox VE environments and servers through an agent on
 every machine, so you can do day-to-day server administration without a separate remote session.
 
 Environments group nodes (Home, one per customer). Start with `get_overview` or `list_nodes`.
@@ -192,7 +192,7 @@ Nodes and servers can be named by id or by name. Every call is written to the au
 Destructive tools need `confirm` set to the exact node name, or are marked destructive: ask the user
 before calling them, and give a short `reason` for commands and service actions."""
 
-mcp = MCPServer(name="MCP Management Node", instructions=INSTRUCTIONS, version=get_build_info().version)
+mcp = MCPServer(name="Stackpilot", instructions=INSTRUCTIONS, version=get_build_info().version)
 
 RO = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)

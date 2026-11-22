@@ -15,7 +15,7 @@ import (
 
 // Config is written once at enrollment.
 type Config struct {
-	// Server is the agent endpoint of MCP Management Node, host:port (mTLS).
+	// Server is the agent endpoint of Stackpilot, host:port (mTLS).
 	Server string `json:"server"`
 	NodeID string `json:"node_id"`
 	// CAFingerprint is the SHA-256 of the app's agent CA certificate (DER), hex.
