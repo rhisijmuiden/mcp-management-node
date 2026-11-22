@@ -7,7 +7,24 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from mmn.api import agent, auth, backups, guests, library, oauth, proxmox, settings, system, tokens, users, ws
+from mmn.api import (
+    agent,
+    auth,
+    backups,
+    cluster,
+    deploy,
+    guests,
+    library,
+    monitoring,
+    network,
+    oauth,
+    proxmox,
+    settings,
+    system,
+    tokens,
+    users,
+    ws,
+)
 from mmn.config import get_settings
 from mmn.db import dispose_engine
 from mmn.mcp_server import build_mcp_app, mcp
@@ -119,7 +136,8 @@ def create_app() -> FastAPI:
         return maintenance
 
     for r in (auth.router, users.router, tokens.router, settings.router, backups.router, system.router,
-              oauth.router, ws.router, agent.router, proxmox.router, guests.router, library.router):
+              oauth.router, ws.router, agent.router, proxmox.router, guests.router, library.router, network.router,
+              cluster.router, monitoring.router, deploy.router):
         app.include_router(r)
     app.mount("/mcp", mcp_app)
     return app

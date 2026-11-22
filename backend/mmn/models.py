@@ -244,6 +244,8 @@ class Node(Base):
     pve_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     guests: Mapped[dict] = mapped_column(JsonType, default=dict)
     storage_scan: Mapped[dict] = mapped_column(JsonType, default=dict)
+    # Monitoring: storages, physical disks with SMART health (collected every few minutes).
+    health: Mapped[dict] = mapped_column(JsonType, default=dict)
 
     environment: Mapped[Environment] = relationship(back_populates="nodes", lazy="joined")
 
@@ -363,5 +365,126 @@ class TaskRun(Base):
     trigger: Mapped[str] = mapped_column(String(16), default="manual")  # schedule | manual | mcp
     requested_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     results: Mapped[list] = mapped_column(JsonType, default=list)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+# ------------------------------------------------------------------ phase 4: monitoring, network, deploys
+class MetricSample(Base):
+    """One metrics sample per node and minute (kept 30 days) for the monitoring trends."""
+
+    __tablename__ = "metric_samples"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    node_id: Mapped[str] = mapped_column(ForeignKey("nodes.id", ondelete="CASCADE"), index=True)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    cpu: Mapped[float] = mapped_column(default=0.0)
+    load1: Mapped[float | None] = mapped_column(nullable=True)
+    mem_used: Mapped[int] = mapped_column(BigInteger, default=0)
+    mem_total: Mapped[int] = mapped_column(BigInteger, default=0)
+    swap_used: Mapped[int] = mapped_column(BigInteger, default=0)
+    disk_used: Mapped[int] = mapped_column(BigInteger, default=0)
+    disk_total: Mapped[int] = mapped_column(BigInteger, default=0)
+
+
+class Alert(Base):
+    """A monitoring alert: open while the condition lasts, mailed when it opens and resolves."""
+
+    __tablename__ = "alerts"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    node_id: Mapped[str | None] = mapped_column(ForeignKey("nodes.id", ondelete="CASCADE"), nullable=True, index=True)
+    kind: Mapped[str] = mapped_column(String(32))  # offline | cpu | memory | disk | storage | smart | deploy
+    key: Mapped[str] = mapped_column(String(200), index=True)  # unique per open alert, e.g. "storage:<node>:local"
+    severity: Mapped[str] = mapped_column(String(16), default="warning")  # warning | critical
+    message: Mapped[str] = mapped_column(String(500))
+    value: Mapped[float | None] = mapped_column(nullable=True)
+    detail: Mapped[dict] = mapped_column(JsonType, default=dict)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class SdnDesign(Base):
+    """A draft of one SDN zone with its VNets and subnets, made in the SDN designer."""
+
+    __tablename__ = "sdn_designs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    name: Mapped[str] = mapped_column(String(100))
+    node_id: Mapped[str] = mapped_column(ForeignKey("nodes.id", ondelete="CASCADE"), index=True)  # cluster anchor
+    spec: Mapped[dict] = mapped_column(JsonType, default=dict)
+    status: Mapped[str] = mapped_column(String(16), default="draft")  # draft | applied | failed | rolled_back
+    created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_job_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    last_backup_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+
+class ConfigBackup(Base):
+    """Configuration taken from a node right before the app changed it (SDN or network), so it can
+    be put back with one click."""
+
+    __tablename__ = "config_backups"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    kind: Mapped[str] = mapped_column(String(16))  # sdn | network
+    node_id: Mapped[str] = mapped_column(ForeignKey("nodes.id", ondelete="CASCADE"), index=True)
+    design_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    reason: Mapped[str] = mapped_column(String(300), default="")
+    files: Mapped[dict] = mapped_column(JsonType, default=dict)  # path -> content (None: did not exist)
+    created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    restored_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class Deployment(Base):
+    """A GitHub repository deployed natively into an LXC container (production or test branch)."""
+
+    __tablename__ = "deployments"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    name: Mapped[str] = mapped_column(String(64), unique=True)
+    repo: Mapped[str] = mapped_column(String(200))  # owner/name
+    channel: Mapped[str] = mapped_column(String(8), default="prod")  # prod | test
+    branch_prod: Mapped[str] = mapped_column(String(100), default="main")
+    branch_test: Mapped[str] = mapped_column(String(100), default="test")
+    node_id: Mapped[str | None] = mapped_column(ForeignKey("nodes.id", ondelete="SET NULL"), nullable=True, index=True)
+    vmid: Mapped[int] = mapped_column(Integer)
+    path: Mapped[str] = mapped_column(String(255))
+    preset: Mapped[str] = mapped_column(String(32), default="script")
+    setup_cmd: Mapped[str] = mapped_column(Text, default="")
+    deploy_cmd: Mapped[str] = mapped_column(Text, default="")
+    service: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    env_enc: Mapped[str | None] = mapped_column(Text, nullable=True)  # encrypted KEY=value lines
+    auto_deploy: Mapped[str] = mapped_column(String(16), default="off")  # off | webhook | poll
+    webhook_secret_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
+    snapshot: Mapped[bool] = mapped_column(Boolean, default=True)
+    rollback: Mapped[bool] = mapped_column(Boolean, default=True)
+    mail_to: Mapped[list[str]] = mapped_column(JsonType, default=list)
+    last_sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class DeploymentRun(Base):
+    __tablename__ = "deployment_runs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    deployment_id: Mapped[str] = mapped_column(ForeignKey("deployments.id", ondelete="CASCADE"), index=True)
+    status: Mapped[str] = mapped_column(String(16), default="running")  # running | success | failed
+    trigger: Mapped[str] = mapped_column(String(16), default="manual")  # manual | webhook | poll | mcp | create
+    branch: Mapped[str] = mapped_column(String(100))
+    sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    previous_sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    requested_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    job_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    snapshot: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    rolled_back: Mapped[bool] = mapped_column(Boolean, default=False)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
