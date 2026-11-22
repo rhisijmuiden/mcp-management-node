@@ -119,7 +119,7 @@ func (a *Agent) Run(ctx context.Context) error {
 		if time.Since(start) > time.Minute {
 			backoff = time.Second
 		}
-		log.Printf("disconnected from %s: %v (retry in %s)", a.cfg.Server, err, backoff)
+		log.Printf("disconnected from %s: %v (retry in %s)", a.cfg.Server, tlsutil.Explain(a.cfg.Server, err), backoff)
 		select {
 		case <-ctx.Done():
 			return ctx.Err()

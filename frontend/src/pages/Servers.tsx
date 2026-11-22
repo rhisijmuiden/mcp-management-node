@@ -10,7 +10,7 @@ import { Link, useNavigate } from "react-router";
 import { toast } from "sonner";
 import { CodeBlock, CopyButton } from "@/components/CopyButton";
 import { JobBadge, JobView, Output } from "@/components/jobs";
-import { StatusDot, UsageBar, useEnvironments } from "@/components/proxmox";
+import { AgentAddressNotice, StatusDot, UsageBar, useEnvironments } from "@/components/proxmox";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
@@ -214,6 +214,7 @@ export function AddServerDialog({ open, onOpenChange }: { open: boolean; onOpenC
         ) : (
           <div className="space-y-5">
             {!result.connect.packages_available && <Alert tone="warning">{t("px.no_packages")}</Alert>}
+            <AgentAddressNotice info={result.connect} onNavigate={() => onOpenChange(false)} />
             <div className="flex flex-wrap items-center gap-3 rounded-md bg-sunken px-4 py-3">
               <div className="flex-1">
                 <div className="text-xs font-semibold uppercase tracking-wide text-muted">{t("px.pair_code")}</div>

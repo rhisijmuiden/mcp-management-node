@@ -9,6 +9,7 @@ import re
 import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import func, select
@@ -302,9 +303,12 @@ async def connect_info(db: AsyncSession, request_host: str | None = None,
     """Everything the UI needs to show the install command."""
     agents = await get_setting(db, "agents")
     general = await get_setting(db, "general")
+    proxy = await get_setting(db, "proxy")
     ca = await agent_ca.get_ca(db)
     app_url = (general.get("base_url") or request_base or "").rstrip("/")
-    return {"endpoint": agent_packages.agent_endpoint(agents, general, request_host), "app_url": app_url,
+    endpoint, source = agent_packages.agent_endpoint_info(agents, general, request_host, proxy)
+    return {"endpoint": endpoint, "endpoint_source": source, "proxy_mode": proxy.get("mode") == "proxy",
+            "app_url": app_url,
             "fingerprint": ca.fingerprint, "fingerprint_pretty": agent_ca.pretty_fingerprint(ca.fingerprint),
             "agent_version": agent_packages.bundled_version(), "packages_available": bool(agent_packages.manifest()),
             "port": int(agents.get("port") or 8443), "address": agents.get("address", ""),
@@ -370,9 +374,24 @@ async def enroll(db: AsyncSession, body: EnrollIn, remote_ip: str | None,
 
     agents = await get_setting(db, "agents")
     general = await get_setting(db, "general")
+    proxy = await get_setting(db, "proxy")
     return {"node_id": node.id, "node_name": node.name, "environment": pc.environment.name,
             "certificate": cert.public_bytes(serialization.Encoding.PEM).decode(), "ca": ca.cert_pem,
-            "server": agent_packages.agent_endpoint(agents, general, request_host)}
+            "server": _enrolled_server(agents, general, request_host, proxy)}
+
+
+def _enrolled_server(agents: dict[str, Any], general: dict[str, Any], request_host: str | None,
+                     proxy: dict[str, Any]) -> str:
+    """The address the agent keeps using. Without an explicit agent address, keep the one it just
+    enrolled through: that one demonstrably reaches this app."""
+    if not (agents.get("address") or "").strip() and request_host:
+        try:
+            u = urlparse("//" + request_host)
+            if u.hostname and u.port:
+                return request_host
+        except ValueError:
+            pass
+    return agent_packages.agent_endpoint(agents, general, request_host, proxy)
 
 
 # ------------------------------------------------------------------ node actions

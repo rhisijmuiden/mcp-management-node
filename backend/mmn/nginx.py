@@ -157,7 +157,7 @@ def _agent_server(cfg: ProxyIn, tls_dir: str, secret: str) -> str:
     v6 = f"    listen [::]:{cfg.agent_port} ssl;\n" if cfg.listen_ipv6 else ""
     proxy = f"""
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
+        proxy_set_header Host $http_host;
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-MMN-Agent-Secret "{secret}";
         proxy_set_header X-MMN-Client-Verify $ssl_client_verify;

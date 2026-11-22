@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import re
 import shlex
+import socket
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -62,19 +64,69 @@ def package_for(os_name: str | None, arch: str | None, install_kind: str | None)
     return (name, files[name]) if name in files else None
 
 
-def agent_endpoint(agents: dict[str, Any], general: dict[str, Any], request_host: str | None = None) -> str:
-    """host:port that agents connect to."""
+def lan_ip(towards: list[str] | None = None) -> str | None:
+    """This server's own address on the network that reaches ``towards`` (the reverse proxy), else the
+    default route. A UDP connect only picks the route; no packet is sent."""
+    candidates: list[str] = []
+    for entry in towards or []:
+        try:
+            net = ipaddress.ip_network(str(entry).strip(), strict=False)
+        except ValueError:
+            continue
+        candidates.append(str(net.network_address if net.num_addresses == 1 else next(net.hosts(), net.network_address)))
+    candidates += ["192.0.2.1", "2001:db8::1"]
+    for target in candidates:
+        fam = socket.AF_INET6 if ":" in target else socket.AF_INET
+        try:
+            with socket.socket(fam, socket.SOCK_DGRAM) as s:
+                s.connect((target, 9))
+                ip = s.getsockname()[0]
+        except OSError:
+            continue
+        if ip and not ipaddress.ip_address(ip).is_loopback and not ipaddress.ip_address(ip).is_unspecified:
+            return ip
+    return None
+
+
+def _hostport(host: str, port: int) -> str:
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    return f"{host}:{port}"
+
+
+def agent_endpoint_info(agents: dict[str, Any], general: dict[str, Any], request_host: str | None = None,
+                        proxy: dict[str, Any] | None = None) -> tuple[str, str]:
+    """(host:port that agents connect to, where it came from: address | lan_ip | base_url | request).
+
+    Agents speak mTLS with a pinned CA, so they must reach this server's agent port directly or through a
+    TCP stream proxy. Behind a reverse proxy the public name in base_url usually resolves to the router
+    or gateway, which answers on that port with its own certificate, so then the LAN address is used.
+    """
     port = int(agents.get("port") or 8443)
     addr = (agents.get("address") or "").strip()
     if addr:
         addr = re.sub(r"^[a-z]+://", "", addr).split("/")[0]
         if addr.startswith("["):
-            return addr if "]:" in addr else f"{addr}:{port}"
-        return addr if ":" in addr else f"{addr}:{port}"
-    host = urlparse(general.get("base_url") or "").hostname or (request_host or "").split(":")[0] or "localhost"
-    if ":" in host:
-        host = f"[{host}]"
-    return f"{host}:{port}"
+            return (addr if "]:" in addr else f"{addr}:{port}"), "address"
+        return (addr if ":" in addr else f"{addr}:{port}"), "address"
+    if (proxy or {}).get("mode") == "proxy":
+        ip = lan_ip((proxy or {}).get("trusted_proxies") or [])
+        if ip:
+            return _hostport(ip, port), "lan_ip"
+    host = urlparse(general.get("base_url") or "").hostname
+    if host:
+        return _hostport(host, port), "base_url"
+    try:
+        req = urlparse("//" + (request_host or "")).hostname
+    except ValueError:
+        req = None
+    return _hostport(req or "localhost", port), "request"
+
+
+def agent_endpoint(agents: dict[str, Any], general: dict[str, Any], request_host: str | None = None,
+                   proxy: dict[str, Any] | None = None) -> str:
+    """host:port that agents connect to."""
+    return agent_endpoint_info(agents, general, request_host, proxy)[0]
 
 
 INSTALL_SCRIPT = r"""#!/usr/bin/env bash

@@ -137,6 +137,19 @@ export function NodeCard({ n, admin }: { n: NodeInfo; admin: boolean }) {
 }
 
 /* ------------------------------------------------------------------ add a node */
+/** Shown wherever an install command is shown, when no agent address is configured. */
+export function AgentAddressNotice({ info, onNavigate, here }: { info: ConnectInfo; onNavigate?: () => void; here?: boolean }) {
+  const { t } = useTranslation();
+  if (!info.endpoint_source || info.endpoint_source === "address") return null;
+  const key = info.endpoint_source === "lan_ip" ? "agents.addr_lan" : info.proxy_mode ? "agents.addr_public_proxy" : "agents.addr_public";
+  return (
+    <Alert tone={info.endpoint_source === "lan_ip" ? "info" : "warning"} title={t("agents.addr_title")}>
+      {t(key, { endpoint: info.endpoint, port: info.port })}{" "}
+      {here ? t("agents.addr_fix_here") : <Link to="/admin/agents" onClick={onNavigate} className="font-semibold underline">{t("agents.addr_fix")}</Link>}
+    </Alert>
+  );
+}
+
 export function PairDialog({ open, onOpenChange, environmentId }: { open: boolean; onOpenChange: (v: boolean) => void; environmentId?: string }) {
   const { t } = useTranslation();
   const envs = useEnvironments();
@@ -188,6 +201,7 @@ export function PairDialog({ open, onOpenChange, environmentId }: { open: boolea
       ) : (
         <div className="space-y-5">
           {!result.connect.packages_available && <Alert tone="warning">{t("px.no_packages")}</Alert>}
+          <AgentAddressNotice info={result.connect} onNavigate={() => onOpenChange(false)} />
           <div className="flex flex-wrap items-center gap-3 rounded-md bg-sunken px-4 py-3">
             <div className="flex-1">
               <div className="text-xs font-semibold uppercase tracking-wide text-muted">{t("px.pair_code")}</div>

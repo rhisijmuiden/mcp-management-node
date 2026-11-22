@@ -29,6 +29,46 @@ func NormalizeFingerprint(fp string) string {
 	return fp
 }
 
+// WrongServerError means the address answered with TLS, but with a certificate that was not
+// issued by the app's agent CA: SERVER points at another device or at a TLS-terminating proxy.
+type WrongServerError struct {
+	Presented string // subject and issuer of the certificate the server sent
+	Err       error
+}
+
+func (e *WrongServerError) Error() string {
+	return fmt.Sprintf("the server's certificate (%s) is not from this app's agent CA: %v", e.Presented, e.Err)
+}
+
+func (e *WrongServerError) Unwrap() error { return e.Err }
+
+func describe(certs []*x509.Certificate) string {
+	if len(certs) == 0 {
+		return "no certificate"
+	}
+	c := certs[0]
+	d := "subject " + c.Subject.String()
+	if c.Issuer.String() != c.Subject.String() {
+		d += ", issuer " + c.Issuer.String()
+	}
+	if len(c.DNSNames) > 0 {
+		d += ", names " + strings.Join(c.DNSNames, " ")
+	}
+	return d
+}
+
+// Explain adds a hint for the agent log when err means the agent is talking to the wrong server.
+func Explain(server string, err error) error {
+	var w *WrongServerError
+	if errors.As(err, &w) {
+		return fmt.Errorf("%w. Is SERVER (%s) pointing at the app? It must reach the app's agent port directly "+
+			"(the app's LAN IP) or through a TCP stream proxy; a web proxy or another device on that port "+
+			"(router, UniFi gateway, NAS) answers with its own certificate. Fix the agent address under "+
+			"Administration > Agents & pairing and pair again", err, server)
+	}
+	return err
+}
+
 // verifyChain checks that the server's leaf certificate was issued by ca.
 func verifyChain(certs []*x509.Certificate, ca *x509.Certificate) error {
 	if len(certs) == 0 {
@@ -57,13 +97,14 @@ func PinnedEnrollConfig(pin string, got **x509.Certificate) *tls.Config {
 			for _, c := range cs.PeerCertificates {
 				if c.IsCA && Fingerprint(c.Raw) == pin {
 					if err := verifyChain(cs.PeerCertificates, c); err != nil {
-						return fmt.Errorf("server certificate not signed by the pinned CA: %w", err)
+						return &WrongServerError{Presented: describe(cs.PeerCertificates), Err: err}
 					}
 					*got = c
 					return nil
 				}
 			}
-			return fmt.Errorf("the server's CA does not match fingerprint %s (wrong server, or a man in the middle)", pin)
+			return &WrongServerError{Presented: describe(cs.PeerCertificates),
+				Err: fmt.Errorf("no CA with fingerprint %s in the chain (wrong server, or a man in the middle)", pin)}
 		},
 	}
 }
@@ -75,7 +116,10 @@ func ClientConfig(cert tls.Certificate, ca *x509.Certificate) *tls.Config {
 		Certificates:       []tls.Certificate{cert},
 		InsecureSkipVerify: true, // replaced by VerifyConnection below
 		VerifyConnection: func(cs tls.ConnectionState) error {
-			return verifyChain(cs.PeerCertificates, ca)
+			if err := verifyChain(cs.PeerCertificates, ca); err != nil {
+				return &WrongServerError{Presented: describe(cs.PeerCertificates), Err: err}
+			}
+			return nil
 		},
 	}
 }

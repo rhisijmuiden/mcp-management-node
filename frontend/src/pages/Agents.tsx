@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { CopyButton } from "@/components/CopyButton";
+import { AgentAddressNotice } from "@/components/proxmox";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Field, Input, Switch } from "@/components/ui/form";
@@ -45,6 +46,7 @@ export function AgentsPage() {
             <CardBody className="space-y-4">
               {save.isError && <Alert tone="offline">{errorMessage(save.error, t)}</Alert>}
               {d && !d.packages_available && <Alert tone="warning">{t("px.no_packages")}</Alert>}
+              {d && <AgentAddressNotice info={d} here />}
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-sunken px-4 py-3">
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-wide text-muted">{t("agents.agents_connect_to")}</div>
