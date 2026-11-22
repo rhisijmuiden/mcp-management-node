@@ -8,6 +8,10 @@ from pathlib import Path
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+CURRENT_REPO = "rhisijmuiden/stackpilot"
+# Former names of the repository (GitHub redirects them, but we use the current one).
+LEGACY_REPOS = {"rhisijmuiden/mcp-management-node", "rhisijmuiden/proxmox-management"}
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="MMN_", env_file=None, extra="ignore")
@@ -18,7 +22,7 @@ class Settings(BaseSettings):
     # Path the app is served under, e.g. "/" or "/proxmox". Nginx strips it before proxying the API.
     base_path: str = "/"
     # GitHub repository releases are fetched from.
-    github_repo: str = "rhisijmuiden/mcp-management-node"
+    github_repo: str = CURRENT_REPO
     github_token: str | None = None
     listen_host: str = "127.0.0.1"
     listen_port: int = 8740
@@ -30,6 +34,12 @@ class Settings(BaseSettings):
     agent_dist: Path | None = None
     session_hours: int = Field(default=12, ge=1)
     remember_days: int = Field(default=30, ge=1)
+
+    @field_validator("github_repo")
+    @classmethod
+    def _current_repo(cls, v: str) -> str:
+        # Installs from before the rename to Stackpilot still name the old repository in mmn.env.
+        return CURRENT_REPO if v.strip().lower() in LEGACY_REPOS else v.strip()
 
     @field_validator("base_path")
     @classmethod

@@ -15,7 +15,7 @@ import (
 	"github.com/coder/websocket"
 	"golang.org/x/sys/windows"
 
-	"github.com/rhisijmuiden/mcp-management-node/agent/internal/winps"
+	"github.com/rhisijmuiden/stackpilot/agent/internal/winps"
 )
 
 // servePTY runs PowerShell in a Windows pseudo console (ConPTY, Windows 10 1809 / Server 2019 and

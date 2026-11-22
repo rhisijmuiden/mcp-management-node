@@ -8,9 +8,9 @@ import (
 	"log"
 	"os"
 
-	"github.com/rhisijmuiden/mcp-management-node/agent/internal/client"
-	"github.com/rhisijmuiden/mcp-management-node/agent/internal/config"
-	"github.com/rhisijmuiden/mcp-management-node/agent/internal/winsvc"
+	"github.com/rhisijmuiden/stackpilot/agent/internal/client"
+	"github.com/rhisijmuiden/stackpilot/agent/internal/config"
+	"github.com/rhisijmuiden/stackpilot/agent/internal/winsvc"
 )
 
 const serviceUsage = "  mmn-agent service install|uninstall   (register the Windows service)\n"

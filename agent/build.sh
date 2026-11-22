@@ -50,7 +50,7 @@ Installed-Size: $size
 Depends: systemd
 Section: admin
 Priority: optional
-Homepage: https://github.com/rhisijmuiden/mcp-management-node
+Homepage: https://github.com/rhisijmuiden/stackpilot
 Description: Agent for Stackpilot
  Connects this Proxmox VE node or Linux server to Stackpilot over an
  outgoing mutual-TLS connection: status, metrics, logs, services, package

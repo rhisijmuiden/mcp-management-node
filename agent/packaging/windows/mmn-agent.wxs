@@ -16,7 +16,7 @@
     <Property Id="FINGERPRINT" Secure="yes"/>
     <Property Id="CODE" Secure="yes"/>
     <Property Id="NAME" Secure="yes"/>
-    <Property Id="ARPURLINFOABOUT" Value="https://github.com/rhisijmuiden/mcp-management-node"/>
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/rhisijmuiden/stackpilot"/>
     <Directory Id="TARGETDIR" Name="SourceDir">
       <Directory Id="ProgramFiles64Folder">
         <!-- The install folder and registry key keep the former product name (MCP Management Node)

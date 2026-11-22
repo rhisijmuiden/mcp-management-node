@@ -28,12 +28,13 @@ MCP server so Claude, ChatGPT or Copilot can answer questions and carry out task
 > the server room last night?".
 
 > **Name.** The product was called *MCP Management Node* (and before that *Proxmox Management*) up to 0.6.2 and is
-> now **Stackpilot**. Only the name you see changed. The internal names stay the same, so existing installs and agents
-> keep working without any action: the repository `rhisijmuiden/mcp-management-node`, the services
+> now **Stackpilot**; the repository moved to `rhisijmuiden/stackpilot` in 0.6.4 (GitHub redirects the old URLs).
+> The internal names stay the same, so existing installs and agents keep working without any action: the services
 > `mcp-management-node`, `mcp-management-node-updater` and `mmn-agent`, the paths `/opt/mcp-management-node`,
 > `/etc/mcp-management-node`, `/etc/mmn-agent`, the commands `mmn-ctl` and `mmn-agent`, the `.deb`/MSI package names,
-> the Windows install folder and registry key, and the production/test update channels. A saved app name or mail
-> sender name that still holds the old default shows as Stackpilot after the update.
+> the release file names, the Windows install folder and registry key, and the production/test update channels.
+> The updater rewrites an old repository name in `mmn.env` by itself, and a saved app name or mail sender name that
+> still holds the old default shows as Stackpilot.
 
 The interface is in English and Dutch, in the RHIS house style (see [`branding/`](branding/)).
 
@@ -43,10 +44,10 @@ Native install, no Docker: Python 3.13 (FastAPI, systemd), PostgreSQL 17 and Ngi
 
 ```bash
 # Production channel
-curl -fsSL https://raw.githubusercontent.com/rhisijmuiden/mcp-management-node/main/deploy/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/rhisijmuiden/stackpilot/main/deploy/install.sh | sudo bash
 
 # Test channel, behind Zoraxy at 10.10.4.2
-curl -fsSL https://raw.githubusercontent.com/rhisijmuiden/mcp-management-node/test/deploy/install.sh \
+curl -fsSL https://raw.githubusercontent.com/rhisijmuiden/stackpilot/test/deploy/install.sh \
   | sudo bash -s -- --channel test --proxy 10.10.4.2
 ```
 

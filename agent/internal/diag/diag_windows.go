@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rhisijmuiden/mcp-management-node/agent/internal/winps"
+	"github.com/rhisijmuiden/stackpilot/agent/internal/winps"
 )
 
 func psJSON(ctx context.Context, script string, v any) error {

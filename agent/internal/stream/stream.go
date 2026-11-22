@@ -19,7 +19,7 @@ import (
 
 	"github.com/coder/websocket"
 
-	"github.com/rhisijmuiden/mcp-management-node/agent/internal/pve"
+	"github.com/rhisijmuiden/stackpilot/agent/internal/pve"
 )
 
 var sessionRE = regexp.MustCompile(`^[a-f0-9]{32}$`)

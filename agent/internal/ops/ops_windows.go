@@ -14,7 +14,7 @@ import (
 
 	"golang.org/x/sys/windows/registry"
 
-	"github.com/rhisijmuiden/mcp-management-node/agent/internal/winps"
+	"github.com/rhisijmuiden/stackpilot/agent/internal/winps"
 )
 
 // Windows service names: letters, digits and a few separators (no quotes).

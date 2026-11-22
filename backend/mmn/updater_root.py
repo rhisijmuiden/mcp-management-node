@@ -42,6 +42,9 @@ APP_USER = "mmn"
 TAG_RE = re.compile(r"^v\d+\.\d+\.\d+(-test\.\d+)?$")
 KEEP_RELEASES = 3
 MAX_REQUEST = 64 * 1024
+REPO = "rhisijmuiden/stackpilot"
+# Former names of the repository; mmn.env of older installs still names one of these.
+LEGACY_REPOS = {"rhisijmuiden/mcp-management-node", "rhisijmuiden/proxmox-management"}
 
 
 # ------------------------------------------------------------------ utils
@@ -54,6 +57,17 @@ def read_env() -> dict[str, str]:
                 continue
             k, v = line.split("=", 1)
             env[k.strip()] = v.strip().strip('"').strip("'")
+    return migrate_repo(env)
+
+
+def migrate_repo(env: dict[str, str]) -> dict[str, str]:
+    """Point an install from before the rename to Stackpilot at the renamed repository."""
+    if env.get("MMN_GITHUB_REPO", "").lower() in LEGACY_REPOS:
+        env["MMN_GITHUB_REPO"] = REPO
+        try:
+            set_env_value("MMN_GITHUB_REPO", REPO)
+        except OSError:
+            pass  # not root (e.g. tests): the value above is still used for this run
     return env
 
 
@@ -199,7 +213,7 @@ _NO_REDIRECT = urllib.request.build_opener(_NoRedirect)
 
 
 def download_release(tag: str, dest: Path, env: dict[str, str]) -> Path:
-    repo = env.get("MMN_GITHUB_REPO", "rhisijmuiden/mcp-management-node")
+    repo = env.get("MMN_GITHUB_REPO", REPO)
     token = env.get("MMN_GITHUB_TOKEN") or None
     if not re.match(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", repo):
         raise RuntimeError("invalid MMN_GITHUB_REPO")

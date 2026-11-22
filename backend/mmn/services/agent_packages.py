@@ -185,7 +185,7 @@ else
   cat > /etc/systemd/system/mmn-agent.service <<'UNIT'
 [Unit]
 Description=Stackpilot agent
-Documentation=https://github.com/rhisijmuiden/mcp-management-node
+Documentation=https://github.com/rhisijmuiden/stackpilot
 After=network-online.target
 Wants=network-online.target
 

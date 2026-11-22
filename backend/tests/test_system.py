@@ -105,3 +105,20 @@ async def test_legacy_default_names_show_as_stackpilot(app):
         await set_setting(db, "general", {"app_name": "Halewijn Ops"})
         assert (await get_setting(db, "general"))["app_name"] == "Halewijn Ops"
         await db.rollback()
+
+
+def test_old_repository_name_points_at_stackpilot(tmp_path, monkeypatch):
+    from mmn import updater_root
+    from mmn.config import Settings
+
+    assert Settings(github_repo="rhisijmuiden/mcp-management-node").github_repo == "rhisijmuiden/stackpilot"
+    assert Settings(github_repo="someone/fork").github_repo == "someone/fork"
+
+    env_file = tmp_path / "mmn.env"
+    env_file.write_text("# settings\nMMN_DATA_DIR=/var/lib/x\nMMN_GITHUB_REPO=rhisijmuiden/mcp-management-node\n")
+    monkeypatch.setattr(updater_root, "ENV_FILE", env_file)
+    monkeypatch.setattr(updater_root.os, "chown", lambda *a: None)
+    assert updater_root.read_env()["MMN_GITHUB_REPO"] == "rhisijmuiden/stackpilot"
+    text = env_file.read_text()
+    assert "MMN_GITHUB_REPO=rhisijmuiden/stackpilot" in text and "MMN_DATA_DIR=/var/lib/x" in text
+    assert "mcp-management-node" not in text
