@@ -1,0 +1,9 @@
+[Unit]
+Description=MCP Management Node privileged updater (updates and web server changes)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/opt/mcp-management-node/current/venv/bin/python -m mmn.updater_root run
+TimeoutStartSec=1800

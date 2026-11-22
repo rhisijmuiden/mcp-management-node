@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>{{ title }}</title>
+</head>
+<body style="margin:0;padding:0;background:#F6F7FB;font-family:Archivo,'Segoe UI',Helvetica,Arial,sans-serif;color:#14213D;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F6F7FB;padding:32px 12px;">
+<tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#FFFFFF;border:1px solid #DCE1EB;border-radius:16px;overflow:hidden;">
+<tr><td style="background:#14213D;padding:20px 28px;">
+<span style="font-size:20px;font-weight:800;letter-spacing:0.5px;color:#FFFFFF;">{{ app }}</span>
+<span style="display:inline-block;width:8px;height:8px;border-radius:4px;background:#FF6B57;margin-left:6px;vertical-align:middle;"></span>
+</td></tr>
+<tr><td style="padding:28px;">
+<h1 style="margin:0 0 12px;font-size:22px;line-height:28px;font-weight:800;color:#14213D;">{{ title }}</h1>
+{% for p in paragraphs %}<p style="margin:0 0 14px;font-size:15px;line-height:24px;color:#14213D;">{{ p }}</p>{% endfor %}
+{% if button_url %}
+<p style="margin:22px 0;"><a href="{{ button_url }}" style="display:inline-block;background:#FF6B57;color:#14213D;text-decoration:none;font-weight:700;padding:12px 20px;border-radius:10px;">{{ button_label }}</a></p>
+<p style="margin:0 0 14px;font-size:12px;line-height:18px;color:#4F5B73;word-break:break-all;">{{ button_url }}</p>
+{% endif %}
+{% for p in muted %}<p style="margin:0 0 10px;font-size:13px;line-height:20px;color:#4F5B73;">{{ p }}</p>{% endfor %}
+</td></tr>
+<tr><td style="padding:16px 28px;border-top:1px solid #DCE1EB;font-size:12px;color:#4F5B73;">{{ footer }}</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>

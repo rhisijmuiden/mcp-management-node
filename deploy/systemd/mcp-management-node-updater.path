@@ -1,0 +1,10 @@
+[Unit]
+Description=Watch for MCP Management Node update and web server requests
+
+[Path]
+PathExistsGlob=/var/lib/mcp-management-node/run/*-request.json
+Unit=mcp-management-node-updater.service
+MakeDirectory=no
+
+[Install]
+WantedBy=multi-user.target
