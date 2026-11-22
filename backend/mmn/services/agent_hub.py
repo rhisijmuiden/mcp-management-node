@@ -72,6 +72,10 @@ _conns: dict[str, Connection] = {}
 _job_buffers: dict[str, list[str]] = {}
 _bg: set[asyncio.Task] = set()
 _flush_soon: set[str] = set()
+# Jobs that wait for another job (app-side pipelines), and sub-jobs whose output is also shown
+# in a parent job.
+_waiters: dict[str, list[asyncio.Future]] = {}
+_forward: dict[str, str] = {}
 
 
 def is_online(node_id: str) -> bool:
@@ -189,6 +193,11 @@ async def handle_message(conn: Connection, msg: dict[str, Any]) -> None:
             node.cluster_name = (str(data.get("name"))[:100] or None) if data.get("name") else None
         elif typ == "hello":
             _hello_fields(node, data)
+        elif typ == "guests":
+            guests = data.get("guests") if isinstance(data.get("guests"), list) else []
+            node.guests = _clean({"at": data.get("at"), "node": data.get("node"), "guests": guests[:2000]})
+            if data.get("node"):
+                node.pve_name = str(data["node"])[:100]
         else:
             return
         await db.commit()
@@ -227,18 +236,25 @@ def _finish(job: NodeJob, status: str, result: dict[str, Any] | None, error: str
     job.finished_at = datetime.now(UTC)
 
 
+_flush_locks: dict[str, asyncio.Lock] = {}
+
+
 async def _flush(job_id: str) -> None:
-    lines = _job_buffers.get(job_id)
-    if not lines:
-        return
-    _job_buffers[job_id] = []
-    async with sessionmaker()() as db:
-        job = await db.get(NodeJob, job_id)
-        if job is None:
+    lock = _flush_locks.setdefault(job_id, asyncio.Lock())
+    async with lock:
+        lines = _job_buffers.get(job_id)
+        if not lines:
             return
-        out = (job.output or "") + "\n".join(lines) + "\n"
-        job.output = out[-MAX_OUTPUT:]
-        await db.commit()
+        _job_buffers[job_id] = []
+        async with sessionmaker()() as db:
+            job = await db.get(NodeJob, job_id)
+            if job is None:
+                return
+            out = (job.output or "") + "\n".join(lines) + "\n"
+            job.output = out[-MAX_OUTPUT:]
+            await db.commit()
+    if job_id not in _job_buffers:
+        _flush_locks.pop(job_id, None)
 
 
 async def _job_message(node_id: str, msg: dict[str, Any]) -> None:
@@ -247,24 +263,15 @@ async def _job_message(node_id: str, msg: dict[str, Any]) -> None:
         return
     if msg.get("event") == "line":
         line = str(msg.get("line", ""))[:4000]
-        buf = _job_buffers.setdefault(job_id, [])
-        buf.append(line)
-        events.publish("node.job", {"node_id": node_id, "job_id": job_id, "line": line})
-        if len(buf) >= 200:
-            await _flush(job_id)
-        elif job_id not in _flush_soon:
-            _flush_soon.add(job_id)
-
-            async def later() -> None:
-                await asyncio.sleep(1.5)
-                _flush_soon.discard(job_id)
-                await _flush(job_id)
-
-            spawn(later())
+        add_line(node_id, job_id, line)
+        parent = _forward.get(job_id)
+        if parent:
+            add_line(node_id, parent, line)
         return
     if msg.get("event") == "done":
         await _flush(job_id)
         _job_buffers.pop(job_id, None)
+        _forward.pop(job_id, None)
         async with sessionmaker()() as db:
             job = await db.get(NodeJob, job_id)
             if job is None or job.node_id != node_id or job.status != "running":
@@ -277,11 +284,74 @@ async def _job_message(node_id: str, msg: dict[str, Any]) -> None:
             result = msg.get("result") if isinstance(msg.get("result"), dict) else {}
             _finish(job, "success" if msg.get("status") == "success" else "failed", _clean(result), msg.get("error"))
             await db.commit()
+            kind, status, error = job.kind, job.status, job.error
         events.publish("node.job", {"node_id": node_id, "job_id": job_id, "done": True})
-        if job.kind == "updates.apply":
+        _resolve(job_id, status, _clean(result), error)
+        if kind == "updates.apply":
             from mmn.services import nodes
 
             spawn(nodes.job_finished_mail(job_id))
+
+
+def add_line(node_id: str, job_id: str, line: str) -> None:
+    """Append a line to a job's output (buffered, written within ~1.5 s) and show it live."""
+    buf = _job_buffers.setdefault(job_id, [])
+    buf.append(line)
+    events.publish("node.job", {"node_id": node_id, "job_id": job_id, "line": line})
+    if len(buf) >= 200:
+        spawn(_flush(job_id))
+    elif job_id not in _flush_soon:
+        _flush_soon.add(job_id)
+
+        async def later() -> None:
+            await asyncio.sleep(1.5)
+            _flush_soon.discard(job_id)
+            await _flush(job_id)
+
+        spawn(later())
+
+
+def _resolve(job_id: str, status: str, result: dict[str, Any] | None, error: str | None) -> None:
+    for fut in _waiters.pop(job_id, []):
+        if not fut.done():
+            fut.set_result((status, result or {}, error))
+
+
+def forward(sub_job_id: str, parent_job_id: str) -> None:
+    _forward[sub_job_id] = parent_job_id
+
+
+async def wait_job(job_id: str, timeout: float = 6 * 3600) -> tuple[str, dict[str, Any], str | None]:
+    """Wait until a job is finished; returns (status, result, error)."""
+    fut: asyncio.Future = asyncio.get_running_loop().create_future()
+    _waiters.setdefault(job_id, []).append(fut)
+    async with sessionmaker()() as db:
+        job = await db.get(NodeJob, job_id)
+        if job is None:
+            return "failed", {}, "job not found"
+        if job.status != "running":
+            if fut in _waiters.get(job_id, []):
+                _waiters[job_id].remove(fut)
+            return job.status, job.result or {}, job.error
+    try:
+        return await asyncio.wait_for(fut, timeout)
+    except TimeoutError:
+        return "failed", {}, "timed out waiting for the job"
+
+
+async def finish_job(job_id: str, status: str, result: dict[str, Any] | None = None, error: str | None = None) -> None:
+    """Finish a job that the app runs itself (a pipeline of agent jobs)."""
+    await _flush(job_id)
+    _job_buffers.pop(job_id, None)
+    async with sessionmaker()() as db:
+        job = await db.get(NodeJob, job_id)
+        if job is None or job.status != "running":
+            return
+        _finish(job, status, _clean(result or {}), error)
+        node_id = job.node_id
+        await db.commit()
+    events.publish("node.job", {"node_id": node_id, "job_id": job_id, "done": True})
+    _resolve(job_id, status, result, error)
 
 
 async def expire_stale_jobs() -> None:
@@ -293,3 +363,5 @@ async def expire_stale_jobs() -> None:
         for j in jobs:
             _finish(j, "failed", {}, "no result from the agent (timed out)")
         await db.commit()
+    for j in jobs:
+        _resolve(j.id, "failed", {}, "no result from the agent (timed out)")

@@ -31,9 +31,14 @@ SCOPES: dict[str, str] = {
     "node_updates": "Install package updates on nodes and reboot nodes",
     "logs": "Read logs, service status, installed packages and files on nodes",
     "services": "Start, stop and restart services on nodes",
-    "exec": "Run commands on nodes as root (every command is logged)",
+    "exec": "Run commands on nodes and in containers as root (every command is logged)",
+    "guests": "Start, stop and restart VMs and containers, take snapshots, change CPU/memory",
+    "guests_admin": "Create, delete and migrate VMs and containers, roll back snapshots, run community scripts",
+    "templates": "Manage the container template library and push templates to nodes",
+    "tasks": "Create, change and run scheduled tasks",
 }
-ADMIN_ONLY_SCOPES = {"restore", "updates", "settings", "backups", "nodes", "node_updates", "logs", "services", "exec"}
+ADMIN_ONLY_SCOPES = {"restore", "updates", "settings", "backups", "nodes", "node_updates", "logs", "services", "exec",
+                     "guests", "guests_admin", "templates", "tasks"}
 
 
 class TokenCreate(BaseModel):

@@ -55,6 +55,18 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "auto_update": True,
         "updates_check_hours": 6,
     },
+    "templates": {
+        "storage": "local",  # storage that receives library templates when a template sets none
+    },
+    "community": {
+        "repo": "community-scripts/ProxmoxVE",
+        "branch": "main",
+        "raw_base": "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main",
+        "sync_cron": "15 3 * * *",
+    },
+    "schedules": {
+        "timezone": "Europe/Amsterdam",  # time zone of scheduled tasks
+    },
     "proxy": {
         "mode": "direct",  # direct | proxy
         "trusted_proxies": [],

@@ -9,8 +9,12 @@ import { ConsentPage, ForgotPage, LoginPage, ResetPage, SetupPage } from "@/page
 import { BackupsPage } from "@/pages/Backups";
 import { Dashboard } from "@/pages/Dashboard";
 import { HelpPage, McpCapabilitiesPage, McpHelpPage, NodesHelpPage } from "@/pages/Help";
+import { ConsolePage } from "@/pages/Console";
+import { GuestDetailPage, GuestsPage } from "@/pages/Guests";
 import { NodeDetailPage } from "@/pages/Node";
 import { EnvironmentDetailPage, EnvironmentsPage, NodesPage, ProxmoxOverviewPage, UpdatesPage } from "@/pages/Proxmox";
+import { TaskRunPage, TasksPage } from "@/pages/Tasks";
+import { TemplatesPage } from "@/pages/Templates";
 import { GeneralPage, MailPage, NotificationsPage, WebServerPage } from "@/pages/Settings";
 import { UsersPage } from "@/pages/Users";
 
@@ -32,6 +36,9 @@ export default function App() {
       <Route path="/forgot-password" element={<ForgotPage />} />
       <Route path="/reset-password" element={<ResetPage />} />
       <Route path="/connect/consent" element={<ConsentPage />} />
+      <Route path="/console/guest/:node/:vmid" element={<RequireAuth admin><ConsolePage kind="guest" /></RequireAuth>} />
+      <Route path="/console/node/:node" element={<RequireAuth admin><ConsolePage kind="node" /></RequireAuth>} />
+      <Route path="/console/session/:sid" element={<RequireAuth admin><ConsolePage kind="session" /></RequireAuth>} />
       <Route element={<RequireAuth><Layout /></RequireAuth>}>
         <Route index element={<Dashboard />} />
         <Route path="account" element={<AccountPage />} />
@@ -49,6 +56,11 @@ export default function App() {
         <Route path="proxmox/nodes" element={<NodesPage />} />
         <Route path="proxmox/nodes/:id" element={<NodeDetailPage />} />
         <Route path="proxmox/updates" element={<UpdatesPage />} />
+        <Route path="proxmox/guests" element={<GuestsPage />} />
+        <Route path="proxmox/guests/:node/:vmid" element={<GuestDetailPage />} />
+        <Route path="proxmox/templates" element={<TemplatesPage />} />
+        <Route path="tasks" element={<TasksPage />} />
+        <Route path="tasks/runs/:id" element={<TaskRunPage />} />
         <Route path="admin/agents" element={<RequireAuth admin><AgentsPage /></RequireAuth>} />
         <Route path="admin/users" element={<RequireAuth admin><UsersPage /></RequireAuth>} />
         <Route path="admin/backups" element={<RequireAuth admin><BackupsPage /></RequireAuth>} />

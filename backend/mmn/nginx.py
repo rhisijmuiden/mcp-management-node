@@ -119,6 +119,12 @@ def _locations(cfg: ProxyIn, frontend: str, hsts: bool) -> str:
         proxy_pass http://mmn_backend/api/;{proxy}
     }}
 
+    location = {prefix}/api/templates/upload {{
+        proxy_pass http://mmn_backend/api/templates/upload;{proxy}
+        client_max_body_size 8g;
+        proxy_request_buffering off;
+    }}
+
     location ^~ {prefix}/mcp {{
         proxy_pass http://mmn_backend/mcp/;{proxy}
         proxy_buffering off;
@@ -185,6 +191,23 @@ server {{
     location ^~ /agent/download/ {{
         if ($ssl_client_verify != SUCCESS) {{ return 403; }}
         proxy_pass http://mmn_backend/agent/download/;{proxy}
+    }}
+
+    location ^~ /agent/templates/ {{
+        if ($ssl_client_verify != SUCCESS) {{ return 403; }}
+        proxy_pass http://mmn_backend/agent/templates/;{proxy}
+        proxy_buffering off;
+        proxy_read_timeout 1h;
+    }}
+
+    location ^~ /agent/stream/ {{
+        if ($ssl_client_verify != SUCCESS) {{ return 403; }}
+        proxy_pass http://mmn_backend/agent/stream/;{proxy}
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_buffering off;
+        proxy_read_timeout 12h;
+        proxy_send_timeout 12h;
     }}
 
     location / {{

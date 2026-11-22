@@ -41,7 +41,7 @@ class Principal:
 
 _principal: contextvars.ContextVar[Principal | None] = contextvars.ContextVar("mmn_mcp_principal", default=None)
 
-SECRET_ARGS = {"password", "passphrase", "token", "private_key", "secret"}
+SECRET_ARGS = {"password", "passphrase", "token", "private_key", "secret", "ssh_key"}
 
 
 class ToolDenied(ToolError):
@@ -102,7 +102,8 @@ async def _audit(p: Principal | None, tool_name: str, args: dict[str, Any], succ
 
 
 def _target_of(args: dict[str, Any]) -> str | None:
-    for k in ("node", "environment", "backup_id", "target_id", "tag", "channel", "to", "pattern"):
+    for k in ("guest", "node", "environment", "slug", "template", "task_id", "run_id", "name", "backup_id",
+              "target_id", "tag", "channel", "to", "pattern"):
         if args.get(k):
             return str(args[k])[:255]
     return None
@@ -144,6 +145,13 @@ journal), service status (`list_services`, `get_service_status`), installed pack
 (`find_packages` across all nodes, e.g. to check a CVE), files (`read_file`), and run commands
 (`run_command`). You can also install updates, restart services, set the CPU governor, push the
 notification mail settings to the nodes and update the agent.
+
+VMs and containers ("guests"): `list_guests`, `get_guest`, power actions, snapshots (scheduled
+tasks take one before updates and roll back on failure), migration inside a cluster, creating
+containers from the template library (`list_templates`) and VMs from an ISO or a cloud image, and
+apps from community-scripts.org (`list_community_scripts`, review with `get_community_script`,
+then `install_community_script`). `suggest_node` picks the least loaded node. Scheduled tasks:
+`list_scheduled_tasks`, `save_scheduled_task`, `run_scheduled_task`, `get_task_run`.
 
 Nodes can be named by id or by name. Every call is written to the audit log with your token's name.
 Destructive tools need `confirm` set to the exact node name, or are marked destructive: ask the user
@@ -672,6 +680,494 @@ async def run_command(node: str, command: str, reason: str, timeout: int = 60) -
     if not reason.strip():
         raise ToolDenied("give a reason")
     return _jsonable(await _op(node, "exec", {"command": command, "timeout": max(1, min(timeout, 1800))}))
+
+
+# ------------------------------------------------------------------ VMs and containers
+async def _guest(guest: str | int, node: str | None):
+    from mmn.services import guests, nodes
+
+    async with sessionmaker()() as db:
+        try:
+            return await guests.find_guest(db, guest, node)
+        except nodes.NodeError as e:
+            raise ToolDenied(str(e)) from e
+
+
+def _who() -> dict:
+    p = current_principal()
+    return {"source": "mcp", "requested_by": p.username if p else None}
+
+
+async def _job(coro) -> dict:
+    from mmn.services import nodes
+
+    try:
+        job = await coro
+    except Exception as e:
+        raise _agent_errors(e) from e
+    return _jsonable({**nodes.job_out(job, with_output=False), "hint": "follow it with get_node_job"})
+
+
+@tool("read", RO)
+async def list_guests(environment: str | None = None, node: str | None = None, type: str | None = None,
+                      query: str | None = None) -> list[dict]:
+    """VMs (type 'qemu') and containers (type 'lxc') on all Proxmox VE nodes: VMID, name, status,
+    node, CPU/memory/disk use, tags. Filter by environment, node, type or a text `query` (name,
+    VMID or tag). Containers made by community-scripts.org have the tag 'community-script'."""
+    from mmn.services import guests, nodes
+
+    async with sessionmaker()() as db:
+        try:
+            env_id = (await nodes.get_environment(db, environment)).id if environment else None
+            node_id = (await nodes.get_node(db, node)).id if node else None
+        except nodes.NodeError as e:
+            raise ToolDenied(str(e)) from e
+        return _jsonable(await guests.list_guests(db, environment_id=env_id, node_id=node_id, type_=type,
+                                                  query=query))
+
+
+@tool("read", RO)
+async def get_guest(guest: str, node: str | None = None) -> dict:
+    """Details of one VM or container (by VMID or name): configuration, snapshots and, when
+    running, its IP addresses. Give `node` when the VMID exists in more than one environment."""
+    from mmn.services import guests
+
+    n, g = await _guest(guest, node)
+    try:
+        return _jsonable(await guests.guest_detail(n, g))
+    except Exception as e:
+        raise _agent_errors(e) from e
+
+
+@tool("guests", WRITE)
+async def guest_power(guest: str, action: str, node: str | None = None) -> dict:
+    """start, stop (hard), shutdown (clean, falls back to stop after 3 minutes), reboot, suspend
+    or resume a VM or container. Ask the user before stopping or rebooting production guests.
+    Returns a job; follow it with get_node_job."""
+    from mmn.services import guests
+
+    n, g = await _guest(guest, node)
+    return await _job(guests.power(n, g, action, **_who()))
+
+
+@tool("read", RO)
+async def list_snapshots(guest: str, node: str | None = None) -> list[dict]:
+    """Snapshots of a VM or container."""
+    from mmn.services import guests
+
+    n, g = await _guest(guest, node)
+    try:
+        return _jsonable(await guests.list_snapshots(n, g))
+    except Exception as e:
+        raise _agent_errors(e) from e
+
+
+@tool("guests", WRITE)
+async def create_snapshot(guest: str, name: str, description: str = "", include_ram: bool = False,
+                          node: str | None = None) -> dict:
+    """Take a snapshot (name: letters, digits, - and _). include_ram saves the RAM of a running VM."""
+    from mmn.services import guests
+
+    n, g = await _guest(guest, node)
+    return await _job(guests.create_snapshot(n, g, name, description, include_ram, **_who()))
+
+
+@tool("guests_admin", DESTRUCTIVE)
+async def rollback_snapshot(guest: str, name: str, confirm: str, start_after: bool = True,
+                            node: str | None = None) -> dict:
+    """Roll a VM or container back to snapshot `name`: everything after it is lost. Set `confirm`
+    to the snapshot name. Always ask the user first."""
+    from mmn.services import guests
+
+    if confirm != name:
+        raise ToolDenied("confirm must equal the snapshot name")
+    n, g = await _guest(guest, node)
+    return await _job(guests.rollback_snapshot(n, g, name, start=start_after, **_who()))
+
+
+@tool("guests_admin", DESTRUCTIVE)
+async def delete_snapshot(guest: str, name: str, confirm: str, node: str | None = None) -> dict:
+    """Delete a snapshot. Set `confirm` to the snapshot name."""
+    from mmn.services import guests
+
+    if confirm != name:
+        raise ToolDenied("confirm must equal the snapshot name")
+    n, g = await _guest(guest, node)
+    return await _job(guests.delete_snapshot(n, g, name, **_who()))
+
+
+@tool("guests_admin", DESTRUCTIVE)
+async def migrate_guest(guest: str, target_node: str, confirm: str, online: bool = True,
+                        node: str | None = None) -> dict:
+    """Move a VM or container to another node of the same cluster. Running VMs move live;
+    running containers restart on the target. Set `confirm` to the guest's VMID."""
+    from mmn.services import guests
+
+    n, g = await _guest(guest, node)
+    if confirm != str(g["vmid"]):
+        raise ToolDenied(f"confirm must equal the VMID {g['vmid']}")
+    async with sessionmaker()() as db:
+        return await _job(guests.migrate(db, n, g, target_node, online=online, **_who()))
+
+
+@tool("guests", WRITE)
+async def set_guest_resources(guest: str, cores: int | None = None, memory_mb: int | None = None,
+                              onboot: bool | None = None, tags: list[str] | None = None,
+                              node: str | None = None) -> dict:
+    """Change CPU cores, memory (MiB), start-on-boot or tags. VMs need a reboot for CPU/memory."""
+    from mmn.services import guests
+
+    n, g = await _guest(guest, node)
+    try:
+        return _jsonable(await guests.set_resources(n, g, guests.ResourcesIn(cores=cores, memory=memory_mb,
+                                                                             onboot=onboot, tags=tags)))
+    except Exception as e:
+        raise _agent_errors(e) from e
+
+
+@tool("guests_admin", DESTRUCTIVE)
+async def delete_guest(guest: str, confirm: str, node: str | None = None) -> dict:
+    """Delete a stopped VM or container including its disks. Cannot be undone. Set `confirm` to the
+    guest's name. Always ask the user first."""
+    from mmn.services import guests
+
+    n, g = await _guest(guest, node)
+    if confirm != g["name"]:
+        raise ToolDenied(f"confirm must equal the name '{g['name']}'")
+    return await _job(guests.destroy(n, g, **_who()))
+
+
+@tool("read", RO)
+async def suggest_node(environment: str | None = None) -> dict:
+    """The least loaded online Proxmox VE node (memory 60 %, CPU 40 %), with the ranking."""
+    from mmn.services import guests, nodes
+
+    async with sessionmaker()() as db:
+        env_id = None
+        if environment:
+            try:
+                env_id = (await nodes.get_environment(db, environment)).id
+            except nodes.NodeError as e:
+                raise ToolDenied(str(e)) from e
+        return _jsonable(await guests.suggest_node(db, env_id) or {"error": "no Proxmox VE node is online"})
+
+
+@tool("read", RO)
+async def get_node_resources(node: str) -> dict:
+    """Storages (with free space), network bridges, ISO images, templates and the next free VMID on
+    a node: what you need to create a guest."""
+    from mmn.services import guests
+
+    nid, _ = await _node_id(node)
+    async with sessionmaker()() as db:
+        from mmn.models import Node
+
+        n = await db.get(Node, nid)
+    try:
+        return _jsonable(await guests.node_resources(n))
+    except Exception as e:
+        raise _agent_errors(e) from e
+
+
+@tool("guests_admin", WRITE)
+async def create_container(name: str, template: str, node: str | None = None, cores: int = 1,
+                           memory_mb: int = 1024, disk_gb: int = 8, storage: str = "local-lvm",
+                           bridge: str = "vmbr0", vlan: int | None = None, ip: str = "dhcp",
+                           gateway: str | None = None, password: str | None = None, ssh_key: str | None = None,
+                           unprivileged: bool = True, start: bool = True, tags: list[str] | None = None,
+                           vmid: int | None = None) -> dict:
+    """Create an LXC container from the template library (`template`: library id, name or file
+    name; see list_templates). Without `node` the least loaded node is used. ip: 'dhcp' or an
+    address with prefix (10.0.0.20/24) plus `gateway`. A password or an SSH key is required. A
+    template that is not on the node yet is downloaded first. Returns a job."""
+    from mmn.services import guests, templates
+
+    async with sessionmaker()() as db:
+        try:
+            tpl = await templates.get_template(db, template)
+            if node:
+                node_id = (await _node_id(node))[0]
+            else:
+                best = await guests.suggest_node(db)
+                if not best:
+                    raise ToolDenied("no Proxmox VE node is online")
+                node_id = best["node_id"]
+            body = guests.CreateCtIn(node_id=node_id, vmid=vmid, name=name, template_id=tpl.id, cores=cores,
+                                     memory=memory_mb, disk_gb=disk_gb, storage=storage,
+                                     net=guests.NetIn(bridge=bridge, vlan=vlan, ip=ip, gateway=gateway),
+                                     password=password, ssh_keys=ssh_key, unprivileged=unprivileged, start=start,
+                                     tags=tags or [])
+        except (ValueError, guests.NodeError) as e:
+            raise ToolDenied(str(e)) from e
+        return await _job(guests.create_ct(db, body, **_who()))
+
+
+@tool("guests_admin", WRITE)
+async def create_vm(name: str, source: str, node: str | None = None, iso: str | None = None,
+                    iso_url: str | None = None, cloud_image: str | None = None, cloud_url: str | None = None,
+                    cores: int = 2, memory_mb: int = 2048, disk_gb: int = 32, storage: str = "local-lvm",
+                    bridge: str = "vmbr0", vlan: int | None = None, ip: str = "dhcp", gateway: str | None = None,
+                    ostype: str = "l26", ci_user: str = "admin", ci_password: str | None = None,
+                    ssh_key: str | None = None, start: bool = True, vmid: int | None = None) -> dict:
+    """Create a VM. source 'iso': install from `iso` (volid, see get_node_resources) or `iso_url`
+    (downloaded first). source 'cloud': a ready cloud image with cloud-init: `cloud_image` is one of
+    debian-13, debian-12, ubuntu-24.04, ubuntu-22.04, rocky-9 (or give `cloud_url`), with `ci_user`
+    and `ci_password` or `ssh_key`. ostype: l26, win11, win10, other. Returns a job."""
+    from mmn.services import guests
+
+    async with sessionmaker()() as db:
+        try:
+            if node:
+                node_id = (await _node_id(node))[0]
+            else:
+                best = await guests.suggest_node(db)
+                if not best:
+                    raise ToolDenied("no Proxmox VE node is online")
+                node_id = best["node_id"]
+            body = guests.CreateVmIn(node_id=node_id, vmid=vmid, name=name, source=source, iso=iso, iso_url=iso_url,
+                                     cloud_image=cloud_image, cloud_url=cloud_url, cores=cores, memory=memory_mb,
+                                     disk_gb=disk_gb, storage=storage, ostype=ostype, ci_user=ci_user,
+                                     ci_password=ci_password, ssh_keys=ssh_key, start=start,
+                                     net=guests.NetIn(bridge=bridge, vlan=vlan, ip=ip, gateway=gateway))
+        except (ValueError, guests.NodeError) as e:
+            raise ToolDenied(str(e)) from e
+        return await _job(guests.create_vm(db, body, **_who()))
+
+
+@tool("exec", DESTRUCTIVE)
+async def run_in_container(guest: str, command: str, reason: str, timeout: int = 120,
+                           node: str | None = None) -> dict:
+    """Run a shell command as root inside a running container (pct exec ... sh -c) and return exit
+    code and output. `reason` is stored in the audit log. Ask the user before changing anything."""
+    import shlex
+
+    from mmn.services import nodes
+
+    if not reason.strip():
+        raise ToolDenied("give a reason")
+    n, g = await _guest(guest, node)
+    if g["type"] != "lxc":
+        raise ToolDenied("only containers; for a VM use run_command on a node with the agent")
+    try:
+        return _jsonable(await nodes.node_call(n.id, "exec", {
+            "command": f"pct exec {int(g['vmid'])} -- sh -c {shlex.quote(command)}",
+            "timeout": max(1, min(timeout, 1800))}))
+    except Exception as e:
+        raise _agent_errors(e) from e
+
+
+# ------------------------------------------------------------------ templates and community scripts
+@tool("read", RO)
+async def list_templates() -> list[dict]:
+    """The container template library (official Proxmox VE and custom templates) with the status per
+    node: current, outdated or missing."""
+    from mmn.services import templates
+
+    async with sessionmaker()() as db:
+        nl = await templates.pve_nodes(db)
+        return _jsonable([templates.template_out(t, nl) for t in await templates.list_templates(db)])
+
+
+@tool("read", RO)
+async def list_template_catalog(query: str | None = None) -> list[dict]:
+    """Official templates available from Proxmox VE (the pveam index) that can be added."""
+    from mmn.services import templates
+
+    async with sessionmaker()() as db:
+        items = (await templates.catalog(db))["items"]
+    if query:
+        q = query.lower()
+        items = [i for i in items if q in i["filename"].lower() or q in (i.get("headline") or "").lower()]
+    return _jsonable(items[:200])
+
+
+@tool("templates", WRITE)
+async def add_official_template(filename: str, sync: bool = True) -> dict:
+    """Add an official template (file name from list_template_catalog) to the library. With `sync`
+    it is pushed to all nodes by the nightly sync (or run sync_templates now)."""
+    from mmn.services import templates
+
+    async with sessionmaker()() as db:
+        p = current_principal()
+        try:
+            t = await templates.add_official(db, filename, created_by=p.username if p else None, sync=sync)
+        except templates.NodeError as e:
+            raise ToolDenied(str(e)) from e
+        await db.commit()
+        return _jsonable(templates.template_out(t))
+
+
+@tool("templates", WRITE)
+async def sync_templates(template: str | None = None) -> dict:
+    """Push the library to all online nodes now (or only one `template`). Returns a run id; follow
+    it with get_task_run."""
+    from mmn.services import templates
+
+    p = current_principal()
+    ids = None
+    if template:
+        async with sessionmaker()() as db:
+            try:
+                ids = [(await templates.get_template(db, template)).id]
+            except templates.NodeError as e:
+                raise ToolDenied(str(e)) from e
+    run_id = await templates.sync(template_ids=ids, trigger="mcp", requested_by=p.username if p else None,
+                                  refresh_index=ids is None)
+    return {"run_id": run_id}
+
+
+@tool("read", RO)
+async def list_community_scripts(query: str | None = None, kind: str | None = None) -> list[dict]:
+    """Scripts from community-scripts.org (synced nightly): slug, name, kind ('ct' container or
+    'vm'), default CPU/RAM/disk and OS. Use `query` to search (e.g. 'jellyfin', 'home assistant')."""
+    from mmn.services import community
+
+    async with sessionmaker()() as db:
+        return _jsonable((await community.list_scripts(db, query, kind))[:100])
+
+
+@tool("read", RO)
+async def get_community_script(slug: str) -> dict:
+    """The current text of a community script from the official repository (and the install part it
+    loads) with its sha256. Show the user what it does before install_community_script."""
+    from mmn.services import community
+
+    async with sessionmaker()() as db:
+        try:
+            info = await community.fetch_script(db, slug)
+        except community.NodeError as e:
+            raise ToolDenied(str(e)) from e
+    return _jsonable({**info, "install_script": (info.get("install_script") or "")[:20000]})
+
+
+@tool("guests_admin", DESTRUCTIVE)
+async def install_community_script(slug: str, sha256: str, node: str | None = None, hostname: str | None = None,
+                                   cpu: int | None = None, ram_mb: int | None = None, disk_gb: int | None = None,
+                                   storage: str | None = None, bridge: str | None = None, vlan: int | None = None,
+                                   ip: str | None = None, gateway: str | None = None) -> dict:
+    """Run a community script unattended ('Default' mode) as root on a Proxmox VE node; it creates
+    the container/VM and installs the app. `sha256` must be the value from get_community_script
+    (proves the script was reviewed). Without `node` the least loaded node is used. Ask the user
+    first. Returns a job with the full log."""
+    from mmn.services import community, guests, nodes
+
+    opts = {k: v for k, v in dict(hostname=hostname, cpu=cpu, ram=ram_mb, disk=disk_gb, storage=storage,
+                                  bridge=bridge, vlan=vlan, ip=ip, gateway=gateway).items() if v is not None}
+    async with sessionmaker()() as db:
+        if node:
+            node_id = (await _node_id(node))[0]
+        else:
+            best = await guests.suggest_node(db)
+            if not best:
+                raise ToolDenied("no Proxmox VE node is online")
+            node_id = best["node_id"]
+        try:
+            job = await community.start_install(db, slug, node_id, sha256, opts, **_who())
+        except (nodes.NodeError, Exception) as e:
+            raise _agent_errors(e) from e
+    return _jsonable(nodes.job_out(job, with_output=False))
+
+
+# ------------------------------------------------------------------ scheduled tasks
+@tool("read", RO)
+async def list_scheduled_tasks() -> list[dict]:
+    """Scheduled tasks (updates in containers, node updates, template sync, custom commands) with
+    schedule, targets, options, last and next run."""
+    from sqlalchemy import select
+
+    from mmn.models import ScheduledTask
+    from mmn.services import tasks
+
+    async with sessionmaker()() as db:
+        rows = (await db.execute(select(ScheduledTask).order_by(ScheduledTask.name))).scalars().all()
+        return _jsonable([tasks.task_out(t) for t in rows])
+
+
+@tool("tasks", WRITE)
+async def save_scheduled_task(name: str, kind: str, cron: str, targets: dict | None = None,
+                              options: dict | None = None, mail_to: list[str] | None = None,
+                              mail_on: str = "always", enabled: bool = True, task_id: str | None = None) -> dict:
+    """Create (or with `task_id` change) a scheduled task.
+    kind: ct_community_update (the 'update' command of community-script containers),
+    ct_apt_upgrade (apt-get update + full-upgrade, or apk/dnf, in containers), node_updates,
+    template_sync, custom_command. cron: 5 fields in the app's time zone, e.g. '0 4 * * 0'.
+    targets: {"scope": "all"|"environments"|"nodes"|"guests"|"tag", "environment_ids": [...],
+    "node_ids": [...], "guests": [{"node_id": ..., "vmid": ...}], "tag": "...", "exclude_vmids": [...]}.
+    options: {"snapshot": true, "rollback": true, "keep_snapshots": 3, "command": "...",
+    "run_on": "ct"|"node", "timeout": 3600}. mail_on: always, failure or never."""
+    from mmn.services import tasks
+    from mmn.services.scheduler import reload_task_jobs
+
+    try:
+        body = tasks.TaskIn(name=name, kind=kind, cron=cron, targets=tasks.TargetsIn(**(targets or {})),
+                            options=tasks.OptionsIn(**(options or {})), mail_to=mail_to or [], mail_on=mail_on,
+                            enabled=enabled)
+    except ValueError as e:
+        raise ToolDenied(str(e)) from e
+    async with sessionmaker()() as db:
+        p = current_principal()
+        try:
+            t = await tasks.save_task(db, body, await tasks.get_task(db, task_id) if task_id else None,
+                                      created_by=p.username if p else None)
+        except tasks.NodeError as e:
+            raise ToolDenied(str(e)) from e
+        await db.commit()
+        out = tasks.task_out(t)
+        preview = await tasks.resolve_targets(db, t.kind, t.targets, t.options)
+    await reload_task_jobs()
+    return _jsonable({**out, "targets_now": preview})
+
+
+@tool("tasks", DESTRUCTIVE)
+async def delete_scheduled_task(task_id: str, confirm: str) -> dict:
+    """Delete a scheduled task. Set `confirm` to its name."""
+    from mmn.services import tasks
+    from mmn.services.scheduler import reload_task_jobs
+
+    async with sessionmaker()() as db:
+        try:
+            t = await tasks.get_task(db, task_id)
+        except tasks.NodeError as e:
+            raise ToolDenied(str(e)) from e
+        if confirm != t.name:
+            raise ToolDenied(f"confirm must equal the task name '{t.name}'")
+        await db.delete(t)
+        await db.commit()
+    await reload_task_jobs()
+    return {"deleted": True}
+
+
+@tool("tasks", WRITE)
+async def run_scheduled_task(task_id: str) -> dict:
+    """Run a scheduled task now. Returns a run id; follow it with get_task_run."""
+    from mmn.services import tasks
+
+    p = current_principal()
+    try:
+        return {"run_id": await tasks.run_task(task_id, trigger="mcp", requested_by=p.username if p else None)}
+    except tasks.NodeError as e:
+        raise ToolDenied(str(e)) from e
+
+
+@tool("read", RO)
+async def get_task_run(run_id: str | None = None, task_id: str | None = None) -> dict | list[dict]:
+    """A run of a scheduled task or template sync with the result per target (snapshot, rolled back,
+    error, last output lines). Without run_id: the last 10 runs (optionally of one task)."""
+    from sqlalchemy import select
+
+    from mmn.models import TaskRun
+    from mmn.services import tasks
+
+    async with sessionmaker()() as db:
+        if run_id:
+            r = await db.get(TaskRun, run_id)
+            if r is None:
+                raise ToolDenied("run not found")
+            return _jsonable(tasks.run_out(r))
+        q = select(TaskRun).order_by(TaskRun.started_at.desc()).limit(10)
+        if task_id:
+            q = q.where(TaskRun.task_id == task_id)
+        return _jsonable([tasks.run_out(r) for r in (await db.execute(q)).scalars()])
 
 
 # ------------------------------------------------------------------ ASGI wiring

@@ -1,5 +1,5 @@
 import * as Tabs from "@radix-ui/react-tabs";
-import { ArrowUpCircle, BookOpen, Bot, Boxes, DatabaseBackup, Globe, Mail, MessageSquare, Network, Plug, Rocket, ScrollText, Server, ShieldCheck, Sparkles, Terminal } from "lucide-react";
+import { ArrowUpCircle, BookOpen, Bot, Boxes, CalendarClock, DatabaseBackup, GitBranch, Layers, Globe, Mail, MessageSquare, Network, Plug, Rocket, ScrollText, Server, ShieldCheck, Sparkles, Terminal } from "lucide-react";
 import type { ReactNode } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { Link } from "react-router";
@@ -222,7 +222,7 @@ export function McpHelpPage() {
   );
 }
 
-type Cap = { tool: string; scope: "read" | "backups" | "restore" | "updates" | "settings" | "nodes" | "node_updates" | "logs" | "services" | "exec" };
+type Cap = { tool: string; scope: "read" | "backups" | "restore" | "updates" | "settings" | "nodes" | "node_updates" | "logs" | "services" | "exec" | "guests" | "guests_admin" | "templates" | "tasks" };
 const NOW: { key: string; icon: ReactNode; tools: Cap[] }[] = [
   { key: "system", icon: <Rocket />, tools: [
     { tool: "get_system_info", scope: "read" }, { tool: "check_for_updates", scope: "read" }, { tool: "get_update_status", scope: "read" },
@@ -252,9 +252,27 @@ const NOW: { key: string; icon: ReactNode; tools: Cap[] }[] = [
     { tool: "list_services", scope: "logs" }, { tool: "get_service_status", scope: "logs" },
     { tool: "manage_service", scope: "services" }, { tool: "run_command", scope: "exec" },
   ] },
+  { key: "guests", icon: <Boxes />, tools: [
+    { tool: "list_guests", scope: "read" }, { tool: "get_guest", scope: "read" }, { tool: "list_snapshots", scope: "read" },
+    { tool: "suggest_node", scope: "read" }, { tool: "get_node_resources", scope: "read" },
+    { tool: "guest_power", scope: "guests" }, { tool: "create_snapshot", scope: "guests" }, { tool: "set_guest_resources", scope: "guests" },
+    { tool: "rollback_snapshot", scope: "guests_admin" }, { tool: "delete_snapshot", scope: "guests_admin" }, { tool: "migrate_guest", scope: "guests_admin" },
+    { tool: "delete_guest", scope: "guests_admin" }, { tool: "create_container", scope: "guests_admin" }, { tool: "create_vm", scope: "guests_admin" },
+    { tool: "run_in_container", scope: "exec" },
+  ] },
+  { key: "library", icon: <Layers />, tools: [
+    { tool: "list_templates", scope: "read" }, { tool: "list_template_catalog", scope: "read" },
+    { tool: "add_official_template", scope: "templates" }, { tool: "sync_templates", scope: "templates" },
+    { tool: "list_community_scripts", scope: "read" }, { tool: "get_community_script", scope: "read" },
+    { tool: "install_community_script", scope: "guests_admin" },
+  ] },
+  { key: "tasks", icon: <CalendarClock />, tools: [
+    { tool: "list_scheduled_tasks", scope: "read" }, { tool: "get_task_run", scope: "read" },
+    { tool: "save_scheduled_task", scope: "tasks" }, { tool: "delete_scheduled_task", scope: "tasks" }, { tool: "run_scheduled_task", scope: "tasks" },
+  ] },
 ];
 const NEXT: { key: string; icon: ReactNode; items: number }[] = [
-  { key: "guests", icon: <Boxes />, items: 4 },
+  { key: "github", icon: <GitBranch />, items: 3 },
   { key: "servers", icon: <Terminal />, items: 3 },
   { key: "network", icon: <Network />, items: 3 },
 ];
@@ -326,10 +344,10 @@ export function McpCapabilitiesPage() {
           <Card>
             <CardHeader icon={<MessageSquare />} title={t("mcpcaps.ask_title")} description={t("mcpcaps.ask_desc")} />
             <CardBody className="space-y-2">
-              {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+              {[1, 2, 3, 4, 5, 6, 7, 9, 10, 8].map((i) => (
                 <div key={i} className="rounded-md bg-sunken px-3 py-2 text-sm">
                   <div className="italic">“{t(`mcpcaps.ask_${i}`)}”</div>
-                  <div className="mt-1 text-xs text-muted">{t(i <= 7 ? "mcpcaps.ask_now" : "mcpcaps.ask_later")}</div>
+                  <div className="mt-1 text-xs text-muted">{t(i !== 8 ? "mcpcaps.ask_now" : "mcpcaps.ask_later")}</div>
                 </div>
               ))}
             </CardBody>

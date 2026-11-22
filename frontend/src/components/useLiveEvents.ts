@@ -21,6 +21,7 @@ export function useLiveEvents() {
         qc.invalidateQueries({ queryKey: ["overview"] });
         qc.invalidateQueries({ queryKey: ["environments"] });
         for (const nid of pending) qc.invalidateQueries({ queryKey: ["node", nid] });
+        qc.invalidateQueries({ queryKey: ["guests"] });
         pending.clear();
       }, 1500);
     };
@@ -45,6 +46,19 @@ export function useLiveEvents() {
           }
           if (msg.event === "maintenance") qc.invalidateQueries();
           if (msg.event === "node.status") scheduleNodes(String(msg.data.node_id ?? ""));
+          if (msg.event === "task.run") {
+            const rid = String(msg.data.run_id ?? "");
+            qc.invalidateQueries({ queryKey: ["task-run", rid] });
+            if (msg.data.started || msg.data.done) {
+              qc.invalidateQueries({ queryKey: ["task-runs"] });
+              qc.invalidateQueries({ queryKey: ["tasks"] });
+              qc.invalidateQueries({ queryKey: ["templates"] });
+            }
+          }
+          if (msg.event === "template.download" && (msg.data.finished || msg.data.error)) {
+            qc.invalidateQueries({ queryKey: ["templates"] });
+            if (msg.data.error) window.dispatchEvent(new CustomEvent("mmn:template-error", { detail: msg.data.error }));
+          }
           if (msg.event === "node.job") {
             const jid = String(msg.data.job_id ?? "");
             if (msg.data.line === undefined) {
