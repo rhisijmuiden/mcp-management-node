@@ -62,7 +62,7 @@ async def enroll(body: nodes.EnrollIn, request: Request, db: AsyncSession = Depe
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     ip = _remote(request.headers, request.client)
     try:
-        res = await nodes.enroll(db, body, ip)
+        res = await nodes.enroll(db, body, ip, request.headers.get("host"))
     except (nodes.NodeError, agent_ca.AgentCAError) as e:
         await db.rollback()
         await audit(db, "node.enroll", source="agent", target=body.hostname[:255] or None, ip=ip, success=False,

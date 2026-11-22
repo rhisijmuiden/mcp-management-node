@@ -322,7 +322,10 @@ class EnrollIn(BaseModel):
     kind: Literal["proxmox", "linux", "windows"] = "proxmox"
 
 
-async def enroll(db: AsyncSession, body: EnrollIn, remote_ip: str | None) -> dict[str, Any]:
+async def enroll(db: AsyncSession, body: EnrollIn, remote_ip: str | None,
+                 request_host: str | None = None) -> dict[str, Any]:
+    """Pair a node. ``request_host`` is the host the agent reached us on: the fallback for the address it
+    keeps using when neither the agent address nor the public address is configured."""
     code = normalize_code(body.code)
     if not CODE_RE.match(code):
         raise NodeError("invalid pairing code")
@@ -355,7 +358,7 @@ async def enroll(db: AsyncSession, body: EnrollIn, remote_ip: str | None) -> dic
     general = await get_setting(db, "general")
     return {"node_id": node.id, "node_name": node.name, "environment": pc.environment.name,
             "certificate": cert.public_bytes(serialization.Encoding.PEM).decode(), "ca": ca.cert_pem,
-            "server": agent_packages.agent_endpoint(agents, general)}
+            "server": agent_packages.agent_endpoint(agents, general, request_host)}
 
 
 # ------------------------------------------------------------------ node actions
