@@ -176,6 +176,7 @@ async def handle_message(conn: Connection, msg: dict[str, Any]) -> None:
     data = msg.get("data")
     if not isinstance(data, dict):
         return
+    sample = False
     async with sessionmaker()() as db:
         node = await db.get(Node, conn.node_id)
         if node is None:
@@ -184,6 +185,7 @@ async def handle_message(conn: Connection, msg: dict[str, Any]) -> None:
         node.last_seen_at = now
         if typ == "metrics":
             node.metrics = _clean(data)
+            sample = True
             if data.get("governor"):
                 node.governor = {**(node.governor or {}), "current": str(data["governor"])[:32]}
         elif typ == "updates":
@@ -201,6 +203,10 @@ async def handle_message(conn: Connection, msg: dict[str, Any]) -> None:
         else:
             return
         await db.commit()
+    if sample:
+        from mmn.services import monitoring
+
+        await monitoring.record_sample(conn.node_id, data)
     events.publish("node.status", {"node_id": conn.node_id, "online": True, "type": typ})
 
 
@@ -226,6 +232,10 @@ async def on_hello(conn: Connection, data: dict[str, Any]) -> None:
     from mmn.services import nodes
 
     spawn(nodes.reconcile(conn.node_id))
+    if "pve" in (data.get("capabilities") or []):
+        from mmn.services import monitoring
+
+        spawn(monitoring.collect_health(conn.node_id))
 
 
 # ------------------------------------------------------------------ jobs

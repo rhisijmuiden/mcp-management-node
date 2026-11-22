@@ -37,6 +37,12 @@ class FakePve:
         self.files: list[str] = []
         self.fail_scripts_for: set[int] = set()
 
+    def exec(self, p: dict) -> dict:
+        return {"exit_code": 0, "stdout": "", "stderr": ""}
+
+    def script_lines(self, p: dict) -> list[str]:
+        return ["Reading package lists...", "done"]
+
     async def send(self, msg: dict) -> None:
         await self.ws.send(json.dumps(msg))
 
@@ -131,7 +137,7 @@ class FakePve:
                     asyncio.ensure_future(self.job(p["job_id"], ["task UPID:pve-a:1:2:3:x:1:root@pam:", "TASK OK"]))
                 elif method == "script.run":
                     fail = any(f"pct exec {v} " in p["script"] for v in self.fail_scripts_for)
-                    asyncio.ensure_future(self.job(p["job_id"], ["Reading package lists...", "done"], not fail,
+                    asyncio.ensure_future(self.job(p["job_id"], self.script_lines(p), not fail,
                                                    {"exit_code": 1 if fail else 0}, "exit code 1" if fail else ""))
                 elif method == "file.fetch":
                     asyncio.ensure_future(self.fetch(p["job_id"], p))
@@ -139,7 +145,7 @@ class FakePve:
                     res = {"password": "vncpass1"} if p["kind"] == "vnc" else {}
                     asyncio.get_running_loop().call_later(0.05, lambda s=p["session"]: asyncio.ensure_future(self.stream(s)))
                 elif method == "exec":
-                    res = {"exit_code": 0, "stdout": "", "stderr": ""}
+                    res = self.exec(p)
                 else:
                     err = f"unknown method {method}"
             except ValueError as e:

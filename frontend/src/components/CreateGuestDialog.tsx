@@ -12,12 +12,13 @@ import { Dialog } from "@/components/ui/dialog";
 import { Checkbox, Field, Input, Segmented, Select, Switch, Textarea } from "@/components/ui/form";
 import { Alert, Badge, Spinner } from "@/components/ui/misc";
 import { errorMessage, get, post } from "@/lib/api";
-import type { CommunityScript, CommunityScriptFull, CommunityState, ConsoleSession, NodeJob, NodeResources, SuggestNode, TemplateLibrary } from "@/lib/types";
+import type { CommunityScript, CommunityScriptFull, CommunityState, ConsoleSession, Deployment, NodeJob, NodeResources, SuggestNode, TemplateLibrary } from "@/lib/types";
 import { cn, formatBytes } from "@/lib/utils";
+import { DeployFields, deployBody, deployDefaults, GithubConnect, useGithub, type DeployForm } from "@/pages/Deployments";
 
 const tabCls = "flex items-center gap-2 rounded-[8px] px-3 py-1.5 text-[13px] font-semibold text-muted data-[state=active]:bg-raised data-[state=active]:text-ink data-[state=active]:shadow-sm cursor-pointer disabled:cursor-not-allowed disabled:opacity-60 [&_svg]:size-4";
 
-type Done = { job?: NodeJob; session?: ConsoleSession };
+type Done = { job?: NodeJob; session?: ConsoleSession; deploymentId?: string };
 
 /* ------------------------------------------------------------------ shared pieces */
 function useNodeChoice(environmentId?: string) {
@@ -465,6 +466,66 @@ function CloudTab({ envId, onDone }: { envId?: string; onDone: (d: Done) => void
   );
 }
 
+/* ------------------------------------------------------------------ CT + deployment from a GitHub repo */
+function GithubTab({ envId, onDone }: { envId?: string; onDone: (d: Done) => void }) {
+  const { t } = useTranslation();
+  const gh = useGithub();
+  const c = useNodeChoice(envId);
+  const lib = useQuery({ queryKey: ["templates"], queryFn: () => get<TemplateLibrary>("api/templates") });
+  const [f, setF] = useState<Basics>(basicsDefaults(1024, 8));
+  const set = (p: Partial<Basics>) => setF((o) => ({ ...o, ...p }));
+  const [d, setD] = useState<DeployForm>(() => deployDefaults());
+  const setDep = (p: Partial<DeployForm>) => setD((o) => ({ ...o, ...p }));
+  const [tpl, setTpl] = useState("");
+  const [password, setPassword] = useState("");
+  const [keys, setKeys] = useState("");
+  const libItems = lib.data?.templates ?? [];
+  const onNode = c.res.data?.templates ?? [];
+  useEffect(() => {
+    if (tpl || !libItems.length) return;
+    const deb = libItems.find((x) => /debian.?13|trixie/i.test(`${x.name} ${x.id}`)) ?? libItems[0];
+    setTpl(`lib:${deb.id}`);
+  }, [libItems, tpl]);
+  useEffect(() => { if (!f.name && d.name) set({ name: d.name }); }, [d.name]); // eslint-disable-line react-hooks/exhaustive-deps
+  const go = useMutation({
+    mutationFn: () => post<{ deployment: Deployment; job: NodeJob }>("api/deployments/with-container", {
+      deployment: deployBody({ ...d, node_id: c.nodeId, vmid: 100 }),
+      container: {
+        ...basicsBody(c, f), swap: 512, unprivileged: true, nesting: true, start: true,
+        password: password || undefined, ssh_keys: keys || undefined,
+        template_id: tpl.startsWith("lib:") ? tpl.slice(4) : undefined, ostemplate: tpl.startsWith("vol:") ? tpl.slice(4) : undefined,
+      },
+    }),
+    onSuccess: (r) => onDone({ job: r.job, deploymentId: r.deployment.id }),
+  });
+  if (gh.isLoading) return <Spinner />;
+  if (!gh.data?.configured) return <div className="space-y-3"><Alert tone="info">{t("dep.gh_needed")}</Alert><GithubConnect /></div>;
+  return (
+    <div className="space-y-5">
+      <Alert tone="info">{t("dep.with_ct_hint")}</Alert>
+      <DeployFields f={d} set={setDep} />
+      <div className="border-t border-line pt-4">
+        <h3 className="mb-3 text-[13px] font-semibold">{t("dep.new_container")}</h3>
+        <div className="space-y-4">
+          <Field label={t("gx.template_pick")}>
+            <Select value={tpl} onChange={(e) => setTpl(e.target.value)}>
+              {!libItems.length && !onNode.length && <option value="">{t("gx.no_templates")}</option>}
+              {libItems.length > 0 && <optgroup label={t("tpl.library")}>{libItems.map((x) => <option key={x.id} value={`lib:${x.id}`}>{x.name}</option>)}</optgroup>}
+              {onNode.length > 0 && <optgroup label={t("gx.on_node")}>{onNode.map((x) => <option key={x.volid} value={`vol:${x.volid}`}>{x.filename}</option>)}</optgroup>}
+            </Select>
+          </Field>
+          <BasicsFields c={c} f={f} set={set} content="rootdir" nameLabel={t("gx.hostname")} />
+          <Secrets password={password} setPassword={setPassword} keys={keys} setKeys={setKeys} passwordLabel={t("gx.root_password")} />
+        </div>
+      </div>
+      {go.isError && <Alert tone="offline">{errorMessage(go.error, t)}</Alert>}
+      <Footer>
+        <Button variant="primary" loading={go.isPending} disabled={!c.nodeId || !f.name || !tpl || !d.repo || !d.name || (!password && !keys)} onClick={() => go.mutate()}><GitBranch /> {t("dep.create_and_deploy")}</Button>
+      </Footer>
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ result */
 function Result({ done, onClose }: { done: Done; onClose: () => void }) {
   const { t } = useTranslation();
@@ -480,6 +541,9 @@ function Result({ done, onClose }: { done: Done; onClose: () => void }) {
         </>
       ) : done.job && <JobView jobId={done.job.id} onDone={setJob} />}
       <div className="flex flex-wrap justify-end gap-2">
+        {done.deploymentId && (
+          <Link to={`/deployments/${done.deploymentId}`} onClick={onClose}><Button>{t("dep.open_deployment")}</Button></Link>
+        )}
         {job?.status === "success" && vmid && done.job && (
           <Link to={`/proxmox/guests/${done.job.node_id}/${vmid}`} onClick={onClose}><Button variant="primary">{t("gx.open_guest")}</Button></Link>
         )}
@@ -504,12 +568,13 @@ export function CreateGuestDialog({ open, onOpenChange, environmentId }: { open:
             <Tabs.Trigger value="community" className={tabCls}><Store /> {t("gx.tab_community")}</Tabs.Trigger>
             <Tabs.Trigger value="iso" className={tabCls}><Disc /> {t("gx.tab_iso")}</Tabs.Trigger>
             <Tabs.Trigger value="cloud" className={tabCls}><Cloud /> {t("gx.tab_cloud")}</Tabs.Trigger>
-            <Tabs.Trigger value="github" className={tabCls} disabled title={t("nav.soon_hint")}><GitBranch /> GitHub <span className="rounded-full bg-line px-1.5 text-[10px] uppercase">{t("gx.phase4")}</span></Tabs.Trigger>
+            <Tabs.Trigger value="github" className={tabCls}><GitBranch /> GitHub</Tabs.Trigger>
           </Tabs.List>
           <Tabs.Content value="template"><TemplateTab envId={environmentId} onDone={setDone} /></Tabs.Content>
           <Tabs.Content value="community"><CommunityTab envId={environmentId} onDone={setDone} /></Tabs.Content>
           <Tabs.Content value="iso"><IsoTab envId={environmentId} onDone={setDone} /></Tabs.Content>
           <Tabs.Content value="cloud"><CloudTab envId={environmentId} onDone={setDone} /></Tabs.Content>
+          <Tabs.Content value="github"><GithubTab envId={environmentId} onDone={setDone} /></Tabs.Content>
         </Tabs.Root>
       )}
     </Dialog>

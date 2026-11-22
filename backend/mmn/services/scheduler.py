@@ -152,6 +152,14 @@ async def start() -> None:
                       replace_existing=True, coalesce=True)
     scheduler.add_job(_stale_jobs, "interval", minutes=15, id="node-stale-jobs", replace_existing=True,
                       coalesce=True)
+    scheduler.add_job(_monitor_eval_job, "interval", minutes=1, id="monitor-eval", replace_existing=True,
+                      coalesce=True, max_instances=1)
+    scheduler.add_job(_monitor_health_job, "interval", minutes=10, id="monitor-health", replace_existing=True,
+                      coalesce=True, max_instances=1)
+    scheduler.add_job(_monitor_prune_job, CronTrigger(hour=4, minute=41, timezone="UTC"), id="monitor-prune",
+                      replace_existing=True, coalesce=True)
+    scheduler.add_job(_deploy_poll_job, "interval", minutes=5, id="deploy-poll", replace_existing=True,
+                      coalesce=True, max_instances=1)
     scheduler.start()
     await reload_backup_jobs()
     from mmn.services import tasks
@@ -165,6 +173,42 @@ async def start() -> None:
 
     async with sessionmaker()() as db:
         reload_node_jobs((await get_setting(db, "agents")).get("updates_check_hours", 6))
+
+
+async def _monitor_eval_job() -> None:
+    from mmn.services import monitoring
+
+    try:
+        await monitoring.evaluate()
+    except Exception:  # noqa: BLE001
+        log.exception("monitoring evaluation failed")
+
+
+async def _monitor_health_job() -> None:
+    from mmn.services import monitoring
+
+    try:
+        await monitoring.collect_all_health()
+    except Exception:  # noqa: BLE001
+        log.exception("collecting node health failed")
+
+
+async def _monitor_prune_job() -> None:
+    from mmn.services import monitoring
+
+    try:
+        await monitoring.prune()
+    except Exception:  # noqa: BLE001
+        log.exception("pruning metrics failed")
+
+
+async def _deploy_poll_job() -> None:
+    from mmn.services import deploy
+
+    try:
+        await deploy.poll_all()
+    except Exception:  # noqa: BLE001
+        log.exception("polling deployments failed")
 
 
 def stop() -> None:

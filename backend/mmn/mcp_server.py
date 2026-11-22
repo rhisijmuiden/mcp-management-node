@@ -102,7 +102,7 @@ async def _audit(p: Principal | None, tool_name: str, args: dict[str, Any], succ
 
 
 def _target_of(args: dict[str, Any]) -> str | None:
-    for k in ("guest", "node", "environment", "slug", "template", "task_id", "run_id", "name", "backup_id",
+    for k in ("deployment", "design_id", "guest", "node", "environment", "slug", "template", "task_id", "run_id", "name", "backup_id",
               "target_id", "tag", "channel", "to", "pattern"):
         if args.get(k):
             return str(args[k])[:255]
@@ -152,6 +152,15 @@ containers from the template library (`list_templates`) and VMs from an ISO or a
 apps from community-scripts.org (`list_community_scripts`, review with `get_community_script`,
 then `install_community_script`). `suggest_node` picks the least loaded node. Scheduled tasks:
 `list_scheduled_tasks`, `save_scheduled_task`, `run_scheduled_task`, `get_task_run`.
+
+Network: `get_bridge_map` (which guests are on which bridge/VLAN), `get_node_network`, firewall
+(`get_firewall`, `set_firewall`, `add_firewall_rule`), SDN (`get_sdn`, `save_sdn_design`,
+`apply_sdn_design`). Network and SDN changes are staged and shown as a diff first; applying needs
+dry_run=false plus `confirm`, saves a backup and rolls back automatically on failure
+(`list_config_backups`, `restore_config_backup`). Cluster: `get_ha_status`, `set_ha_resource`,
+replication, Proxmox backup jobs and storage. Monitoring: `get_monitoring`, `get_node_metrics`,
+`list_alerts`, `get_disk_smart`. GitHub deployments into containers: `list_deployments`,
+`list_github_repos`, `save_deployment`, `run_deployment`.
 
 Nodes can be named by id or by name. Every call is written to the audit log with your token's name.
 Destructive tools need `confirm` set to the exact node name, or are marked destructive: ask the user
@@ -1168,6 +1177,590 @@ async def get_task_run(run_id: str | None = None, task_id: str | None = None) ->
         if task_id:
             q = q.where(TaskRun.task_id == task_id)
         return _jsonable([tasks.run_out(r) for r in (await db.execute(q)).scalars()])
+
+
+# ------------------------------------------------------------------ network, firewall, SDN
+async def _pve(node: str) -> tuple[str, str]:
+    from mmn.services import agent_hub
+
+    nid, name = await _node_id(node)
+    if not agent_hub.is_online(nid):
+        raise ToolDenied(f"the agent of {name} is not connected")
+    return nid, name
+
+
+async def _call(coro) -> Any:
+    try:
+        return _jsonable(await coro)
+    except ToolDenied:
+        raise
+    except Exception as e:
+        raise _agent_errors(e) from e
+
+
+@tool("read", RO)
+async def get_bridge_map(environment: str | None = None, node: str | None = None) -> dict:
+    """Bridges (vmbr) and SDN VNets with the VMs and containers on them, grouped by VLAN tag:
+    VMID, name, node, NIC, MAC, firewall flag, trunks. Use it to answer 'what is on VLAN 20' or
+    'which guests use vmbr1'."""
+    from mmn.services import network, nodes
+
+    async with sessionmaker()() as db:
+        try:
+            env_id = (await nodes.get_environment(db, environment)).id if environment else None
+        except nodes.NodeError as e:
+            raise ToolDenied(str(e)) from e
+        node_id = (await _node_id(node))[0] if node else None
+        return await _call(network.bridge_map(db, environment_id=env_id, node_id=node_id))
+
+
+@tool("read", RO)
+async def get_node_network(node: str) -> dict:
+    """Network interfaces of a Proxmox VE node (bridges, bonds, VLANs, NICs with addresses) and the
+    staged change that is not applied yet, as a diff."""
+    from mmn.services import network
+
+    nid, _ = await _pve(node)
+    return {"interfaces": await _call(network.interfaces(nid, fresh=True)), "pending": await _call(network.pending(nid))}
+
+
+@tool("network", WRITE)
+async def stage_bridge(node: str, iface: str, action: str = "create", ports: list[str] | None = None,
+                       vlan_aware: bool = False, vids: str | None = None, cidr: str | None = None,
+                       gateway: str | None = None, mtu: int | None = None, comments: str = "",
+                       force: bool = False) -> dict:
+    """Stage a bridge change on a node (action create, update or delete). Nothing is applied: the
+    result is the pending diff. Review it with the user, then call apply_network_changes."""
+    from mmn.services import network
+
+    nid, _ = await _pve(node)
+    if action == "delete":
+        return await _call(network.stage_delete(nid, iface, force=force))
+    if action not in ("create", "update"):
+        raise ToolDenied("action must be create, update or delete")
+    try:
+        body = network.BridgeIn(iface=iface, ports=ports or [], vlan_aware=vlan_aware, vids=vids, cidr=cidr,
+                                gateway=gateway, mtu=mtu, comments=comments)
+    except ValueError as e:
+        raise ToolDenied(str(e)) from e
+    return await _call(network.stage_bridge(nid, body, create=action == "create"))
+
+
+@tool("network", DESTRUCTIVE)
+async def apply_network_changes(node: str, dry_run: bool = True, confirm: str | None = None) -> dict:
+    """Apply the staged network change of a node. Default dry_run=true only shows the diff and
+    warnings. To apply, set dry_run=false and `confirm` to the node name, after the user agreed.
+    The app saves /etc/network/interfaces first; if the node cannot be reached within 90 seconds
+    after the change, the node restores the old configuration by itself."""
+    from mmn.services import network
+
+    nid, name = await _pve(node)
+    if not dry_run and confirm != name:
+        raise ToolDenied(f"confirm must equal the node name '{name}'")
+    p = current_principal()
+    return await _call(network.apply(nid, dry_run=dry_run, source="mcp", requested_by=p.username if p else None))
+
+
+@tool("network", WRITE)
+async def revert_network_changes(node: str) -> dict:
+    """Throw away the staged (not applied) network change of a node."""
+    from mmn.services import network
+
+    nid, _ = await _pve(node)
+    return await _call(network.revert_pending(nid))
+
+
+@tool("read", RO)
+async def list_config_backups(kind: str | None = None, node: str | None = None) -> list[dict]:
+    """Configuration backups the app made before network or SDN changes (kind 'network' or 'sdn')."""
+    from mmn.services import network
+
+    async with sessionmaker()() as db:
+        node_id = (await _node_id(node))[0] if node else None
+        return _jsonable(await network.list_backups(db, kind=kind, node_id=node_id))
+
+
+@tool("network", DESTRUCTIVE)
+async def restore_config_backup(backup_id: str, confirm: str) -> dict:
+    """Put a network or SDN configuration backup back (roll back a change). Set `confirm` to the
+    node name of the backup. Ask the user first."""
+    from mmn.models import ConfigBackup
+    from mmn.services import network, sdn
+
+    p = current_principal()
+    who = p.username if p else None
+    async with sessionmaker()() as db:
+        b = await db.get(ConfigBackup, backup_id)
+        if b is None:
+            raise ToolDenied("backup not found")
+        nid, name = await _pve(b.node_id)
+        if confirm != name:
+            raise ToolDenied(f"confirm must equal the node name '{name}'")
+        if b.kind == "sdn":
+            return await _call(sdn.rollback(db, b.id, source="mcp", requested_by=who))
+    return await _call(network.restore_network_backup(backup_id, source="mcp", requested_by=who))
+
+
+@tool("read", RO)
+async def get_firewall(node: str, guest: str | None = None) -> dict:
+    """Proxmox VE firewall: cluster and node options and rules, security groups, aliases, IP sets
+    and which guest NICs have the firewall on. With `guest` (VMID or name): that guest's
+    firewall options and rules."""
+    from mmn.services import network
+
+    if guest:
+        n, g = await _guest(guest, node)
+        return await _call(network.guest_firewall(n.id, g["type"], g["vmid"]))
+    nid, _ = await _pve(node)
+    return await _call(network.firewall_overview(nid))
+
+
+async def _fw_target(node: str, level: str, guest: str | None) -> tuple[str, str | None, int | None]:
+    if level == "guest":
+        if not guest:
+            raise ToolDenied("give the guest for a guest firewall")
+        n, g = await _guest(guest, node)
+        return n.id, g["type"], g["vmid"]
+    nid, _ = await _pve(node)
+    return nid, None, None
+
+
+@tool("network", WRITE)
+async def set_firewall(node: str, level: str, enable: bool | None = None, policy_in: str | None = None,
+                       policy_out: str | None = None, guest: str | None = None, confirm: str | None = None) -> dict:
+    """Switch the firewall on or off, or set the in/out policy, at level 'cluster', 'node' or
+    'guest' (give `guest`). Switching the cluster firewall needs `confirm` set to the node name:
+    a wrong policy can lock everyone out, so ask the user first."""
+    from mmn.services import network
+
+    nid, gtype, vmid = await _fw_target(node, level, guest)
+    if level == "cluster" and enable is not None:
+        _, name = await _node_id(node)
+        if confirm != name:
+            raise ToolDenied(f"confirm must equal the node name '{name}'")
+    return await _call(network.set_firewall_options(nid, level, enable=enable, policy_in=policy_in,
+                                                    policy_out=policy_out, gtype=gtype, vmid=vmid))
+
+
+@tool("network", WRITE)
+async def add_firewall_rule(node: str, level: str, action: str, type: str = "in", proto: str | None = None,
+                            dport: str | None = None, source: str | None = None, dest: str | None = None,
+                            macro: str | None = None, comment: str = "", enable: bool = True,
+                            guest: str | None = None, group: str | None = None) -> list[dict]:
+    """Add a firewall rule at level cluster, node, guest or group (security group). action ACCEPT,
+    DROP or REJECT (or a group name with type 'group'). Returns the rules of that level."""
+    from mmn.services import network
+
+    nid, gtype, vmid = await _fw_target(node, level, guest)
+    try:
+        rule = network.RuleIn(type=type, action=action, proto=proto, dport=dport, source=source, dest=dest,
+                              macro=macro, comment=comment, enable=enable)
+    except ValueError as e:
+        raise ToolDenied(str(e)) from e
+    return await _call(network.add_rule(nid, level, rule, gtype=gtype, vmid=vmid, group=group))
+
+
+@tool("network", DESTRUCTIVE)
+async def delete_firewall_rule(node: str, level: str, pos: int, confirm: int, guest: str | None = None,
+                               group: str | None = None) -> list[dict]:
+    """Delete the firewall rule at position `pos` (see get_firewall). Set `confirm` to the same position."""
+    from mmn.services import network
+
+    if confirm != pos:
+        raise ToolDenied("confirm must equal pos")
+    nid, gtype, vmid = await _fw_target(node, level, guest)
+    return await _call(network.delete_rule(nid, level, pos, gtype=gtype, vmid=vmid, group=group))
+
+
+@tool("read", RO)
+async def get_sdn(node: str) -> dict:
+    """SDN of the node's cluster: zones, VNets, subnets, controllers and their status per node."""
+    from mmn.services import sdn
+
+    nid, _ = await _pve(node)
+    return await _call(sdn.state(nid))
+
+
+@tool("read", RO)
+async def list_sdn_designs() -> list[dict]:
+    """Designs made in the SDN designer (one zone each) with their status."""
+    from mmn.services import sdn
+
+    async with sessionmaker()() as db:
+        return _jsonable(await sdn.list_designs(db))
+
+
+@tool("network", WRITE)
+async def save_sdn_design(name: str, node: str, zone: dict, vnets: list[dict] | None = None,
+                          subnets: list[dict] | None = None, design_id: str | None = None) -> dict:
+    """Create or change an SDN design (nothing is applied). zone: {id (2-8 lowercase), type
+    vlan|simple|vxlan|evpn|qinq, bridge, peers, controller, vrf_vxlan, mtu, nodes, ipam, dhcp};
+    vnets: [{id, alias, tag, vlanaware}]; subnets: [{vnet, cidr, gateway, snat, dhcp_start, dhcp_end}].
+    Returns the design and its plan (errors, warnings, list of changes)."""
+    from mmn.services import nodes, sdn
+
+    try:
+        spec = sdn.DesignSpec(zone=zone, vnets=vnets or [], subnets=subnets or [])
+    except ValueError as e:
+        raise ToolDenied(str(e)) from e
+    nid, _ = await _pve(node)
+    p = current_principal()
+    async with sessionmaker()() as db:
+        try:
+            d = await sdn.get_design(db, design_id) if design_id else None
+            d = await sdn.save_design(db, sdn.DesignIn(name=name, node_id=nid, spec=spec), d,
+                                      user=p.username if p else None)
+            await db.commit()
+        except nodes.NodeError as e:
+            raise ToolDenied(str(e)) from e
+        plan = await _call(sdn.plan(db, nid, spec))
+        plan.pop("current", None)
+        return _jsonable({"design": sdn.design_out(d), "plan": plan})
+
+
+@tool("network", DESTRUCTIVE)
+async def apply_sdn_design(design_id: str, dry_run: bool = True, confirm: str | None = None) -> dict:
+    """Apply an SDN design to the cluster. Default dry_run=true returns the plan only. To apply,
+    set dry_run=false and `confirm` to the zone id after the user agreed. The SDN configuration
+    is saved first and put back automatically when a step fails."""
+    from mmn.services import nodes, sdn
+
+    p = current_principal()
+    async with sessionmaker()() as db:
+        try:
+            d = await sdn.get_design(db, design_id)
+        except nodes.NodeError as e:
+            raise ToolDenied(str(e)) from e
+        zone = (d.spec or {}).get("zone", {}).get("id")
+        if not dry_run and confirm != zone:
+            raise ToolDenied(f"confirm must equal the zone id '{zone}'")
+        await _pve(d.node_id)
+        res = await _call(sdn.apply(db, d, dry_run=dry_run, source="mcp", requested_by=p.username if p else None))
+        await db.commit()
+        res.pop("current", None)
+        return res
+
+
+# ------------------------------------------------------------------ HA, replication, backup jobs, storage
+@tool("read", RO)
+async def get_ha_status(node: str) -> dict:
+    """High availability of the node's cluster: quorum and manager status, HA resources with their
+    state, and groups (Proxmox VE 8) or rules (Proxmox VE 9)."""
+    from mmn.services import cluster
+
+    nid, _ = await _pve(node)
+    return await _call(cluster.ha_overview(nid))
+
+
+@tool("cluster", WRITE)
+async def set_ha_resource(node: str, guest: str, state: str = "started", group: str | None = None,
+                          max_restart: int = 1, max_relocate: int = 1, remove: bool = False) -> dict:
+    """Put a VM or container under HA (or change it): state started, stopped, ignored or disabled.
+    `remove` takes it out of HA."""
+    from mmn.services import cluster
+
+    n, g = await _guest(guest, node)
+    sid = f"{'vm' if g['type'] == 'qemu' else 'ct'}:{g['vmid']}"
+    if remove:
+        return await _call(cluster.remove_ha_resource(n.id, sid))
+    ha = await _call(cluster.ha_overview(n.id))
+    exists = any(r.get("sid") == sid for r in ha.get("resources") or [])
+    try:
+        body = cluster.HaResourceIn(sid=sid, state=state, group=group, max_restart=max_restart,
+                                    max_relocate=max_relocate)
+    except ValueError as e:
+        raise ToolDenied(str(e)) from e
+    return await _call(cluster.save_ha_resource(n.id, body, create=not exists))
+
+
+@tool("cluster", WRITE)
+async def create_ha_rule(node: str, id: str, resources: list[str], nodes: dict[str, int] | None = None,
+                         type: str = "node-affinity", affinity: str = "positive", strict: bool = False) -> dict:
+    """Proxmox VE 9: an HA rule. node-affinity: run `resources` (vm:100, ct:101) preferably on
+    `nodes` {name: priority}. resource-affinity: keep resources together (positive) or apart
+    (negative). On Proxmox VE 8 this creates an HA group from `nodes` instead."""
+    from mmn.services import cluster
+
+    nid, _ = await _pve(node)
+    ha = await _call(cluster.ha_overview(nid))
+    try:
+        if ha["mode"] == "groups":
+            return await _call(cluster.create_ha_group(nid, cluster.HaGroupIn(id=id, nodes=nodes or {})))
+        return await _call(cluster.create_ha_rule(nid, cluster.HaRuleIn(id=id, type=type, resources=resources,
+                                                                        nodes=nodes or {}, affinity=affinity,
+                                                                        strict=strict)))
+    except ValueError as e:
+        raise ToolDenied(str(e)) from e
+
+
+@tool("read", RO)
+async def list_replication(node: str) -> list[dict]:
+    """Storage replication jobs of the cluster with last/next sync, duration and errors."""
+    from mmn.services import cluster
+
+    nid, _ = await _pve(node)
+    return await _call(cluster.replication(nid))
+
+
+@tool("cluster", WRITE)
+async def manage_replication(node: str, action: str, guest: str | None = None, target: str | None = None,
+                             schedule: str = "*/15", job_id: str | None = None) -> Any:
+    """action 'create' (guest + target node + schedule, e.g. */15), 'run' (job_id, sync now) or
+    'delete' (job_id)."""
+    from mmn.services import cluster
+
+    nid, _ = await _pve(node)
+    if action == "create":
+        if not guest or not target:
+            raise ToolDenied("give the guest and the target node")
+        _, g = await _guest(guest, node)
+        try:
+            body = cluster.ReplicationIn(vmid=g["vmid"], target=target, schedule=schedule)
+        except ValueError as e:
+            raise ToolDenied(str(e)) from e
+        return await _call(cluster.create_replication(nid, body))
+    if not job_id:
+        raise ToolDenied("give job_id")
+    if action == "run":
+        return await _call(cluster.run_replication(nid, job_id))
+    if action == "delete":
+        return await _call(cluster.delete_replication(nid, job_id))
+    raise ToolDenied("action must be create, run or delete")
+
+
+@tool("read", RO)
+async def list_backup_jobs(node: str) -> dict:
+    """Proxmox VE backup jobs (vzdump schedules) of the cluster and the guests that no job backs up."""
+    from mmn.services import cluster
+
+    nid, _ = await _pve(node)
+    return await _call(cluster.backup_jobs(nid))
+
+
+@tool("cluster", WRITE)
+async def save_backup_job(node: str, storage: str, schedule: str = "sun 01:00", all: bool = False,
+                          vmids: list[int] | None = None, mode: str = "snapshot", keep_last: int | None = None,
+                          keep_daily: int | None = None, keep_weekly: int | None = None,
+                          mailto: list[str] | None = None, enabled: bool = True, job_id: str | None = None) -> dict:
+    """Create (or with job_id change) a Proxmox VE backup job: storage, schedule (systemd calendar,
+    e.g. 'daily 02:00', 'sun 01:00'), all guests or vmids, mode snapshot/suspend/stop, retention."""
+    from mmn.services import cluster
+
+    nid, _ = await _pve(node)
+    try:
+        body = cluster.BackupJobIn(storage=storage, schedule=schedule, all=all, vmids=vmids or [], mode=mode,
+                                   keep_last=keep_last, keep_daily=keep_daily, keep_weekly=keep_weekly,
+                                   mailto=mailto or [], enabled=enabled)
+    except ValueError as e:
+        raise ToolDenied(str(e)) from e
+    return await _call(cluster.save_backup_job(nid, body, job_id))
+
+
+@tool("cluster", WRITE)
+async def run_backup_job(node: str, job_id: str) -> list[dict]:
+    """Run a backup job now (a vzdump task per node). Follow the jobs with get_node_job."""
+    from mmn.services import cluster
+
+    nid, _ = await _pve(node)
+    p = current_principal()
+    async with sessionmaker()() as db:
+        return await _call(cluster.run_backup_job(db, nid, job_id, source="mcp", requested_by=p.username if p else None))
+
+
+@tool("cluster", DESTRUCTIVE)
+async def delete_backup_job(node: str, job_id: str, confirm: str) -> dict:
+    """Delete a backup job (existing backups stay). Set `confirm` to the job id."""
+    from mmn.services import cluster
+
+    if confirm != job_id:
+        raise ToolDenied("confirm must equal the job id")
+    nid, _ = await _pve(node)
+    return await _call(cluster.delete_backup_job(nid, job_id))
+
+
+@tool("read", RO)
+async def list_storage(node: str) -> dict:
+    """Storages of the cluster (type, content, shared, enabled) with use on this node."""
+    from mmn.services import cluster
+
+    nid, _ = await _pve(node)
+    return await _call(cluster.storages(nid))
+
+
+@tool("cluster", WRITE)
+async def add_storage(node: str, storage: str, type: str, content: list[str] | None = None,
+                      path: str | None = None, server: str | None = None, export: str | None = None,
+                      share: str | None = None, username: str | None = None, password: str | None = None,
+                      datastore: str | None = None, fingerprint: str | None = None) -> dict:
+    """Add a storage to the cluster: dir (path), nfs (server, export), cifs (server, share,
+    username, password) or pbs (server, datastore, username, password, fingerprint)."""
+    from mmn.services import cluster
+
+    nid, _ = await _pve(node)
+    try:
+        body = cluster.StorageIn(storage=storage, type=type, content=content or ["backup"], path=path, server=server,
+                                 export=export, share=share, username=username, password=password,
+                                 datastore=datastore, fingerprint=fingerprint)
+    except ValueError as e:
+        raise ToolDenied(str(e)) from e
+    return await _call(cluster.add_storage(nid, body))
+
+
+@tool("cluster", WRITE)
+async def set_storage_enabled(node: str, storage: str, enabled: bool) -> dict:
+    """Enable or disable a storage in the cluster configuration."""
+    from mmn.services import cluster
+
+    nid, _ = await _pve(node)
+    return await _call(cluster.set_storage_enabled(nid, storage, enabled))
+
+
+# ------------------------------------------------------------------ monitoring
+@tool("read", RO)
+async def get_monitoring(range: str = "24h", environment: str | None = None) -> dict:
+    """All nodes with CPU/RAM/disk now and as a trend (range 1h, 24h, 7d or 30d), storages, disk
+    health (SMART) and the number of open alerts. Totals over all nodes."""
+    from mmn.services import monitoring, nodes
+
+    async with sessionmaker()() as db:
+        try:
+            env_id = (await nodes.get_environment(db, environment)).id if environment else None
+            return _jsonable(await monitoring.overview(db, range, env_id))
+        except (ValueError, nodes.NodeError) as e:
+            raise ToolDenied(str(e)) from e
+
+
+@tool("read", RO)
+async def get_node_metrics(node: str, range: str = "24h") -> dict:
+    """Metric history of one node (CPU %, memory %, root disk %, load) for 1h, 24h, 7d or 30d,
+    plus its storages and disks."""
+    from mmn.services import monitoring
+
+    nid, name = await _node_id(node)
+    async with sessionmaker()() as db:
+        try:
+            h = await monitoring.history(db, [nid], range)
+        except ValueError as e:
+            raise ToolDenied(str(e)) from e
+        from mmn.models import Node
+
+        n = await db.get(Node, nid)
+        return _jsonable({"node": name, "range": range, "points": h.get(nid, []), "health": n.health or {}})
+
+
+@tool("read", RO)
+async def list_alerts(open_only: bool = True, limit: int = 50) -> list[dict]:
+    """Monitoring alerts (node offline, CPU, memory, disk, storage full, SMART) newest first."""
+    from mmn.services import monitoring
+
+    async with sessionmaker()() as db:
+        return _jsonable(await monitoring.list_alerts(db, open_only=open_only, limit=limit))
+
+
+@tool("read", RO)
+async def get_disk_smart(node: str, disk: str) -> dict:
+    """Full SMART data of a disk of a Proxmox VE node (disk: device path such as /dev/sda)."""
+    from mmn.services import monitoring
+
+    nid, _ = await _pve(node)
+    return await _call(monitoring.smart(nid, disk))
+
+
+# ------------------------------------------------------------------ GitHub deployments
+@tool("read", RO)
+async def list_deployments() -> list[dict]:
+    """GitHub repositories deployed into containers: repo, channel (prod/test) and branch, target
+    container, last commit and status, automatic deploys."""
+    from mmn.services import deploy
+
+    async with sessionmaker()() as db:
+        return _jsonable([deploy.deployment_out(d) for d in await deploy.list_deployments(db)])
+
+
+@tool("read", RO)
+async def get_deployment(deployment: str) -> dict:
+    """One deployment (by name or id) with its last runs. A run's job_id shows the log with get_node_job."""
+    from mmn.services import deploy, nodes
+
+    async with sessionmaker()() as db:
+        try:
+            d = await deploy.get_deployment(db, deployment)
+        except nodes.NodeError as e:
+            raise ToolDenied(str(e)) from e
+        return _jsonable({**deploy.deployment_out(d), "runs": await deploy.list_runs(db, d.id, 10)})
+
+
+@tool("deploy", RO)
+async def list_github_repos(query: str | None = None) -> list[dict]:
+    """Repositories the connected GitHub token can read (name, default branch, last push)."""
+    from mmn.services import deploy
+
+    async with sessionmaker()() as db:
+        try:
+            return _jsonable(await deploy.list_repos(db, query))
+        except Exception as e:
+            raise ToolDenied(str(e)) from e
+
+
+@tool("deploy", WRITE)
+async def save_deployment(name: str, repo: str, node: str, guest: str, deploy_cmd: str, channel: str = "prod",
+                          branch_prod: str = "main", branch_test: str = "test", path: str | None = None,
+                          setup_cmd: str = "", service: str | None = None, auto_deploy: str = "off",
+                          snapshot: bool = True, rollback: bool = True) -> dict:
+    """Create or change a deployment: GitHub `repo` (owner/name) into container `guest` on `node`.
+    channel prod uses branch_prod, test uses branch_test. deploy_cmd runs in the checkout (path,
+    default /opt/<name>) on every deploy, setup_cmd only on the first. service is restarted after.
+    auto_deploy: off, webhook (GitHub push) or poll (checks every 5 minutes)."""
+    from mmn.services import deploy, nodes
+
+    n, g = await _guest(guest, node)
+    p = current_principal()
+    try:
+        body = deploy.DeploymentIn(name=name, repo=repo, channel=channel, branch_prod=branch_prod,
+                                   branch_test=branch_test, node_id=n.id, vmid=g["vmid"], path=path,
+                                   preset="custom", setup_cmd=setup_cmd, deploy_cmd=deploy_cmd, service=service,
+                                   auto_deploy=auto_deploy, snapshot=snapshot, rollback=rollback)
+    except ValueError as e:
+        raise ToolDenied(str(e)) from e
+    async with sessionmaker()() as db:
+        try:
+            existing = None
+            try:
+                existing = await deploy.get_deployment(db, name)
+            except nodes.NodeError:
+                pass
+            d = await deploy.save_deployment(db, body, existing, user=p.username if p else None)
+            await db.commit()
+        except nodes.NodeError as e:
+            raise ToolDenied(str(e)) from e
+        return _jsonable(deploy.deployment_out(d))
+
+
+@tool("deploy", WRITE)
+async def run_deployment(deployment: str, run_setup: bool = False, channel: str | None = None) -> dict:
+    """Deploy now: pull the branch of the deployment's channel into the container and run the deploy
+    commands (snapshot first and roll back on failure when the deployment says so). `channel`
+    prod/test switches the channel first. Follow the job with get_node_job."""
+    from mmn.services import deploy, nodes
+
+    p = current_principal()
+    async with sessionmaker()() as db:
+        try:
+            d = await deploy.get_deployment(db, deployment)
+        except nodes.NodeError as e:
+            raise ToolDenied(str(e)) from e
+        if channel:
+            if channel not in ("prod", "test"):
+                raise ToolDenied("channel must be prod or test")
+            d.channel = channel
+            await db.commit()
+        dep_id = d.id
+    try:
+        r = await deploy.start_run(dep_id, trigger="mcp", source="mcp", requested_by=p.username if p else None,
+                                   run_setup=run_setup)
+    except Exception as e:
+        raise _agent_errors(e) from e
+    return _jsonable({**deploy.run_out(r), "hint": "follow job_id with get_node_job"})
 
 
 # ------------------------------------------------------------------ ASGI wiring

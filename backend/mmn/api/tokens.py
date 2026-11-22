@@ -36,9 +36,12 @@ SCOPES: dict[str, str] = {
     "guests_admin": "Create, delete and migrate VMs and containers, roll back snapshots, run community scripts",
     "templates": "Manage the container template library and push templates to nodes",
     "tasks": "Create, change and run scheduled tasks",
+    "network": "Change bridges, firewall rules and SDN on Proxmox VE nodes (applied with backup and roll back)",
+    "cluster": "Manage HA, replication, Proxmox backup jobs and storage",
+    "deploy": "Deploy GitHub repositories into containers and change deployments",
 }
 ADMIN_ONLY_SCOPES = {"restore", "updates", "settings", "backups", "nodes", "node_updates", "logs", "services", "exec",
-                     "guests", "guests_admin", "templates", "tasks"}
+                     "guests", "guests_admin", "templates", "tasks", "network", "cluster", "deploy"}
 
 
 class TokenCreate(BaseModel):

@@ -8,11 +8,15 @@ MCP server so Claude, ChatGPT or Copilot can answer questions and carry out task
 > Phase 2 added environments (Home plus one per customer), the agent on every Proxmox node, the
 > overview dashboard, package updates from the interface, notification mail per environment, the CPU governor per
 > node, and server administration through the agent (logs, services, packages, files, commands) for people and AI.
-> Phase 3 (this release) adds VMs and containers: power actions, snapshots, migration, the console in the browser
+> Phase 3 added VMs and containers: power actions, snapshots, migration, the console in the browser
 > (noVNC for VMs, a terminal for containers and node shells), creating guests from the template library,
 > community-scripts.org, an ISO or a cloud image, the CT template library with nightly sync to all nodes, and
 > scheduled tasks (updates in containers, node updates, template sync, custom commands) with snapshot, rollback and
 > a mailed report.
+> Phase 4 (this release) adds network management (bridges and VLANs with a graphical overview of which guests use
+> them, the firewall, SDN with a step-by-step designer), cluster features (HA, replication, Proxmox backup jobs,
+> storage), monitoring of all nodes with trends, SMART and mailed alerts, and deployments from GitHub repositories
+> into containers.
 
 The interface is in English and Dutch, in the RHIS house style (see [`branding/`](branding/)).
 
@@ -88,6 +92,37 @@ Built for Linux amd64/arm64 (`.deb` and plain binary) and Windows amd64 (`agent/
 The console is relayed by the app: the browser connects to the app, the app to the agent's outgoing connection, so
 nodes still need no open ports and Zoraxy only has to pass WebSockets.
 
+## Network, SDN and cluster
+
+- **Proxmox → Network** shows every bridge with the VMs and containers on it, grouped by VLAN tag, plus SDN VNets
+  and bridges guests point to that don't exist. Bridge changes are staged first and shown as a diff of
+  `/etc/network/interfaces`. Applying needs the node name typed in; the node backs up the file, reloads, and restores
+  the old file by itself when the app can't reach it again within 90 seconds. The firewall tab covers cluster, node
+  and guest rules and options.
+- **SDN designer** builds a zone in five steps (zone, VNets, subnets, nodes, review) with a live preview that marks
+  what is new or changed compared with the cluster. The review lists every API change; rolling out needs the zone
+  name, backs up `/etc/pve/sdn/*.cfg` first and restores it automatically when the reload fails. Every backup can be
+  restored with one click under **Network → Config backups**.
+- **Proxmox → Cluster & HA** manages HA resources and rules (or groups on older versions), storage replication,
+  the cluster's own backup jobs (vzdump) and storage (directory, NFS, SMB/CIFS, Proxmox Backup Server).
+
+## Monitoring
+
+**Servers → Monitoring** keeps one sample per node per minute for 30 days and shows CPU, memory and disk with
+trends over 1 hour to 30 days, storage usage and SMART/wearout of physical disks (collected every 10 minutes).
+Alerts for offline nodes, high CPU, memory, disk or storage use and failing disks are mailed when they open and close.
+
+## Deployments from GitHub
+
+Add a fine-grained GitHub token (read access to Contents and Metadata) under **Proxmox → Deployments**, then pick a
+repository, a production and a test branch, and a target container. The app clones the repository into the container,
+runs your setup command once and your deploy command every time, writes environment variables to
+`/etc/mmn-deploy/<name>.env`, restarts the systemd service you name, and takes a snapshot first that is restored
+when the deployment fails. Presets cover an install script in the repo, Python, Node.js and static sites; everything
+runs natively on Debian, no Docker. Deploy by hand, on every push (GitHub webhook to
+`/api/hooks/github/<id>`, signed with a secret) or by checking for new commits every 5 minutes. **Create → GitHub**
+makes a new container and deploys into it in one go.
+
 ## Updates, production and test
 
 - `main` → production releases `vX.Y.Z` (published once per `VERSION`).
@@ -102,11 +137,11 @@ switches the `current` link and restarts; when the health check fails it rolls b
 The MCP endpoint is `https://<your address>/mcp` (Streamable HTTP). Claude, ChatGPT and VS Code connect with
 OAuth 2.1 (dynamic client registration + PKCE); scripts can use a personal API token. Each connection only gets the
 permissions you tick (read, backups, restore, updates, settings, nodes, node updates, logs, services, exec, guests,
-create and remove guests, templates, scheduled tasks),
+create and remove guests, templates, scheduled tasks, network, cluster, deployments),
 destructive tools require confirmation of the exact target, commands and service actions need a stated reason, and
 every call is recorded in the **AI activity log**. Through the agents an assistant can read logs and the journal,
 check and restart services, find which servers have a package (e.g. nginx for a CVE), read files, run commands,
-install updates and reboot nodes, and manage VMs, containers, snapshots, templates and scheduled tasks. **Help → What the MCP can do** lists everything. Step-by-step instructions are in the app under
+install updates and reboot nodes, and manage VMs, containers, snapshots, templates and scheduled tasks, read the network and change it with a dry run first, design and roll out SDN, manage HA, replication, backup jobs and storage, read monitoring and SMART data, and start deployments. **Help → What the MCP can do** lists everything. Step-by-step instructions are in the app under
 **Help → Connect Claude, ChatGPT or Copilot**.
 
 ## Backups
