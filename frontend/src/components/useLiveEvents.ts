@@ -59,6 +59,14 @@ export function useLiveEvents() {
             qc.invalidateQueries({ queryKey: ["templates"] });
             if (msg.data.error) window.dispatchEvent(new CustomEvent("mmn:template-error", { detail: msg.data.error }));
           }
+          if (msg.event === "monitoring.alerts") {
+            qc.invalidateQueries({ queryKey: ["mon-alerts"] });
+            qc.invalidateQueries({ queryKey: ["monitoring"] });
+          }
+          if (msg.event === "deploy.run") {
+            qc.invalidateQueries({ queryKey: ["deployments"] });
+            qc.invalidateQueries({ queryKey: ["deployment", String(msg.data.deployment_id ?? "")] });
+          }
           if (msg.event === "node.job") {
             const jid = String(msg.data.job_id ?? "");
             if (msg.data.line === undefined) {

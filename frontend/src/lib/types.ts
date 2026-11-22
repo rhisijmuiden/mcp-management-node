@@ -585,3 +585,316 @@ export interface ConsoleSession {
   vmid?: number;
   job?: NodeJob;
 }
+
+/* ------------------------------------------------------------------ phase 4: network, SDN, cluster, monitoring, deploys */
+export interface NetIface {
+  iface: string;
+  type: string;
+  active: boolean;
+  autostart: boolean;
+  method: string | null;
+  cidr: string | null;
+  address: string | null;
+  gateway: string | null;
+  cidr6: string | null;
+  ports: string[];
+  vlan_aware: boolean;
+  vids: string | null;
+  bond_mode: string | null;
+  vlan_id: number | null;
+  vlan_raw_device: string | null;
+  mtu: number | null;
+  comments: string;
+  pending: boolean;
+}
+
+export interface MapGuest {
+  vmid: number;
+  type: "qemu" | "lxc";
+  name: string;
+  node_id: string;
+  node: string;
+  status: string;
+  nic: string;
+  mac: string | null;
+  firewall: boolean;
+  trunks: string[];
+  ip: string | null;
+  link_down: boolean;
+  model: string | null;
+}
+
+export interface MapBridge {
+  name: string;
+  kind: "bridge" | "vnet" | "missing";
+  vlan_aware: boolean;
+  comments: string;
+  interfaces: number;
+  vnet_tag?: number | null;
+  nodes: { node_id: string; node: string; ports: string[]; cidr: string | null; gateway: string | null; vlan_aware: boolean; active: boolean; vids: string | null; pending: boolean }[];
+  lanes: { tag: number; guests: MapGuest[] }[];
+}
+
+export interface BridgeMap {
+  bridges: MapBridge[];
+  tags: { tag: number; count: number }[];
+  nodes: { node_id: string; node: string; online: boolean }[];
+  errors: { node_id: string; node: string; error: string }[];
+}
+
+export interface NetPending {
+  node_id: string;
+  has_changes: boolean;
+  diff: string;
+  warnings: string[];
+  dry_run?: boolean;
+  applied?: boolean;
+  job?: NodeJob;
+  backup_id?: string;
+}
+
+export interface ConfigBackup {
+  id: string;
+  kind: "network" | "sdn";
+  node_id: string;
+  design_id: string | null;
+  reason: string;
+  created_by: string | null;
+  created_at: string;
+  restored_at: string | null;
+  files: string[];
+  content?: Record<string, string | null>;
+}
+
+export interface FwRule {
+  pos: number;
+  type: string;
+  action: string;
+  enable?: number;
+  proto?: string;
+  dport?: string;
+  sport?: string;
+  source?: string;
+  dest?: string;
+  macro?: string;
+  iface?: string;
+  comment?: string;
+}
+
+export interface FirewallOverview {
+  cluster_options: Record<string, unknown> & { enable?: number; policy_in?: string; policy_out?: string; error?: string };
+  cluster_rules: FwRule[] | { error: string };
+  groups: { group: string; comment?: string }[] | { error: string };
+  aliases: { name: string; cidr: string; comment?: string }[] | { error: string };
+  ipsets: { name: string; comment?: string }[] | { error: string };
+  node_options: Record<string, unknown> & { enable?: number; error?: string };
+  node_rules: FwRule[] | { error: string };
+  guests: { vmid: number; type: "qemu" | "lxc"; name: string; nics: { nic: string; bridge: string | null; firewall: boolean }[] }[];
+}
+
+export type ZoneType = "vlan" | "simple" | "vxlan" | "evpn" | "qinq";
+export interface SdnZoneSpec { id: string; type: ZoneType; bridge?: string | null; tag?: number | null; peers: string[]; controller?: string | null; vrf_vxlan?: number | null; mtu?: number | null; nodes: string[]; ipam: boolean; dhcp: boolean }
+export interface SdnVnetSpec { id: string; alias: string; tag?: number | null; vlanaware: boolean; color?: string | null }
+export interface SdnSubnetSpec { vnet: string; cidr: string; gateway?: string | null; snat: boolean; dhcp_start?: string | null; dhcp_end?: string | null }
+export interface SdnSpec { zone: SdnZoneSpec; vnets: SdnVnetSpec[]; subnets: SdnSubnetSpec[] }
+
+export interface SdnDesign {
+  id: string;
+  name: string;
+  node_id: string;
+  spec: SdnSpec;
+  status: "draft" | "applied" | "failed" | "rolled_back";
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  applied_at: string | null;
+  last_job_id: string | null;
+  last_backup_id: string | null;
+}
+
+export interface SdnState {
+  zones: Record<string, unknown>[];
+  vnets: (Record<string, unknown> & { vnet: string; zone: string; tag?: number; alias?: string })[];
+  subnets: (Record<string, unknown> & { vnet: string; cidr?: string; subnet?: string; gateway?: string })[];
+  controllers: Record<string, unknown>[];
+  status: Record<string, unknown>[];
+}
+
+export interface SdnOp { op: "create" | "update" | "delete" | "reload" | "none"; kind: string; id: string; summary: string; before?: Record<string, string> | null; after?: Record<string, string> | null; used_by?: string[] }
+
+export interface SdnPlan {
+  node_id: string;
+  cluster: string | null;
+  cluster_nodes: string[];
+  errors: string[];
+  warnings: string[];
+  ops: SdnOp[];
+  current: SdnState;
+  can_apply: boolean;
+  dry_run?: boolean;
+  applied?: boolean;
+  job?: NodeJob;
+}
+
+export interface HaOverview {
+  mode: "rules" | "groups";
+  status: (Record<string, unknown> & { id: string; type: string; status?: string; node?: string; sid?: string; state?: string })[];
+  resources: (Record<string, unknown> & { sid: string; state?: string; group?: string; max_restart?: number; max_relocate?: number; comment?: string })[];
+  groups: (Record<string, unknown> & { group: string; nodes?: string; restricted?: number })[];
+  rules: (Record<string, unknown> & { rule: string; type: string; resources?: string; nodes?: string; affinity?: string })[];
+}
+
+export interface ReplicationJob {
+  id: string;
+  guest: number;
+  source?: string;
+  target: string;
+  schedule?: string;
+  rate?: number;
+  comment?: string;
+  disable?: number;
+  last_sync?: number;
+  next_sync?: number;
+  duration?: number;
+  fail_count?: number;
+  error?: string;
+  state?: string;
+}
+
+export interface BackupJobPve {
+  id: string;
+  schedule?: string;
+  storage?: string;
+  all?: number;
+  vmid?: string;
+  node?: string;
+  mode?: string;
+  compress?: string;
+  enabled?: number;
+  mailto?: string;
+  "prune-backups"?: string | Record<string, string>;
+  comment?: string;
+  "next-run"?: number;
+}
+
+export interface StorageRow {
+  storage: string;
+  type: string;
+  content: string;
+  shared: boolean;
+  disabled: boolean;
+  nodes: string;
+  path?: string | null;
+  server?: string | null;
+  export?: string | null;
+  share?: string | null;
+  datastore?: string | null;
+  pool?: string | null;
+  active: boolean;
+  total: number;
+  used: number;
+  avail: number;
+  used_pct: number | null;
+}
+
+export interface MetricPoint { at: string; cpu: number; cpu_max: number; mem_pct: number | null; mem_used: number; mem_total: number; disk_pct: number | null; load1: number | null }
+export interface HealthStorage { storage: string; type: string; content: string; active: boolean; enabled: boolean; shared: boolean; total: number; used: number; avail: number; used_pct: number | null }
+export interface HealthDisk { devpath: string; model: string; serial?: string; size: number; type: string; health: string; wearout: number | null; used: string }
+
+export interface MonitoringNode {
+  node_id: string;
+  name: string;
+  kind: string;
+  environment_id: string;
+  environment: string | null;
+  cluster: string | null;
+  online: boolean;
+  last_seen_at: string | null;
+  cpu: number | null;
+  cpus?: number;
+  load: number[];
+  mem_used?: number;
+  mem_total?: number;
+  disk_used?: number;
+  disk_total?: number;
+  uptime?: number;
+  trend: MetricPoint[];
+  storages: HealthStorage[];
+  disks: HealthDisk[];
+  disk_health: "ok" | "failed" | "unknown";
+  health_at: string | null;
+  health_error: string | null;
+  alerts: number;
+}
+
+export interface MonitoringOverview {
+  range: string;
+  totals: { nodes: number; online: number; cpu_avg: number | null; mem_used: number; mem_total: number; storage_used: number; storage_total: number; alerts_open: number };
+  nodes: MonitoringNode[];
+}
+
+export interface MonAlert {
+  id: string;
+  node_id: string | null;
+  node: string | null;
+  kind: string;
+  key: string;
+  severity: "warning" | "critical";
+  message: string;
+  value: number | null;
+  started_at: string;
+  resolved_at: string | null;
+  notified_at: string | null;
+}
+
+export interface MonitoringSettings { enabled: boolean; mail_to: string[]; cpu_pct: number; cpu_minutes: number; mem_pct: number; disk_pct: number; storage_pct: number; offline_minutes: number; smart: boolean; wearout_pct: number }
+
+export interface GithubStatus { configured: boolean; login: string | null; checked_at: string | null }
+export interface GithubRepo { full_name: string; private: boolean; default_branch: string; description: string; pushed_at: string | null; html_url: string; archived: boolean }
+export type DeployPreset = "script" | "python" | "node" | "static" | "custom";
+
+export interface Deployment {
+  id: string;
+  name: string;
+  repo: string;
+  channel: "prod" | "test";
+  branch_prod: string;
+  branch_test: string;
+  branch: string;
+  node_id: string | null;
+  vmid: number;
+  path: string;
+  preset: DeployPreset;
+  setup_cmd: string;
+  deploy_cmd: string;
+  service: string | null;
+  has_env: boolean;
+  auto_deploy: "off" | "webhook" | "poll";
+  snapshot: boolean;
+  rollback: boolean;
+  mail_to: string[];
+  last_sha: string | null;
+  last_status: string | null;
+  last_run_at: string | null;
+  webhook_url: string;
+  created_by: string | null;
+  created_at: string;
+  runs?: DeploymentRun[];
+}
+
+export interface DeploymentRun {
+  id: string;
+  deployment_id: string;
+  status: "running" | "success" | "failed";
+  trigger: string;
+  branch: string;
+  sha: string | null;
+  previous_sha: string | null;
+  requested_by: string | null;
+  job_id: string | null;
+  snapshot: string | null;
+  rolled_back: boolean;
+  error: string | null;
+  started_at: string;
+  finished_at: string | null;
+}

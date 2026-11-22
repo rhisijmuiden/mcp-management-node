@@ -31,6 +31,8 @@ import {
   User as UserIcon,
   Users,
   X,
+  Rocket,
+  ServerCog,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -113,14 +115,16 @@ export function Layout() {
         { to: "/proxmox/guests", icon: <HardDrive />, label: t("nav.guests") },
         { to: "/proxmox/templates", icon: <Layers />, label: t("nav.templates") },
         { to: "/tasks", icon: <CalendarClock />, label: t("nav.tasks") },
-        { icon: <Network />, label: t("nav.network"), soon: true },
+        { to: "/proxmox/network", icon: <Network />, label: t("nav.network") },
+        { to: "/proxmox/cluster", icon: <ServerCog />, label: t("nav.cluster") },
+        { to: "/deployments", icon: <Rocket />, label: t("nav.deployments") },
       ],
     },
     {
       title: t("nav.section.servers"),
       items: [
         { icon: <Monitor />, label: t("nav.servers"), soon: true },
-        { icon: <Activity />, label: t("nav.monitoring"), soon: true },
+        { to: "/monitoring", icon: <Activity />, label: t("nav.monitoring") },
       ],
     },
     {

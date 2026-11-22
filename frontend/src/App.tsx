@@ -17,6 +17,16 @@ import { TaskRunPage, TasksPage } from "@/pages/Tasks";
 import { TemplatesPage } from "@/pages/Templates";
 import { GeneralPage, MailPage, NotificationsPage, WebServerPage } from "@/pages/Settings";
 import { UsersPage } from "@/pages/Users";
+import { lazy, Suspense, type ReactNode } from "react";
+
+// Phase 4 pages are loaded on demand to keep the first load small.
+const ClusterPage = lazy(() => import("@/pages/Cluster").then((m) => ({ default: m.ClusterPage })));
+const DeploymentsPage = lazy(() => import("@/pages/Deployments").then((m) => ({ default: m.DeploymentsPage })));
+const DeploymentDetailPage = lazy(() => import("@/pages/Deployments").then((m) => ({ default: m.DeploymentDetailPage })));
+const MonitoringPage = lazy(() => import("@/pages/Monitoring").then((m) => ({ default: m.MonitoringPage })));
+const NetworkPage = lazy(() => import("@/pages/Network").then((m) => ({ default: m.NetworkPage })));
+const SdnDesignerPage = lazy(() => import("@/pages/SdnDesigner").then((m) => ({ default: m.SdnDesignerPage })));
+const L = ({ children }: { children: ReactNode }) => <Suspense fallback={<Spinner />}>{children}</Suspense>;
 
 function RequireAuth({ admin, children }: { admin?: boolean; children: React.ReactNode }) {
   const { user, status, loading } = useAuth();
@@ -59,6 +69,13 @@ export default function App() {
         <Route path="proxmox/guests" element={<GuestsPage />} />
         <Route path="proxmox/guests/:node/:vmid" element={<GuestDetailPage />} />
         <Route path="proxmox/templates" element={<TemplatesPage />} />
+        <Route path="proxmox/network" element={<L><NetworkPage /></L>} />
+        <Route path="proxmox/network/sdn-designer" element={<RequireAuth admin><L><SdnDesignerPage /></L></RequireAuth>} />
+        <Route path="proxmox/network/sdn-designer/:id" element={<RequireAuth admin><L><SdnDesignerPage /></L></RequireAuth>} />
+        <Route path="proxmox/cluster" element={<L><ClusterPage /></L>} />
+        <Route path="deployments" element={<L><DeploymentsPage /></L>} />
+        <Route path="deployments/:id" element={<L><DeploymentDetailPage /></L>} />
+        <Route path="monitoring" element={<L><MonitoringPage /></L>} />
         <Route path="tasks" element={<TasksPage />} />
         <Route path="tasks/runs/:id" element={<TaskRunPage />} />
         <Route path="admin/agents" element={<RequireAuth admin><AgentsPage /></RequireAuth>} />

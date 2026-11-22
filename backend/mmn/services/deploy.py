@@ -465,8 +465,9 @@ async def _pipeline(run_id: str, run_setup: bool, source: str, requested_by: str
             dep.last_sha = sha
         await db.commit()
         mail_to = list(dep.mail_to or [])
+        deployment_id = dep.id
     await agent_hub.finish_job(job_id, status, {"sha": sha, "snapshot": snap, "rolled_back": rolled_back}, error)
-    events.publish("deploy.run", {"run_id": run_id, "done": True, "status": status})
+    events.publish("deploy.run", {"run_id": run_id, "deployment_id": deployment_id, "done": True, "status": status})
     if mail_to:
         await _mail(run_id, mail_to)
 

@@ -1,5 +1,5 @@
 import * as Tabs from "@radix-ui/react-tabs";
-import { ArrowUpCircle, BookOpen, Bot, Boxes, CalendarClock, DatabaseBackup, GitBranch, Layers, Globe, Mail, MessageSquare, Network, Plug, Rocket, ScrollText, Server, ShieldCheck, Sparkles, Terminal } from "lucide-react";
+import { Activity, ArrowUpCircle, BookOpen, Bot, Boxes, CalendarClock, DatabaseBackup, GitBranch, Layers, Globe, Mail, MessageSquare, Network, Plug, Rocket, ScrollText, Server, ShieldCheck, Sparkles, Terminal, Wifi } from "lucide-react";
 import type { ReactNode } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { Link } from "react-router";
@@ -222,7 +222,7 @@ export function McpHelpPage() {
   );
 }
 
-type Cap = { tool: string; scope: "read" | "backups" | "restore" | "updates" | "settings" | "nodes" | "node_updates" | "logs" | "services" | "exec" | "guests" | "guests_admin" | "templates" | "tasks" };
+type Cap = { tool: string; scope: "read" | "backups" | "restore" | "updates" | "settings" | "nodes" | "node_updates" | "logs" | "services" | "exec" | "guests" | "guests_admin" | "templates" | "tasks" | "network" | "cluster" | "deploy" };
 const NOW: { key: string; icon: ReactNode; tools: Cap[] }[] = [
   { key: "system", icon: <Rocket />, tools: [
     { tool: "get_system_info", scope: "read" }, { tool: "check_for_updates", scope: "read" }, { tool: "get_update_status", scope: "read" },
@@ -270,11 +270,30 @@ const NOW: { key: string; icon: ReactNode; tools: Cap[] }[] = [
     { tool: "list_scheduled_tasks", scope: "read" }, { tool: "get_task_run", scope: "read" },
     { tool: "save_scheduled_task", scope: "tasks" }, { tool: "delete_scheduled_task", scope: "tasks" }, { tool: "run_scheduled_task", scope: "tasks" },
   ] },
+  { key: "network", icon: <Network />, tools: [
+    { tool: "get_bridge_map", scope: "read" }, { tool: "get_node_network", scope: "read" }, { tool: "get_firewall", scope: "read" },
+    { tool: "get_sdn", scope: "read" }, { tool: "list_sdn_designs", scope: "read" }, { tool: "list_config_backups", scope: "read" },
+    { tool: "stage_bridge", scope: "network" }, { tool: "apply_network_changes", scope: "network" }, { tool: "revert_network_changes", scope: "network" },
+    { tool: "set_firewall", scope: "network" }, { tool: "add_firewall_rule", scope: "network" }, { tool: "delete_firewall_rule", scope: "network" },
+    { tool: "save_sdn_design", scope: "network" }, { tool: "apply_sdn_design", scope: "network" }, { tool: "restore_config_backup", scope: "network" },
+  ] },
+  { key: "cluster", icon: <Server />, tools: [
+    { tool: "get_ha_status", scope: "read" }, { tool: "list_replication", scope: "read" }, { tool: "list_backup_jobs", scope: "read" }, { tool: "list_storage", scope: "read" },
+    { tool: "set_ha_resource", scope: "cluster" }, { tool: "create_ha_rule", scope: "cluster" }, { tool: "manage_replication", scope: "cluster" },
+    { tool: "save_backup_job", scope: "cluster" }, { tool: "run_backup_job", scope: "cluster" }, { tool: "delete_backup_job", scope: "cluster" },
+    { tool: "add_storage", scope: "cluster" }, { tool: "set_storage_enabled", scope: "cluster" },
+  ] },
+  { key: "monitoring", icon: <Activity />, tools: [
+    { tool: "get_monitoring", scope: "read" }, { tool: "get_node_metrics", scope: "read" }, { tool: "list_alerts", scope: "read" }, { tool: "get_disk_smart", scope: "read" },
+  ] },
+  { key: "deploy", icon: <GitBranch />, tools: [
+    { tool: "list_deployments", scope: "read" }, { tool: "get_deployment", scope: "read" },
+    { tool: "list_github_repos", scope: "deploy" }, { tool: "save_deployment", scope: "deploy" }, { tool: "run_deployment", scope: "deploy" },
+  ] },
 ];
 const NEXT: { key: string; icon: ReactNode; items: number }[] = [
-  { key: "github", icon: <GitBranch />, items: 3 },
   { key: "servers", icon: <Terminal />, items: 3 },
-  { key: "network", icon: <Network />, items: 3 },
+  { key: "unifi", icon: <Wifi />, items: 3 },
 ];
 
 export function McpCapabilitiesPage() {
