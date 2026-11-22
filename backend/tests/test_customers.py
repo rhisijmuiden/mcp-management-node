@@ -131,6 +131,18 @@ async def test_customers_and_isolation(admin_client, client):
     empty = (await c.post("/api/customers", json={"name": "Leeg"})).json()
     assert (await c.delete(f"/api/customers/{empty['id']}")).status_code == 204
 
+    # Leave the shared test database as it was for the other tests.
+    from sqlalchemy import delete
+
+    from mmn.db import sessionmaker
+    from mmn.models import Node
+
+    async with sessionmaker()() as db:
+        await db.execute(delete(Node).where(Node.environment_id.in_([vd["id"], other["id"]])))
+        await db.commit()
+    for cid in (vd["id"], other["id"]):
+        assert (await c.delete(f"/api/customers/{cid}")).status_code == 204
+
 
 async def _id(c, name: str) -> str:
     return next(n["id"] for n in (await c.get("/api/nodes")).json() if n["name"] == name)

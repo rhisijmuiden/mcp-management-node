@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, KeyRound, Link2, Plus, ScrollText, Search, Trash2, Unplug } from "lucide-react";
-import { Fragment, useState } from "react";
+import { Bot, Building2, KeyRound, Link2, Plus, ScrollText, Search, Trash2, Unplug } from "lucide-react";
+import { Fragment, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 import { CodeBlock, CopyButton } from "@/components/CopyButton";
@@ -10,7 +10,8 @@ import { Dialog } from "@/components/ui/dialog";
 import { Checkbox, Field, Input, Segmented, Select } from "@/components/ui/form";
 import { Alert, Badge, EmptyState, PageHeader, Spinner } from "@/components/ui/misc";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
-import { del, errorMessage, get, post } from "@/lib/api";
+import { CustomerScopePicker, customerNames, useCustomers } from "@/components/customers";
+import { del, errorMessage, get, post, put } from "@/lib/api";
 import type { ApiToken, AuditEntry, ClientInfo, Connection } from "@/lib/types";
 import { appUrl, formatDate, timeAgo } from "@/lib/utils";
 
@@ -44,6 +45,13 @@ export function ConnectionsPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["connections"] }),
   });
   const url = appUrl("/mcp");
+  const customers = useCustomers();
+  const [limit, setLimit] = useState<Connection | null>(null);
+  const [limitValue, setLimitValue] = useState<string[] | null>(null);
+  const saveLimit = useMutation({
+    mutationFn: () => put(`api/tokens/connections/${limit!.client_id}/customers`, { customer_ids: limitValue }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["connections"] }); setLimit(null); },
+  });
   return (
     <>
       <PageHeader title={t("ai.connections_title")} description={t("ai.connections_subtitle")} actions={<Link to="/help/mcp"><Button variant="primary"><Link2 /> {t("ai.connect_new")}</Button></Link>} />
@@ -71,7 +79,9 @@ export function ConnectionsPage() {
                     {clientLabel(c.last_client, "")} · {t("ai.connected")} {timeAgo(c.connected_at, i18n.language)} · {t("ai.last_used")} {timeAgo(c.last_used_at, i18n.language)}
                   </div>
                   <div className="mt-2"><ScopeBadges scopes={c.scopes} /></div>
+                  <div className="mt-1.5 flex items-center gap-1.5 text-xs text-muted"><Building2 className="size-3.5" />{c.customer_ids ? customerNames(c.customer_ids, customers.data) : t("cust.all_customers")}</div>
                 </div>
+                <Button size="sm" onClick={() => { setLimitValue(c.customer_ids ?? null); setLimit(c); }}><Building2 /> {t("cust.limit")}</Button>
                 <Button size="sm" variant="secondary" loading={disconnect.isPending && disconnect.variables === c.client_id} onClick={() => { if (window.confirm(t("ai.disconnect_confirm", { name: c.client_name }))) disconnect.mutate(c.client_id); }}>
                   <Unplug /> {t("ai.disconnect")}
                 </Button>
@@ -80,33 +90,92 @@ export function ConnectionsPage() {
           </div>
         )}
       </Card>
+      <Dialog open={!!limit} onOpenChange={(v) => !v && setLimit(null)} title={t("cust.limit_title", { name: limit?.client_name })} description={t("cust.limit_desc")}
+        footer={<><Button onClick={() => setLimit(null)}>{t("common.cancel")}</Button><Button variant="primary" disabled={limitValue !== null && !limitValue.length} loading={saveLimit.isPending} onClick={() => saveLimit.mutate()}>{t("common.save")}</Button></>}>
+        {saveLimit.isError && <Alert tone="offline" className="mb-3">{errorMessage(saveLimit.error, t)}</Alert>}
+        <CustomerScopePicker value={limitValue} onChange={setLimitValue} />
+      </Dialog>
     </>
   );
 }
 
 /* ------------------------------------------------------------------ tokens */
-export function TokensPage() {
-  const { t, i18n } = useTranslation();
+export function NewTokenDialog({ open, onOpenChange, customerIds, defaultName }: {
+  open: boolean; onOpenChange: (v: boolean) => void; customerIds?: string[] | null; defaultName?: string;
+}) {
+  const { t } = useTranslation();
   const qc = useQueryClient();
-  const tokens = useQuery({ queryKey: ["tokens"], queryFn: () => get<ApiToken[]>("api/tokens") });
   const scopes = useQuery({ queryKey: ["scopes"], queryFn: () => get<{ scope: string; description: string }[]>("api/tokens/scopes") });
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ name: "", scopes: ["read"], expires_days: "90" });
+  const initial = () => ({ name: defaultName ?? "", scopes: ["read"], expires_days: "90", customer_ids: customerIds ?? null });
+  const [form, setForm] = useState<{ name: string; scopes: string[]; expires_days: string; customer_ids: string[] | null }>(initial);
   const [created, setCreated] = useState<string | null>(null);
+  useEffect(() => {
+    if (open) {
+      setForm(initial());
+      setCreated(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
   const create = useMutation({
-    mutationFn: () => post<ApiToken & { token: string }>("api/tokens", { name: form.name, scopes: form.scopes, expires_days: form.expires_days === "never" ? null : Number(form.expires_days) }),
+    mutationFn: () => post<ApiToken & { token: string }>("api/tokens", { name: form.name, scopes: form.scopes, customer_ids: form.customer_ids, expires_days: form.expires_days === "never" ? null : Number(form.expires_days) }),
     onSuccess: (r) => {
       setCreated(r.token);
       qc.invalidateQueries({ queryKey: ["tokens"] });
     },
   });
-  const revoke = useMutation({ mutationFn: (id: string) => del(`api/tokens/${id}`), onSuccess: () => qc.invalidateQueries({ queryKey: ["tokens"] }) });
   const close = () => {
-    setOpen(false);
+    onOpenChange(false);
     setCreated(null);
     create.reset();
-    setForm({ name: "", scopes: ["read"], expires_days: "90" });
   };
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && close()} title={created ? t("ai.token_created") : t("ai.new_token")}
+      footer={created ? <Button variant="primary" onClick={close}>{t("common.done")}</Button> : <><Button variant="ghost" onClick={close}>{t("common.cancel")}</Button><Button variant="primary" disabled={!form.name || (form.customer_ids !== null && !form.customer_ids.length)} loading={create.isPending} onClick={() => create.mutate()}>{t("ai.create")}</Button></>}>
+      {created ? (
+        <div className="space-y-4">
+          <Alert tone="warning">{t("ai.token_once")}</Alert>
+          <CodeBlock code={created} />
+          <p className="text-sm text-muted">{t("ai.token_next")} <Link to="/help/mcp" className="font-semibold text-accent-text hover:underline" onClick={close}>{t("nav.help")}</Link></p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {create.isError && <Alert tone="offline">{errorMessage(create.error, t)}</Alert>}
+          <Field label={t("ai.token_name")} hint={t("ai.token_name_hint")}><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Claude Code laptop" autoFocus /></Field>
+          <div>
+            <div className="mb-2 text-[13px] font-semibold">{t("cust.token_customers")}</div>
+            <CustomerScopePicker value={form.customer_ids} onChange={(v) => setForm({ ...form, customer_ids: v })} />
+          </div>
+          <div>
+            <div className="mb-2 text-[13px] font-semibold">{t("ai.scopes")}</div>
+            <div className="space-y-3 rounded-md border border-line p-4">
+              {(scopes.data ?? []).map((s) => (
+                <Checkbox key={s.scope} disabled={s.scope === "read"} checked={form.scopes.includes(s.scope)}
+                  onCheckedChange={(v) => setForm({ ...form, scopes: v ? [...form.scopes, s.scope] : form.scopes.filter((x) => x !== s.scope) })}
+                  label={t(`scopes.${s.scope}`)} description={t(`scopes.${s.scope}_desc`)} />
+              ))}
+            </div>
+          </div>
+          <Field label={t("ai.expires")}>
+            <Select value={form.expires_days} onChange={(e) => setForm({ ...form, expires_days: e.target.value })}>
+              <option value="30">30 {t("ai.days")}</option>
+              <option value="90">90 {t("ai.days")}</option>
+              <option value="365">365 {t("ai.days")}</option>
+              <option value="never">{t("ai.never")}</option>
+            </Select>
+          </Field>
+        </div>
+      )}
+    </Dialog>
+  );
+}
+
+export function TokensPage() {
+  const { t, i18n } = useTranslation();
+  const qc = useQueryClient();
+  const tokens = useQuery({ queryKey: ["tokens"], queryFn: () => get<ApiToken[]>("api/tokens") });
+  const customers = useCustomers();
+  const [open, setOpen] = useState(false);
+  const revoke = useMutation({ mutationFn: (id: string) => del(`api/tokens/${id}`), onSuccess: () => qc.invalidateQueries({ queryKey: ["tokens"] }) });
   return (
     <>
       <PageHeader title={t("ai.tokens_title")} description={t("ai.tokens_subtitle")} actions={<Button variant="primary" onClick={() => setOpen(true)}><Plus /> {t("ai.new_token")}</Button>} />
@@ -114,11 +183,12 @@ export function TokensPage() {
         <CardHeader icon={<KeyRound />} title={t("ai.your_tokens")} />
         {!tokens.data?.length ? <EmptyState icon={<KeyRound />} title={t("ai.no_tokens")}>{t("ai.no_tokens_hint")}</EmptyState> : (
           <Table>
-            <thead><tr><Th>{t("ai.token_name")}</Th><Th>{t("ai.scopes")}</Th><Th>{t("ai.used_by")}</Th><Th>{t("ai.expires")}</Th><Th /></tr></thead>
+            <thead><tr><Th>{t("ai.token_name")}</Th><Th>{t("cust.customers_col")}</Th><Th>{t("ai.scopes")}</Th><Th>{t("ai.used_by")}</Th><Th>{t("ai.expires")}</Th><Th /></tr></thead>
             <tbody>
               {tokens.data.map((tk) => (
                 <Tr key={tk.id}>
                   <Td><div className="font-semibold">{tk.name}</div><div className="mono text-xs text-muted">{tk.prefix}…</div></Td>
+                  <Td className="text-sm">{tk.customer_ids ? customerNames(tk.customer_ids, customers.data) : <span className="text-muted">{t("cust.all_customers")}</span>}</Td>
                   <Td><ScopeBadges scopes={tk.scopes} /></Td>
                   <Td className="text-sm"><div>{clientLabel(tk.last_client)}</div><div className="text-xs text-muted">{timeAgo(tk.last_used_at, i18n.language)}</div></Td>
                   <Td className="text-muted">{tk.expires_at ? formatDate(tk.expires_at, i18n.language) : t("ai.never")}</Td>
@@ -129,39 +199,7 @@ export function TokensPage() {
           </Table>
         )}
       </Card>
-      <Dialog open={open} onOpenChange={(v) => !v && close()} title={created ? t("ai.token_created") : t("ai.new_token")}
-        footer={created ? <Button variant="primary" onClick={close}>{t("common.done")}</Button> : <><Button variant="ghost" onClick={close}>{t("common.cancel")}</Button><Button variant="primary" disabled={!form.name} loading={create.isPending} onClick={() => create.mutate()}>{t("ai.create")}</Button></>}>
-        {created ? (
-          <div className="space-y-4">
-            <Alert tone="warning">{t("ai.token_once")}</Alert>
-            <CodeBlock code={created} />
-            <p className="text-sm text-muted">{t("ai.token_next")} <Link to="/help/mcp" className="font-semibold text-accent-text hover:underline" onClick={close}>{t("nav.help")}</Link></p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {create.isError && <Alert tone="offline">{errorMessage(create.error, t)}</Alert>}
-            <Field label={t("ai.token_name")} hint={t("ai.token_name_hint")}><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Claude Code laptop" autoFocus /></Field>
-            <div>
-              <div className="mb-2 text-[13px] font-semibold">{t("ai.scopes")}</div>
-              <div className="space-y-3 rounded-md border border-line p-4">
-                {(scopes.data ?? []).map((s) => (
-                  <Checkbox key={s.scope} disabled={s.scope === "read"} checked={form.scopes.includes(s.scope)}
-                    onCheckedChange={(v) => setForm({ ...form, scopes: v ? [...form.scopes, s.scope] : form.scopes.filter((x) => x !== s.scope) })}
-                    label={t(`scopes.${s.scope}`)} description={t(`scopes.${s.scope}_desc`)} />
-                ))}
-              </div>
-            </div>
-            <Field label={t("ai.expires")}>
-              <Select value={form.expires_days} onChange={(e) => setForm({ ...form, expires_days: e.target.value })}>
-                <option value="30">30 {t("ai.days")}</option>
-                <option value="90">90 {t("ai.days")}</option>
-                <option value="365">365 {t("ai.days")}</option>
-                <option value="never">{t("ai.never")}</option>
-              </Select>
-            </Field>
-          </div>
-        )}
-      </Dialog>
+      <NewTokenDialog open={open} onOpenChange={setOpen} />
     </>
   );
 }

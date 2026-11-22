@@ -1,5 +1,5 @@
 import * as Tabs from "@radix-ui/react-tabs";
-import { Activity, ArrowUpCircle, BookOpen, Bot, Boxes, CalendarClock, Copy, DatabaseBackup, GitBranch, Layers, Globe, Mail, MessageSquare, Network, Plug, Rocket, ScrollText, Server, ShieldCheck, Sparkles, Stethoscope, Terminal, Wifi, DoorClosed } from "lucide-react";
+import { Activity, ArrowUpCircle, BookOpen, Building2, Bot, Boxes, CalendarClock, Copy, DatabaseBackup, GitBranch, Layers, Globe, Mail, MessageSquare, Network, Plug, Rocket, ScrollText, Server, ShieldCheck, Sparkles, Stethoscope, Terminal, Wifi, DoorClosed } from "lucide-react";
 import type { ReactNode } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { Link } from "react-router";
@@ -224,6 +224,10 @@ export function McpHelpPage() {
 
 type Cap = { tool: string; scope: "read" | "backups" | "restore" | "updates" | "settings" | "nodes" | "node_updates" | "logs" | "services" | "exec" | "guests" | "guests_admin" | "templates" | "tasks" | "network" | "cluster" | "deploy" | "copy" | "unifi" | "unifi_admin" | "doors" };
 const NOW: { key: string; icon: ReactNode; tools: Cap[] }[] = [
+  { key: "customers", icon: <Building2 />, tools: [
+    { tool: "list_customers", scope: "read" }, { tool: "get_customer_overview", scope: "read" }, { tool: "optimisation_scan", scope: "read" },
+    { tool: "get_customer_context", scope: "read" }, { tool: "create_customer", scope: "nodes" }, { tool: "update_customer", scope: "nodes" },
+  ] },
   { key: "system", icon: <Rocket />, tools: [
     { tool: "get_system_info", scope: "read" }, { tool: "check_for_updates", scope: "read" }, { tool: "get_update_status", scope: "read" },
     { tool: "set_update_channel", scope: "updates" }, { tool: "install_update", scope: "updates" },
@@ -237,10 +241,10 @@ const NOW: { key: string; icon: ReactNode; tools: Cap[] }[] = [
   ] },
   { key: "audit", icon: <ScrollText />, tools: [{ tool: "get_audit_log", scope: "read" }] },
   { key: "proxmox", icon: <Server />, tools: [
-    { tool: "get_overview", scope: "read" }, { tool: "list_environments", scope: "read" }, { tool: "list_nodes", scope: "read" },
-    { tool: "get_node", scope: "read" }, { tool: "create_environment", scope: "nodes" }, { tool: "create_pairing_code", scope: "nodes" },
-    { tool: "set_cpu_governor", scope: "nodes" }, { tool: "get_environment_notifications", scope: "read" },
-    { tool: "update_environment_notifications", scope: "nodes" }, { tool: "send_node_test_notification", scope: "nodes" },
+    { tool: "get_overview", scope: "read" }, { tool: "list_nodes", scope: "read" },
+    { tool: "get_node", scope: "read" }, { tool: "create_pairing_code", scope: "nodes" },
+    { tool: "set_cpu_governor", scope: "nodes" }, { tool: "get_customer_notifications", scope: "read" },
+    { tool: "update_customer_notifications", scope: "nodes" }, { tool: "send_node_test_notification", scope: "nodes" },
     { tool: "update_node_agent", scope: "nodes" },
   ] },
   { key: "node_updates", icon: <ArrowUpCircle />, tools: [

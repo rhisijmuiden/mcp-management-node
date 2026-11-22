@@ -156,8 +156,10 @@ async def update_environment(db: AsyncSession, e: Environment, body: Environment
     if other:
         raise NodeError("a customer with this name exists already")
     e.name, e.kind, e.description, e.color = body.name.strip(), body.kind, body.description, body.color
+    # Only the details that were sent change (older clients send name, kind, colour and description).
     for k, v in body.details().items():
-        setattr(e, k, v)
+        if k in body.model_fields_set:
+            setattr(e, k, v)
     await db.flush()
     return e
 

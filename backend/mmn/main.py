@@ -131,9 +131,10 @@ def create_app() -> FastAPI:
         """The customer picked in the switcher of the web interface limits every query of the request."""
         cid = request.headers.get(tenancy.HEADER, "").strip()
         path = request.url.path
-        if not cid or not path.startswith("/api/") or path in ("/api/customers", "/api/environments") \
-                or path.startswith(("/api/auth/", "/api/agent/", "/api/tokens", "/api/oauth/", "/api/users",
-                                    "/api/system/")):
+        # Customer pages name their customer in the path, and the switcher needs the full list.
+        if not cid or not path.startswith("/api/") or path.startswith((
+                "/api/customers", "/api/environments", "/api/auth/", "/api/agent/", "/api/tokens", "/api/oauth/",
+                "/api/users", "/api/system/")):
             return await call_next(request)
         tok = tenancy.set_allowed([cid[:64]])
         try:

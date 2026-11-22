@@ -3,6 +3,7 @@ import { Bot, ShieldCheck } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
+import { CustomerScopePicker } from "@/components/customers";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Field, Input } from "@/components/ui/form";
 import { Alert, Spinner } from "@/components/ui/misc";
@@ -233,6 +234,7 @@ export function ConsentPage() {
   const requested = (params.get("scope") || "read").split(/[ +]/).filter(Boolean);
   const info = useQuery({ queryKey: ["oauth-client", clientId], queryFn: () => get<ClientInfoResp>(`api/oauth/clients/${encodeURIComponent(clientId)}`), enabled: !!user });
   const [scopes, setScopes] = useState<string[] | null>(null);
+  const [customerIds, setCustomerIds] = useState<string[] | null>(null);
   const chosen = scopes ?? requested.filter((s) => info.data?.scopes.some((x) => x.scope === s)).concat(["read"]);
   const decide = useMutation({
     mutationFn: (approve: boolean) =>
@@ -243,6 +245,7 @@ export function ConsentPage() {
         state: params.get("state"),
         resource: params.get("resource"),
         scopes: Array.from(new Set(chosen)),
+        customer_ids: customerIds,
         approve,
       }),
     onSuccess: (r) => window.location.assign(r.redirect),
@@ -279,9 +282,13 @@ export function ConsentPage() {
               ))}
             </div>
           </div>
+          <div>
+            <div className="mb-2 text-sm font-semibold">{t("cust.consent_customers")}</div>
+            <div className="rounded-lg border border-line bg-raised p-4"><CustomerScopePicker value={customerIds} onChange={setCustomerIds} /></div>
+          </div>
           <Alert tone="info"><span className="inline-flex items-center gap-1"><ShieldCheck className="size-4" />{t("consent.logged")}</span></Alert>
           <div className="flex gap-2">
-            <Button variant="primary" size="lg" className="flex-1" loading={decide.isPending && decide.variables} onClick={() => decide.mutate(true)}>{t("consent.allow")}</Button>
+            <Button variant="primary" size="lg" className="flex-1" loading={decide.isPending && decide.variables} disabled={customerIds !== null && !customerIds.length} onClick={() => decide.mutate(true)}>{t("consent.allow")}</Button>
             <Button size="lg" onClick={() => decide.mutate(false)}>{t("consent.deny")}</Button>
           </div>
         </div>

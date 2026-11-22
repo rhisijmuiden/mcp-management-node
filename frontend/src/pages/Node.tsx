@@ -10,7 +10,7 @@ import { GovernorSelect, NodeMetricsBars, PairDialog, StatusDot, useEnvironments
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
-import { Field, Input, Select } from "@/components/ui/form";
+import { Field, Input, Segmented, Select } from "@/components/ui/form";
 import { Alert, Badge, EmptyState, PageHeader, Spinner } from "@/components/ui/misc";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
 import { del, errorMessage, get, patch, post } from "@/lib/api";
@@ -465,7 +465,7 @@ function OverviewTab({ n, admin, section }: { n: NodeInfo; admin: boolean; secti
                 <Button size="sm" onClick={() => pushMail.mutate()} loading={pushMail.isPending} disabled={!n.online}>{t("px.notify_push")}</Button>
                 <Button size="sm" onClick={() => testMail.mutate()} loading={testMail.isPending} disabled={!n.online}>{t("px.test_send")}</Button>
               </div>
-              <Link to={`/proxmox/environments/${n.environment_id}`} className="block text-xs font-semibold text-accent-text hover:underline">{t("px.notify_env_link")} →</Link>
+              <Link to={`/customers/${n.environment_id}`} className="block text-xs font-semibold text-accent-text hover:underline">{t("px.notify_env_link")} →</Link>
             </CardBody>
           </Card>
         )}
@@ -481,6 +481,11 @@ function OverviewTab({ n, admin, section }: { n: NodeInfo; admin: boolean; secti
                   {envs.data?.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
                 </Select>
               </Field>
+              {n.kind !== "proxmox" && (
+                <Field label={t("cust.machine_role")} hint={t("cust.machine_role_hint")}>
+                  <Segmented value={n.role ?? "server"} onChange={(v) => save.mutate({ role: v })} options={[{ value: "server", label: t("cust.role_server") }, { value: "workstation", label: t("cust.role_workstation") }]} />
+                </Field>
+              )}
               <Button variant="danger" size="sm" onClick={() => setRemove(true)}><Trash2 /> {section === "servers" ? t("srv.remove") : t("px.remove_node")}</Button>
             </CardBody>
           </Card>
@@ -517,8 +522,8 @@ export function NodeDetailPage({ section = "proxmox" }: { section?: Section }) {
       <PageHeader
         title={<span className="flex items-center gap-3"><StatusDot online={n.online} /> {n.name}</span>}
         description={servers
-          ? <span className="flex flex-wrap items-center gap-2"><Link to="/servers" className="hover:underline">{t("nav.servers")}</Link> · {n.environment_name} · <OsBadge kind={n.kind} label={n.info?.os_pretty_name ?? n.os} /></span>
-          : <><Link to={`/proxmox/environments/${n.environment_id}`} className="hover:underline">{n.environment_name}</Link>{n.cluster_name ? ` · ${t("px.cluster")} ${n.cluster_name}` : ""}{n.info?.pve_version ? ` · Proxmox VE ${n.info.pve_version}` : ""}</>}
+          ? <span className="flex flex-wrap items-center gap-2"><Link to={n.role === "workstation" ? "/workstations" : "/servers"} className="hover:underline">{n.role === "workstation" ? t("nav.workstations") : t("nav.servers")}</Link> · <Link to={`/customers/${n.environment_id}`} className="hover:underline">{n.environment_name}</Link> · <OsBadge kind={n.kind} label={n.info?.os_pretty_name ?? n.os} /></span>
+          : <><Link to={`/customers/${n.environment_id}`} className="hover:underline">{n.environment_name}</Link>{n.cluster_name ? ` · ${t("px.cluster")} ${n.cluster_name}` : ""}{n.info?.pve_version ? ` · Proxmox VE ${n.info.pve_version}` : ""}</>}
         actions={<>
           {has("guests") && <Button size="sm" onClick={() => navigate(`/proxmox/guests?node=${n.id}`)}><HardDrive /> {t("gx.title")}</Button>}
           {admin && has("terminal") && <>

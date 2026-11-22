@@ -1,27 +1,32 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowUpCircle, Bell, Boxes, Building2, Home, Mail, Package, Pencil, Plus, Search, Server, ShieldAlert, Trash2 } from "lucide-react";
+import { ArrowUpCircle, Bell, Boxes, Mail, Package, Plus, Search, Server, ShieldAlert } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { toast } from "sonner";
-import { EnvDot, EnvironmentDialog, NodeCard, PairDialog, StatusDot, useEnvironments } from "@/components/proxmox";
+import { useCustomer } from "@/components/customers";
+import { EnvDot, NodeCard, PairDialog, StatusDot } from "@/components/proxmox";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import { Checkbox, Field, Input, Select, Switch } from "@/components/ui/form";
 import { Alert, Badge, EmptyState, PageHeader, Spinner, Stat } from "@/components/ui/misc";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
-import { del, errorMessage, get, post, put } from "@/lib/api";
+import { errorMessage, get, post, put } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { Environment, NodeInfo, NotifyConfig, Overview } from "@/lib/types";
 import { cn, timeAgo } from "@/lib/utils";
 
-const useOverview = (envId?: string) =>
-  useQuery({
+const useOverview = (chosen?: string) => {
+  // With a customer picked in the switcher, the whole page is already limited to that customer.
+  const { customerId } = useCustomer();
+  const envId = customerId ? undefined : chosen;
+  return useQuery({
     queryKey: ["overview", envId ?? "all"],
     queryFn: () => get<Overview>(`api/proxmox/overview${envId ? `?environment_id=${envId}` : ""}`),
     refetchInterval: 30_000,
   });
+};
 
 function EnvChips({ envs, value, onChange }: { envs: Environment[]; value: string; onChange: (v: string) => void }) {
   const { t } = useTranslation();
@@ -105,42 +110,6 @@ export function ProxmoxOverviewPage() {
   );
 }
 
-/* ------------------------------------------------------------------ environments */
-export function EnvironmentsPage() {
-  const { t } = useTranslation();
-  const { user } = useAuth();
-  const admin = user?.role === "admin";
-  const envs = useEnvironments();
-  const [edit, setEdit] = useState<Environment | null | "new">(null);
-  return (
-    <>
-      <PageHeader title={t("px.envs_title")} description={t("px.envs_subtitle")} actions={admin && <Button variant="primary" onClick={() => setEdit("new")}><Plus /> {t("px.env_add")}</Button>} />
-      {envs.isLoading ? <Spinner /> : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {envs.data?.map((e) => (
-            <Link key={e.id} to={`/proxmox/environments/${e.id}`}>
-              <Card className="h-full transition-shadow hover:shadow-lg">
-                <CardHeader
-                  icon={e.kind === "home" ? <Home /> : <Building2 />}
-                  title={<span className="flex items-center gap-2"><EnvDot color={e.color} /> {e.name}</span>}
-                  description={e.kind === "home" ? t("px.kind_home") : t("px.kind_customer")}
-                />
-                <CardBody className="grid grid-cols-3 gap-3 text-sm">
-                  <div><div className="text-xs text-muted">{t("px.nodes")}</div><div className="font-bold">{e.nodes_online}/{e.node_count}</div></div>
-                  <div><div className="text-xs text-muted">{t("px.updates")}</div><div className="font-bold">{e.updates}</div></div>
-                  <div><div className="text-xs text-muted">{t("px.mail")}</div><div className="font-bold">{e.notify_enabled ? t("common.on") : t("common.off")}</div></div>
-                  {e.description && <p className="col-span-3 text-muted">{e.description}</p>}
-                </CardBody>
-              </Card>
-            </Link>
-          ))}
-        </div>
-      )}
-      <EnvironmentDialog open={edit !== null} onOpenChange={(v) => !v && setEdit(null)} env={edit === "new" ? null : edit} />
-    </>
-  );
-}
-
 export function NodesTable({ nodes, showEnv = true }: { nodes: NodeInfo[]; showEnv?: boolean }) {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
@@ -207,7 +176,7 @@ export function NodesPage() {
 const TYPE_KEYS = ["vzdump", "replication", "fencing", "package-updates", "system-mail"];
 const SEV_KEYS = ["info", "notice", "warning", "error", "unknown"];
 
-function NotifyCard({ env }: { env: Environment }) {
+export function NotifyCard({ env }: { env: Environment }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["env-notify", env.id], queryFn: () => get<NotifyConfig>(`api/environments/${env.id}/notifications`) });
@@ -288,59 +257,6 @@ function NotifyCard({ env }: { env: Environment }) {
         <p className="text-xs text-muted">{t("px.notify_note")}</p>
       </CardBody>
     </Card>
-  );
-}
-
-export function EnvironmentDetailPage() {
-  const { t } = useTranslation();
-  const { id = "" } = useParams();
-  const { user } = useAuth();
-  const admin = user?.role === "admin";
-  const navigate = useNavigate();
-  const qc = useQueryClient();
-  const env = useQuery({ queryKey: ["environment", id], queryFn: () => get<Environment>(`api/environments/${id}`) });
-  const ov = useOverview(id);
-  const [edit, setEdit] = useState(false);
-  const [pair, setPair] = useState(false);
-  const [confirmDel, setConfirmDel] = useState(false);
-  const remove = useMutation({
-    mutationFn: () => del(`api/environments/${id}`),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["environments"] });
-      navigate("/proxmox/environments");
-    },
-    onError: (e) => toast.error(errorMessage(e, t)),
-  });
-  if (env.isLoading) return <Spinner />;
-  if (!env.data) return <Alert tone="offline">{t("px.not_found")}</Alert>;
-  const e = env.data;
-  return (
-    <>
-      <PageHeader
-        title={<span className="flex items-center gap-3"><EnvDot color={e.color} className="size-3.5" /> {e.name}</span>}
-        description={e.description || (e.kind === "home" ? t("px.kind_home") : t("px.kind_customer"))}
-        actions={admin && (
-          <>
-            <Button onClick={() => setEdit(true)}><Pencil /> {t("common.edit")}</Button>
-            <Button onClick={() => setConfirmDel(true)} disabled={e.node_count > 0} title={e.node_count ? t("px.env_delete_hint") : undefined}><Trash2 /> {t("common.delete")}</Button>
-            <Button variant="primary" onClick={() => setPair(true)}><Plus /> {t("px.add_node")}</Button>
-          </>
-        )}
-      />
-      <div className="grid gap-6 xl:grid-cols-5">
-        <Card className="xl:col-span-3">
-          <CardHeader icon={<Server />} title={t("px.nodes")} description={e.clusters.length ? `${t("px.clusters")}: ${e.clusters.join(", ")}` : undefined} />
-          {ov.data?.nodes.length ? <NodesTable nodes={ov.data.nodes} showEnv={false} /> : <EmptyState icon={<Server />} title={t("px.empty_title")}>{t("px.empty_env_text")}</EmptyState>}
-        </Card>
-        <div className="xl:col-span-2">{admin && <NotifyCard env={e} />}</div>
-      </div>
-      <EnvironmentDialog open={edit} onOpenChange={setEdit} env={e} />
-      <PairDialog open={pair} onOpenChange={setPair} environmentId={e.id} />
-      <Dialog open={confirmDel} onOpenChange={setConfirmDel} title={t("px.env_delete_title", { name: e.name })}
-        footer={<><Button onClick={() => setConfirmDel(false)}>{t("common.cancel")}</Button><Button variant="danger" loading={remove.isPending} onClick={() => remove.mutate()}>{t("common.delete")}</Button></>}>
-        <p className="text-sm">{t("px.env_delete_text")}</p>
-      </Dialog>
-    </>
   );
 }
 

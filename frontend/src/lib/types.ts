@@ -149,6 +149,7 @@ export interface ApiToken {
   name: string;
   prefix: string;
   scopes: string[];
+  customer_ids?: string[] | null;
   created_at: string;
   expires_at: string | null;
   last_used_at: string | null;
@@ -167,6 +168,7 @@ export interface Connection {
   client_id: string;
   client_name: string;
   scopes: string[];
+  customer_ids?: string[] | null;
   connected_at: string;
   last_used_at: string | null;
   last_client: ClientInfo;
@@ -221,6 +223,75 @@ export interface Environment {
   updates: number;
   notify_enabled: boolean;
   clusters: string[];
+  contact_name?: string | null;
+  contact_email?: string | null;
+  contact_phone?: string | null;
+  contacts?: CustomerContact[];
+  notes?: string | null;
+  maintenance_window?: string | null;
+  sla?: string | null;
+  counts?: { proxmox: number; servers: number; workstations: number };
+}
+
+/* ------------------------------------------------------------------ phase 7: customers */
+export type Customer = Environment;
+
+export interface CustomerContact {
+  name: string;
+  role?: string | null;
+  email?: string | null;
+  phone?: string | null;
+}
+
+export interface CustomerSummary extends Environment {
+  machines: number;
+  online: number;
+  alerts: number;
+  status: "ok" | "attention" | "empty";
+  unifi: { connections: number; errors: number; devices: number; firmware: number };
+}
+
+export interface Machine {
+  id: string;
+  name: string;
+  type: "proxmox" | "server" | "workstation";
+  kind: string;
+  role: "server" | "workstation";
+  hostname: string | null;
+  cluster: string | null;
+  online: boolean;
+  os: string | null;
+  cpu: number | null;
+  mem_pct: number | null;
+  updates: number;
+  reboot_required: boolean;
+  attention: string[];
+  agent_version: string | null;
+  agent_update_available: boolean;
+  last_seen_at: string | null;
+  guests: { vms_total?: number; cts_total?: number; vms_running?: number; cts_running?: number } | null;
+}
+
+export interface TypeTotals { total: number; online: number; updates: number; attention: number; with_updates: number; linux: number; windows: number; guests?: number }
+
+export interface CustomerAiAccess { id: string; name: string; kind: string; scopes: string[]; all_customers: boolean; customers: number; last_used_at: string | null; oauth_client_id: string | null }
+
+export interface CustomerOverview {
+  customer: Customer;
+  machines: Machine[];
+  unifi: { id: string; name: string; kind: string; status: string; enabled: boolean; last_error: string | null; last_ok_at: string | null; sites: number; totals: Record<string, number> }[];
+  alerts: { id: number; node: string | null; severity: string; message: string; started_at: string }[];
+  totals: { proxmox: TypeTotals; servers: TypeTotals; workstations: TypeTotals; network: { connections: number; errors: number; sites: number; devices: number; offline: number; firmware: number }; alerts: number };
+  ai_access: CustomerAiAccess[];
+}
+
+export interface ScanFinding { severity: "high" | "medium" | "low" | "info"; area: string; target: string | null; finding: string; suggestion: string; next_tool?: string }
+
+export interface ScanResult {
+  customer: string;
+  checked: { proxmox_nodes: number; servers: number; workstations: number; unifi_connections: number; live_network_checks: boolean };
+  summary: Record<string, number>;
+  findings: ScanFinding[];
 }
 
 export interface PackageUpdate {
@@ -255,6 +326,7 @@ export interface NodeInfo {
   id: string;
   name: string;
   kind: string;
+  role?: "server" | "workstation";
   hostname: string | null;
   environment_id: string;
   environment_name: string | null;
@@ -915,7 +987,7 @@ export interface ServerInfo extends NodeInfo {
 
 export interface ServersOverview {
   servers: ServerInfo[];
-  totals: { servers: number; online: number; linux: number; windows: number; attention: number; updates: number; servers_with_updates: number; failed_services: number };
+  totals: { servers: number; online: number; linux: number; windows: number; attention: number; workstations?: number; updates: number; servers_with_updates: number; failed_services: number };
 }
 
 export interface FanOutRow<T> {

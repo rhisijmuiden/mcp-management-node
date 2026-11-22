@@ -7,7 +7,6 @@ import {
   Plug,
   Bell,
   Bot,
-  Boxes,
   CalendarClock,
   ChevronDown,
   DatabaseBackup,
@@ -39,6 +38,8 @@ import {
   Wifi,
   DoorClosed,
   Cable,
+  Building2,
+  Laptop,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -48,6 +49,7 @@ import { applyTheme, localStorageSet, useAuth } from "@/lib/auth";
 import type { SystemInfo } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { InfoDialog } from "./InfoDialog";
+import { CustomerSwitcher, useCustomer } from "./customers";
 import { useLiveEvents } from "./useLiveEvents";
 import i18n from "@/i18n";
 
@@ -108,14 +110,20 @@ export function Layout() {
   const info = useQuery({ queryKey: ["system-info"], queryFn: () => get<SystemInfo>("api/system/info"), refetchInterval: 5 * 60_000 });
   useLiveEvents();
   const isAdmin = user?.role === "admin";
+  const { customerId } = useCustomer();
 
   const sections: { title: string; items: Item[] }[] = [
-    { title: t("nav.section.overview"), items: [{ to: "/", icon: <LayoutDashboard />, label: t("nav.dashboard") }] },
+    {
+      title: t("nav.section.overview"),
+      items: [
+        { to: "/", icon: <LayoutDashboard />, label: t("nav.dashboard") },
+        { to: customerId ? `/customers/${customerId}` : "/customers", icon: <Building2 />, label: customerId ? t("nav.customer_page") : t("nav.customers") },
+      ],
+    },
     {
       title: t("nav.section.proxmox"),
       items: [
         { to: "/proxmox", icon: <Gauge />, label: t("nav.px_overview") },
-        { to: "/proxmox/environments", icon: <Boxes />, label: t("nav.environments") },
         { to: "/proxmox/nodes", icon: <Server />, label: t("nav.nodes") },
         { to: "/proxmox/updates", icon: <ArrowUpCircle />, label: t("nav.updates") },
         { to: "/proxmox/guests", icon: <HardDrive />, label: t("nav.guests") },
@@ -130,6 +138,7 @@ export function Layout() {
       title: t("nav.section.servers"),
       items: [
         { to: "/servers", icon: <Monitor />, label: t("nav.servers") },
+        { to: "/workstations", icon: <Laptop />, label: t("nav.workstations") },
         { to: "/servers/logs", icon: <FileSearch />, label: t("nav.srv_logs"), admin: true },
         { to: "/servers/software", icon: <ShieldCheck />, label: t("nav.srv_software"), admin: true },
         { to: "/servers/copy", icon: <Copy />, label: t("nav.srv_copy"), admin: true },
@@ -195,6 +204,9 @@ export function Layout() {
           <div className="display line-clamp-2 text-[14px] leading-tight">{status?.app_name || "Stackpilot"}</div>
           <div className="text-[11px] font-semibold uppercase tracking-wider text-muted">Powered by RHIS</div>
         </div>
+      </div>
+      <div className="px-3 pb-1 pt-1">
+        <CustomerSwitcher onNavigate={() => setMobileOpen(false)} />
       </div>
       <nav className="flex-1 overflow-y-auto px-3 pb-4">
         {sections.map((s) => (
