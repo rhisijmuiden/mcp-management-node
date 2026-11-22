@@ -200,6 +200,17 @@ server {{
         proxy_read_timeout 1h;
     }}
 
+    location ^~ /agent/transfer/ {{
+        # Data copies between servers: streamed, any size (the app enforces its own limit).
+        if ($ssl_client_verify != SUCCESS) {{ return 403; }}
+        client_max_body_size 0;
+        proxy_request_buffering off;
+        proxy_buffering off;
+        proxy_read_timeout 6h;
+        proxy_send_timeout 6h;
+        proxy_pass http://mmn_backend/agent/transfer/;{proxy}
+    }}
+
     location ^~ /agent/stream/ {{
         if ($ssl_client_verify != SUCCESS) {{ return 403; }}
         proxy_pass http://mmn_backend/agent/stream/;{proxy}

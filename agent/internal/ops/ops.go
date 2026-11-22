@@ -4,25 +4,36 @@
 package ops
 
 import (
-	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/rhisijmuiden/mcp-management-node/agent/internal/winps"
 )
 
 const maxOutput = 256 * 1024
 
 var unitRE = regexp.MustCompile(`^[A-Za-z0-9@._:\\-]{1,200}$`)
+
+var safeArg = regexp.MustCompile(`^[A-Za-z0-9 :._+\-/]{0,64}$`)
+
+var pkgPattern = regexp.MustCompile(`^[a-z0-9 .+*?_()-]{1,100}$`)
+
+// GlobMatch matches a shell-style pattern (* and ?) against s.
+func GlobMatch(pattern, s string) bool {
+	ok, err := path.Match(pattern, s)
+	return err == nil && ok
+}
 
 type ExecResult struct {
 	ExitCode   int    `json:"exit_code"`
@@ -80,13 +91,13 @@ func run(ctx context.Context, timeout time.Duration, name string, args ...string
 	return r
 }
 
-// Exec runs a shell command (as root). Only reachable with the app's "exec" permission.
+// Exec runs a shell command (as root; PowerShell as SYSTEM on Windows). Only reachable with the app's "exec" permission.
 func Exec(ctx context.Context, command string, timeoutSec int) (ExecResult, error) {
 	if strings.TrimSpace(command) == "" {
 		return ExecResult{}, errors.New("empty command")
 	}
 	if runtime.GOOS == "windows" {
-		return run(ctx, time.Duration(timeoutSec)*time.Second, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", command), nil
+		return run(ctx, time.Duration(timeoutSec)*time.Second, winps.Exe(), winps.Args(command)...), nil
 	}
 	return run(ctx, time.Duration(timeoutSec)*time.Second, "/bin/sh", "-c", command), nil
 }
@@ -99,42 +110,8 @@ type JournalQuery struct {
 	Priority string `json:"priority"` // emerg..debug, e.g. "err"
 	Grep     string `json:"grep"`
 	Boot     bool   `json:"boot"` // only this boot
-}
-
-var safeArg = regexp.MustCompile(`^[A-Za-z0-9 :._+\-/]{0,64}$`)
-
-// Journal reads the systemd journal.
-func Journal(ctx context.Context, q JournalQuery) (ExecResult, error) {
-	if q.Lines <= 0 {
-		q.Lines = 200
-	}
-	q.Lines = min(q.Lines, 5000)
-	args := []string{"--no-pager", "-o", "short-iso", "-n", strconv.Itoa(q.Lines)}
-	if q.Unit != "" {
-		if !unitRE.MatchString(q.Unit) {
-			return ExecResult{}, errors.New("invalid unit name")
-		}
-		args = append(args, "-u", q.Unit)
-	}
-	for flag, v := range map[string]string{"--since": q.Since, "--until": q.Until, "-p": q.Priority} {
-		if v == "" {
-			continue
-		}
-		if !safeArg.MatchString(v) {
-			return ExecResult{}, fmt.Errorf("invalid value for %s", flag)
-		}
-		args = append(args, flag, v)
-	}
-	if q.Grep != "" {
-		if len(q.Grep) > 200 {
-			return ExecResult{}, errors.New("grep pattern too long")
-		}
-		args = append(args, "-g", q.Grep, "--case-sensitive=false")
-	}
-	if q.Boot {
-		args = append(args, "-b")
-	}
-	return run(ctx, 60*time.Second, "journalctl", args...), nil
+	// Windows only: the event log to read (System, Application, Security, ...). Default System+Application.
+	Log string `json:"log"`
 }
 
 type Service struct {
@@ -145,87 +122,13 @@ type Service struct {
 	Description string `json:"description"`
 }
 
-// Services lists systemd services (state "failed" lists only failed ones).
-func Services(ctx context.Context, state string) ([]Service, error) {
-	args := []string{"list-units", "--type=service", "--all", "--no-pager", "--plain", "--no-legend", "--output=json"}
-	if state != "" {
-		if !regexp.MustCompile(`^[a-z-]{1,20}$`).MatchString(state) {
-			return nil, errors.New("invalid state")
-		}
-		args = append(args, "--state="+state)
-	}
-	r := run(ctx, 30*time.Second, "systemctl", args...)
-	var raw []struct {
-		Unit, Load, Active, Sub, Description string
-	}
-	if err := json.Unmarshal([]byte(r.Stdout), &raw); err != nil {
-		return nil, fmt.Errorf("systemctl: %s", strings.TrimSpace(r.Stderr+r.Stdout))
-	}
-	out := make([]Service, 0, len(raw))
-	for _, s := range raw {
-		out = append(out, Service{Name: s.Unit, Load: s.Load, Active: s.Active, Sub: s.Sub, Description: s.Description})
-	}
-	return out, nil
-}
-
-// ServiceStatus returns `systemctl status` plus the key properties of one unit.
-func ServiceStatus(ctx context.Context, unit string) (map[string]any, error) {
-	if !unitRE.MatchString(unit) {
-		return nil, errors.New("invalid unit name")
-	}
-	props := run(ctx, 20*time.Second, "systemctl", "show", unit, "--no-pager",
-		"-p", "Id,Description,LoadState,ActiveState,SubState,UnitFileState,MainPID,ExecMainStartTimestamp,NRestarts,Result,MemoryCurrent,FragmentPath")
-	st := run(ctx, 20*time.Second, "systemctl", "status", unit, "--no-pager", "-l", "-n", "30")
-	p := map[string]string{}
-	sc := bufio.NewScanner(strings.NewReader(props.Stdout))
-	for sc.Scan() {
-		if k, v, ok := strings.Cut(sc.Text(), "="); ok {
-			p[k] = v
-		}
-	}
-	return map[string]any{"properties": p, "status": st.Stdout + st.Stderr}, nil
-}
-
-// ServiceAction starts, stops, restarts or reloads a unit.
-func ServiceAction(ctx context.Context, unit, action string) (ExecResult, error) {
-	if !unitRE.MatchString(unit) {
-		return ExecResult{}, errors.New("invalid unit name")
-	}
-	switch action {
-	case "start", "stop", "restart", "reload", "enable", "disable":
-	default:
-		return ExecResult{}, errors.New("action must be start, stop, restart, reload, enable or disable")
-	}
-	return run(ctx, 120*time.Second, "systemctl", action, unit), nil
-}
-
 type InstalledPackage struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
 	Arch    string `json:"arch"`
 	Status  string `json:"status"`
-}
-
-var pkgPattern = regexp.MustCompile(`^[a-z0-9.+*?-]{1,100}$`)
-
-// Packages lists installed Debian packages matching a glob (e.g. "nginx*", "openssl").
-func Packages(ctx context.Context, pattern string) ([]InstalledPackage, error) {
-	if pattern == "" {
-		pattern = "*"
-	}
-	if !pkgPattern.MatchString(pattern) {
-		return nil, errors.New("invalid package pattern")
-	}
-	r := run(ctx, 60*time.Second, "dpkg-query", "-W", "-f", "${Package}\t${Version}\t${Architecture}\t${db:Status-Abbrev}\n", pattern)
-	out := []InstalledPackage{}
-	for _, line := range strings.Split(r.Stdout, "\n") {
-		f := strings.Split(line, "\t")
-		if len(f) < 4 || !strings.HasPrefix(f[3], "ii") {
-			continue
-		}
-		out = append(out, InstalledPackage{Name: f[0], Version: f[1], Arch: f[2], Status: strings.TrimSpace(f[3])})
-	}
-	return out, nil
+	Source  string `json:"source,omitempty"` // dpkg | rpm | apk | windows | hotfix
+	Vendor  string `json:"vendor,omitempty"`
 }
 
 // ReadFile returns (the tail of) a text file, at most maxBytes (default 64 KiB, max 1 MiB).
@@ -276,4 +179,43 @@ func ReadFile(path string, maxBytes int, tail bool) (map[string]any, error) {
 	n, _ := io.ReadFull(f, buf)
 	return map[string]any{"path": path, "size": size, "offset": start, "content": string(buf[:n]),
 		"truncated": int64(n) < size, "modified": st.ModTime().UTC().Format(time.RFC3339)}, nil
+}
+
+var relRE = regexp.MustCompile(`^(\d+)\s*(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hour|hours|d|day|days|w|week|weeks)\s+ago$`)
+
+// ParseSince understands the journalctl-style times the app and Claude use: "1 hour ago",
+// "30 min ago", "today", "yesterday", "2026-11-22", "2026-11-22 09:00[:00]" (local time) and RFC 3339.
+func ParseSince(s string, now time.Time) (time.Time, error) {
+	s = strings.ToLower(strings.TrimSpace(s))
+	switch s {
+	case "now":
+		return now, nil
+	case "today":
+		y, m, d := now.Date()
+		return time.Date(y, m, d, 0, 0, 0, 0, now.Location()), nil
+	case "yesterday":
+		y, m, d := now.AddDate(0, 0, -1).Date()
+		return time.Date(y, m, d, 0, 0, 0, 0, now.Location()), nil
+	}
+	if m := relRE.FindStringSubmatch(s); m != nil {
+		n, _ := strconv.Atoi(m[1])
+		unit := time.Second
+		switch m[2][0] {
+		case 'm':
+			unit = time.Minute
+		case 'h':
+			unit = time.Hour
+		case 'd':
+			unit = 24 * time.Hour
+		case 'w':
+			unit = 7 * 24 * time.Hour
+		}
+		return now.Add(-time.Duration(n) * unit), nil
+	}
+	for _, layout := range []string{time.RFC3339, "2006-01-02 15:04:05", "2006-01-02 15:04", "2006-01-02T15:04:05", "2006-01-02T15:04", "2006-01-02"} {
+		if t, err := time.ParseInLocation(layout, strings.ToUpper(s), now.Location()); err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("cannot read the time %q (use e.g. '1 hour ago' or '2026-11-22 09:00')", s)
 }

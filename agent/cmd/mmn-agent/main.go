@@ -14,6 +14,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -34,7 +35,7 @@ Usage:
   mmn-agent status
   mmn-agent unenroll
   mmn-agent version
-`, version)
+%s`, version, serviceUsage)
 }
 
 func main() {
@@ -63,7 +64,14 @@ func main() {
 		}
 		fmt.Printf("Enrolled as node %q in environment %q (id %s).\n", res.NodeName, res.Environment, res.NodeID)
 	case "run":
-		run()
+		if !runPlatform(runAgent) {
+			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			log.SetFlags(log.LstdFlags)
+			runAgent(ctx)
+		}
+	case "service":
+		serviceCommand(os.Args[2:])
 	case "status":
 		cfg, err := config.Load()
 		if err != nil {
@@ -84,9 +92,7 @@ func main() {
 	}
 }
 
-func run() {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+func runAgent(ctx context.Context) {
 	log.SetFlags(log.LstdFlags)
 	log.Printf("mmn-agent %s starting", version)
 	for {
@@ -100,8 +106,22 @@ func run() {
 		if !errors.Is(err, config.ErrNotEnrolled) {
 			log.Fatal(err)
 		}
-		// Not paired yet: wait for 'mmn-agent enroll' instead of crash-looping.
-		log.Print(err)
+		// An installer (the Windows MSI) may have left a pairing code for us.
+		if p, clear := enroll.LoadPending(); p != nil {
+			res, err := enroll.Run(p.Server, p.Fingerprint, p.Code, p.Name, version)
+			if err == nil {
+				clear()
+				log.Printf("enrolled as node %q in environment %q", res.NodeName, res.Environment)
+				continue
+			}
+			log.Printf("pairing failed: %v", err)
+			if strings.Contains(err.Error(), "refused") {
+				clear() // the code is wrong, used or expired: a new one is needed
+			}
+		} else {
+			// Not paired yet: wait for 'mmn-agent enroll' instead of crash-looping.
+			log.Print(err)
+		}
 		select {
 		case <-ctx.Done():
 			return

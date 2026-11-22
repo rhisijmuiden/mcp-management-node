@@ -151,7 +151,7 @@ async def test_enroll_connect_and_actions(admin_client, client, live_server):
     script = (await client.get("/api/agent/install.sh")).text
     assert fp in script and "mmn-agent_0.2.0_amd64.deb" in script
     # The web address may use a self-signed certificate; the package is checked by its SHA-256 instead.
-    assert 'curl -fsSL --insecure -o "$TMP/$PKG"' in script and "sha256sum -c" in script
+    assert 'curl -fsSL --insecure -o "$TMP/$1"' in script and "sha256sum -c" in script
 
     key, csr = _csr()
     body = {"code": code.lower().replace("-", ""), "csr": csr, "hostname": "pve-test.lan", "agent_version": "0.1.9"}

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Windows installer for the MCP Management Node agent, built with wixl (msitools) by agent/build.sh.
+  Silent install and pairing in one step:
+    msiexec /i mmn-agent-windows-amd64.msi /qn SERVER=mmn.example.nl:8443 FINGERPRINT=<sha256> CODE=ABCD-EFGH-JKLM
+  The service starts right away and pairs with the code (read from the registry, then removed).
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*" Name="MCP Management Node agent" Language="1033" Version="@MSI_VERSION@" Manufacturer="RHIS"
+           UpgradeCode="6B0C3E1A-5D2B-4E6F-9A71-3C2D8E4F5A10">
+    <Package Description="MCP Management Node agent @VERSION@" Comments="Connects this server to MCP Management Node"
+             InstallerVersion="500" Compressed="yes" InstallScope="perMachine"/>
+    <Media Id="1" Cabinet="agent.cab" EmbedCab="yes"/>
+    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer version of the MCP Management Node agent is installed already."/>
+    <Property Id="SERVER" Secure="yes"/>
+    <Property Id="FINGERPRINT" Secure="yes"/>
+    <Property Id="CODE" Secure="yes"/>
+    <Property Id="NAME" Secure="yes"/>
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/rhisijmuiden/mcp-management-node"/>
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLDIR" Name="MCP Management Node Agent">
+          <Component Id="AgentExe" Guid="1F2E3D4C-5B6A-4978-8695-A4B3C2D1E0F9" Win64="yes">
+            <File Id="AgentExeFile" Name="mmn-agent.exe" Source="@EXE@" KeyPath="yes"/>
+            <ServiceInstall Id="AgentService" Name="mmn-agent" DisplayName="MCP Management Node agent"
+                            Description="Connects this server to MCP Management Node over an outgoing mutual-TLS connection."
+                            Type="ownProcess" Start="auto" Account="LocalSystem" ErrorControl="normal" Arguments="run"/>
+            <ServiceControl Id="AgentServiceControl" Name="mmn-agent" Start="install" Stop="both" Remove="uninstall" Wait="yes"/>
+          </Component>
+          <Component Id="Pairing" Guid="2A3B4C5D-6E7F-4081-92A3-B4C5D6E7F801" Win64="yes">
+            <RegistryKey Root="HKLM" Key="SOFTWARE\MCP Management Node\Agent">
+              <RegistryValue Name="PairServer" Type="string" Value="[SERVER]" KeyPath="yes"/>
+              <RegistryValue Name="PairFingerprint" Type="string" Value="[FINGERPRINT]"/>
+              <RegistryValue Name="PairCode" Type="string" Value="[CODE]"/>
+              <RegistryValue Name="PairName" Type="string" Value="[NAME]"/>
+            </RegistryKey>
+          </Component>
+        </Directory>
+      </Directory>
+    </Directory>
+    <Feature Id="Agent" Level="1">
+      <ComponentRef Id="AgentExe"/>
+      <ComponentRef Id="Pairing"/>
+    </Feature>
+  </Product>
+</Wix>

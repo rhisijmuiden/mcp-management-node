@@ -488,3 +488,31 @@ class DeploymentRun(Base):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class Transfer(Base):
+    """A copy of files or folders from one server to another, relayed through the app."""
+
+    __tablename__ = "transfers"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    source_node_id: Mapped[str | None] = mapped_column(ForeignKey("nodes.id", ondelete="SET NULL"), nullable=True)
+    target_node_id: Mapped[str | None] = mapped_column(ForeignKey("nodes.id", ondelete="SET NULL"), nullable=True)
+    source_name: Mapped[str] = mapped_column(String(100))
+    target_name: Mapped[str] = mapped_column(String(100))
+    source_paths: Mapped[list[str]] = mapped_column(JsonType, default=list)
+    target_path: Mapped[str] = mapped_column(String(1000))
+    overwrite: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[str] = mapped_column(String(16), default="running")  # running | success | failed
+    stage: Mapped[str] = mapped_column(String(16), default="send")  # send | receive | done
+    reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    source: Mapped[str] = mapped_column(String(16), default="ui")
+    requested_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    send_job_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    receive_job_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    wire_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    files: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

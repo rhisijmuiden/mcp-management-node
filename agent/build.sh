@@ -4,7 +4,8 @@
 #   agent/build.sh --version 0.2.0 --out dist/agent
 #
 # Output: mmn-agent-linux-amd64, mmn-agent-linux-arm64, mmn-agent-windows-amd64.exe,
-#         mmn-agent_<version>_amd64.deb, mmn-agent_<version>_arm64.deb and manifest.json (sha256 of each).
+#         mmn-agent_<version>_amd64.deb, mmn-agent_<version>_arm64.deb,
+#         mmn-agent-windows-amd64.msi (needs wixl from msitools) and manifest.json (sha256 of each).
 set -euo pipefail
 
 VERSION="" OUT="dist/agent"
@@ -52,8 +53,9 @@ Priority: optional
 Homepage: https://github.com/rhisijmuiden/mcp-management-node
 Description: Agent for MCP Management Node
  Connects this Proxmox VE node or Linux server to MCP Management Node over an
- outgoing mutual-TLS connection: status, metrics, package updates, CPU governor
- and Proxmox VE notification settings, managed from one interface.
+ outgoing mutual-TLS connection: status, metrics, logs, services, package
+ updates, commands and data copies, managed from one interface and through
+ its MCP server.
 CTRL
   dpkg-deb --root-owner-group --build "$stage" "$OUT/mmn-agent_${VERSION}_${arch}.deb" >/dev/null
   rm -rf "$stage"
@@ -64,6 +66,20 @@ if command -v dpkg-deb >/dev/null; then
   deb arm64
 else
   echo "dpkg-deb not found: skipping .deb packages" >&2
+fi
+
+# Windows installer (service + pairing), built on Linux with wixl.
+if command -v wixl >/dev/null; then
+  msi_version="${VERSION%%[-+]*}"
+  stage="$(mktemp -d)"
+  cp "$OUT/mmn-agent-windows-amd64.exe" "$stage/mmn-agent.exe"
+  sed -e "s|@MSI_VERSION@|$msi_version|g" -e "s|@VERSION@|$VERSION|g" -e "s|@EXE@|$stage/mmn-agent.exe|g" \
+    "$HERE/packaging/windows/mmn-agent.wxs" > "$stage/mmn-agent.wxs"
+  wixl -a x64 -o "$OUT/mmn-agent-windows-amd64.msi" "$stage/mmn-agent.wxs"
+  rm -rf "$stage"
+  echo "==> mmn-agent-windows-amd64.msi"
+else
+  echo "wixl not found: skipping the Windows installer (.msi)" >&2
 fi
 
 ( cd "$OUT" && python3 - "$VERSION" <<'PY'

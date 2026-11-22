@@ -29,9 +29,10 @@ SCOPES: dict[str, str] = {
     "settings": "Change mail settings and send test mail",
     "nodes": "Manage environments and nodes: pairing codes, CPU governor, notifications, agent updates",
     "node_updates": "Install package updates on nodes and reboot nodes",
-    "logs": "Read logs, service status, installed packages and files on nodes",
-    "services": "Start, stop and restart services on nodes",
-    "exec": "Run commands on nodes and in containers as root (every command is logged)",
+    "logs": "Read logs (journal, Event Log, log files), service status, installed packages and files on nodes and servers",
+    "services": "Start, stop and restart services on nodes and servers",
+    "exec": "Run commands (shell or PowerShell) on nodes, servers and in containers as root/SYSTEM (every command is logged)",
+    "copy": "Copy files and folders from one server to another",
     "guests": "Start, stop and restart VMs and containers, take snapshots, change CPU/memory",
     "guests_admin": "Create, delete and migrate VMs and containers, roll back snapshots, run community scripts",
     "templates": "Manage the container template library and push templates to nodes",
@@ -40,7 +41,7 @@ SCOPES: dict[str, str] = {
     "cluster": "Manage HA, replication, Proxmox backup jobs and storage",
     "deploy": "Deploy GitHub repositories into containers and change deployments",
 }
-ADMIN_ONLY_SCOPES = {"restore", "updates", "settings", "backups", "nodes", "node_updates", "logs", "services", "exec",
+ADMIN_ONLY_SCOPES = {"restore", "updates", "settings", "backups", "nodes", "node_updates", "logs", "services", "exec", "copy",
                      "guests", "guests_admin", "templates", "tasks", "network", "cluster", "deploy"}
 
 

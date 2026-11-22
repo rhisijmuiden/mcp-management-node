@@ -25,8 +25,11 @@ import (
 
 	"github.com/rhisijmuiden/mcp-management-node/agent/internal/apt"
 	"github.com/rhisijmuiden/mcp-management-node/agent/internal/config"
+	"github.com/rhisijmuiden/mcp-management-node/agent/internal/diag"
 	"github.com/rhisijmuiden/mcp-management-node/agent/internal/governor"
+	"github.com/rhisijmuiden/mcp-management-node/agent/internal/logsearch"
 	"github.com/rhisijmuiden/mcp-management-node/agent/internal/ops"
+	"github.com/rhisijmuiden/mcp-management-node/agent/internal/pkgmgr"
 	"github.com/rhisijmuiden/mcp-management-node/agent/internal/proto"
 	"github.com/rhisijmuiden/mcp-management-node/agent/internal/pve"
 	"github.com/rhisijmuiden/mcp-management-node/agent/internal/script"
@@ -34,7 +37,12 @@ import (
 	"github.com/rhisijmuiden/mcp-management-node/agent/internal/stream"
 	"github.com/rhisijmuiden/mcp-management-node/agent/internal/sysinfo"
 	"github.com/rhisijmuiden/mcp-management-node/agent/internal/tlsutil"
+	"github.com/rhisijmuiden/mcp-management-node/agent/internal/transfer"
 )
+
+// RestartExitCode is the exit code after a self-update; the service manager starts the new
+// version (systemd: Restart=always; Windows: recovery on non-zero exit).
+var RestartExitCode = 0
 
 var (
 	MetricsInterval = 15 * time.Second
@@ -57,6 +65,8 @@ type Agent struct {
 	lastUpdates *proto.Updates
 	guests      *sysinfo.Guests
 	guestsAt    time.Time
+	failedSvc   *int
+	failedAt    time.Time
 
 	exit func(int)
 }
@@ -255,8 +265,17 @@ func (a *Agent) send(m proto.Envelope) {
 }
 
 func (a *Agent) capabilities() []string {
-	caps := []string{"metrics", "selfupdate", "exec", "files"}
-	if runtime.GOOS == "linux" {
+	caps := []string{"metrics", "selfupdate", "exec", "files", "logsearch", "diagnose", "copy"}
+	if pkgmgr.Available() {
+		caps = append(caps, "updates", "update-"+pkgmgr.Name())
+	}
+	switch runtime.GOOS {
+	case "windows":
+		caps = append(caps, "reboot", "logs", "eventlog", "services", "packages", "powershell", "terminal", "scripts")
+		if apt.Available() {
+			caps = append(caps, "apt")
+		}
+	case "linux":
 		caps = append(caps, "reboot", "logs", "services", "packages")
 		if apt.Available() {
 			caps = append(caps, "apt")
@@ -275,6 +294,9 @@ func (a *Agent) capabilities() []string {
 func (a *Agent) hello(ctx context.Context) proto.Hello {
 	h := proto.Hello{Protocol: proto.Version, AgentVersion: a.Version, OS: runtime.GOOS, Arch: runtime.GOARCH,
 		Hostname: sysinfo.Hostname(), Info: sysinfo.Info(), Capabilities: a.capabilities(), Install: selfupdate.InstallKind()}
+	if n := pkgmgr.Name(); n != "" {
+		h.Info["update_manager"] = n
+	}
 	if g, err := governor.Get(); err == nil {
 		g.Desired = config.LoadState().Governor
 		h.Governor = g
@@ -289,6 +311,24 @@ func (a *Agent) hello(ctx context.Context) proto.Hello {
 
 func (a *Agent) metrics(ctx context.Context) sysinfo.Metrics {
 	m := sysinfo.Collect()
+	// Failed services: refreshed every 2 minutes (a PowerShell query on Windows is not free).
+	a.updMu.Lock()
+	stale := time.Since(a.failedAt) > 2*time.Minute
+	a.updMu.Unlock()
+	if stale {
+		if n, err := ops.FailedServiceCount(ctx); err == nil {
+			a.updMu.Lock()
+			a.failedSvc, a.failedAt = &n, time.Now()
+			a.updMu.Unlock()
+		} else {
+			a.updMu.Lock()
+			a.failedAt = time.Now()
+			a.updMu.Unlock()
+		}
+	}
+	a.updMu.Lock()
+	m.FailedServices = a.failedSvc
+	a.updMu.Unlock()
 	if pve.Available() {
 		a.updMu.Lock()
 		stale := time.Since(a.guestsAt) > time.Minute
@@ -356,7 +396,7 @@ func (a *Agent) sendGuests(ctx context.Context) *pve.GuestList {
 }
 
 func (a *Agent) checkUpdates(ctx context.Context, refresh bool) proto.Updates {
-	u := apt.Check(ctx, refresh)
+	u := pkgmgr.Check(ctx, refresh)
 	a.updMu.Lock()
 	a.lastUpdates = &u
 	a.updMu.Unlock()
@@ -365,7 +405,7 @@ func (a *Agent) checkUpdates(ctx context.Context, refresh bool) proto.Updates {
 }
 
 func (a *Agent) updatesLoop(ctx context.Context) {
-	if !apt.Available() {
+	if !pkgmgr.Available() {
 		return
 	}
 	select {
@@ -424,7 +464,7 @@ func (a *Agent) handle(ctx context.Context, m proto.Envelope) {
 		jobID := str("job_id")
 		a.reply(m, map[string]any{"started": true}, nil)
 		a.job(jobID, func(line func(string)) (any, error) {
-			err := apt.Apply(context.Background(), line)
+			err := pkgmgr.Apply(context.Background(), line)
 			u := a.checkUpdates(context.Background(), false)
 			return map[string]any{"remaining": len(u.Packages), "reboot_required": u.RebootRequired}, err
 		})
@@ -477,7 +517,7 @@ func (a *Agent) handle(ctx context.Context, m proto.Envelope) {
 			}
 			line("installed; the agent restarts with the new version")
 			if restart {
-				go func() { time.Sleep(2 * time.Second); a.exit(0) }()
+				go func() { time.Sleep(2 * time.Second); a.exit(RestartExitCode) }()
 			}
 			return map[string]any{"version": req.Version}, nil
 		})
@@ -605,15 +645,72 @@ func (a *Agent) handle(ctx context.Context, m proto.Envelope) {
 			}
 		}()
 	case "reboot":
-		if runtime.GOOS != "linux" {
-			a.reply(m, nil, errors.New("reboot is not supported on this system yet"))
+		switch runtime.GOOS {
+		case "linux":
+			a.reply(m, map[string]any{"rebooting": true}, nil)
+			go func() {
+				time.Sleep(3 * time.Second)
+				_ = exec.Command("systemctl", "reboot").Run()
+			}()
+		case "windows":
+			a.reply(m, map[string]any{"rebooting": true}, nil)
+			go func() {
+				time.Sleep(3 * time.Second)
+				_ = exec.Command("shutdown.exe", "/r", "/t", "10", "/d", "p:0:0", "/c", "Restart requested from MCP Management Node").Run()
+			}()
+		default:
+			a.reply(m, nil, errors.New("reboot is not supported on this system"))
+		}
+	case "logs.events":
+		var q ops.JournalQuery
+		_ = json.Unmarshal(m.Params, &q)
+		r, err := ops.Events(ctx, q)
+		a.reply(m, r, err)
+	case "logs.search":
+		var q logsearch.Query
+		if err := json.Unmarshal(m.Params, &q); err != nil {
+			a.reply(m, nil, err)
 			return
 		}
-		a.reply(m, map[string]any{"rebooting": true}, nil)
-		go func() {
-			time.Sleep(3 * time.Second)
-			_ = exec.Command("systemctl", "reboot").Run()
-		}()
+		r, err := logsearch.Search(ctx, q)
+		a.reply(m, r, err)
+	case "diagnose":
+		r := diag.Run(ctx)
+		a.updMu.Lock()
+		if a.lastUpdates != nil {
+			if n := len(a.lastUpdates.Packages); n > 0 {
+				r.Findings = append(r.Findings, fmt.Sprintf("%d updates pending", n))
+			}
+			if a.lastUpdates.RebootRequired {
+				r.Findings = append(r.Findings, "a reboot is required to finish updates")
+			}
+		}
+		a.updMu.Unlock()
+		a.reply(m, r, nil)
+	case "copy.send", "copy.receive":
+		var q struct {
+			URL       string   `json:"url"`
+			Paths     []string `json:"paths"`
+			Dest      string   `json:"dest"`
+			Overwrite bool     `json:"overwrite"`
+		}
+		if err := json.Unmarshal(m.Params, &q); err != nil {
+			a.reply(m, nil, err)
+			return
+		}
+		if !strings.HasPrefix(q.URL, "/agent/transfer/") {
+			a.reply(m, nil, errors.New("invalid transfer address"))
+			return
+		}
+		url := "https://" + a.cfg.Server + q.URL
+		a.reply(m, map[string]any{"started": true}, nil)
+		a.job(str("job_id"), func(line func(string)) (any, error) {
+			hc := &http.Client{Transport: &http.Transport{TLSClientConfig: a.tls, Proxy: http.ProxyFromEnvironment}}
+			if m.Method == "copy.send" {
+				return transfer.Send(context.Background(), hc, url, q.Paths, line)
+			}
+			return transfer.Receive(context.Background(), hc, url, q.Dest, q.Overwrite, line)
+		})
 	case "unenroll":
 		err := config.Remove()
 		a.reply(m, map[string]any{"removed": err == nil}, err)
