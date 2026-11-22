@@ -27,6 +27,7 @@ import (
 	"github.com/rhisijmuiden/mcp-management-node/agent/internal/config"
 	"github.com/rhisijmuiden/mcp-management-node/agent/internal/diag"
 	"github.com/rhisijmuiden/mcp-management-node/agent/internal/governor"
+	"github.com/rhisijmuiden/mcp-management-node/agent/internal/httprelay"
 	"github.com/rhisijmuiden/mcp-management-node/agent/internal/logsearch"
 	"github.com/rhisijmuiden/mcp-management-node/agent/internal/ops"
 	"github.com/rhisijmuiden/mcp-management-node/agent/internal/pkgmgr"
@@ -265,7 +266,7 @@ func (a *Agent) send(m proto.Envelope) {
 }
 
 func (a *Agent) capabilities() []string {
-	caps := []string{"metrics", "selfupdate", "exec", "files", "logsearch", "diagnose", "copy"}
+	caps := []string{"metrics", "selfupdate", "exec", "files", "logsearch", "diagnose", "copy", "http"}
 	if pkgmgr.Available() {
 		caps = append(caps, "updates", "update-"+pkgmgr.Name())
 	}
@@ -715,6 +716,14 @@ func (a *Agent) handle(ctx context.Context, m proto.Envelope) {
 		err := config.Remove()
 		a.reply(m, map[string]any{"removed": err == nil}, err)
 		go func() { time.Sleep(time.Second); a.exit(0) }()
+	case "http.request":
+		var q httprelay.Request
+		if err := json.Unmarshal(m.Params, &q); err != nil {
+			a.reply(m, nil, err)
+			return
+		}
+		res, err := httprelay.Do(ctx, q)
+		a.reply(m, res, err)
 	default:
 		a.reply(m, nil, fmt.Errorf("unknown method %q", m.Method))
 	}

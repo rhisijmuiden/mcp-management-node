@@ -17,10 +17,15 @@ MCP server so Claude, ChatGPT or Copilot can answer questions and carry out task
 > them, the firewall, SDN with a step-by-step designer), cluster features (HA, replication, Proxmox backup jobs,
 > storage), monitoring of all nodes with trends, SMART and mailed alerts, and deployments from GitHub repositories
 > into containers.
-> Phase 5 (this release) adds stand-alone **Linux and Windows servers** in their own Servers section, managed by the
+> Phase 5 added stand-alone **Linux and Windows servers** in their own Servers section, managed by the
 > same agent (Windows service with an MSI installer, event log, PowerShell, Windows Update), plus troubleshooting
 > across servers for people and AI: log search on many servers at once, error overviews, health checks, a software
 > and CVE inventory, and data copies between servers.
+
+> Phase 6 (this release) adds **UniFi**: UniFi Network (local Integration API), the UniFi Site Manager cloud API and
+> UniFi Access, per environment/customer, in a UniFi section of the menu, with MCP tools so an assistant can answer
+> "why can't this laptop get on WiFi?", "which APs need firmware?", "is guest isolated from the LAN?" and "who opened
+> the server room last night?".
 
 The interface is in English and Dutch, in the RHIS house style (see [`branding/`](branding/)).
 
@@ -145,6 +150,31 @@ runs natively on Debian, no Docker. Deploy by hand, on every push (GitHub webhoo
 `/api/hooks/github/<id>`, signed with a secret) or by checking for new commits every 5 minutes. **Create → GitHub**
 makes a new container and deploys into it in one go.
 
+## UniFi
+
+**UniFi → Connections** links consoles per environment (customer). Only the official APIs are used, with API keys
+that are stored encrypted (Fernet, like every other secret) and never shown again:
+
+| Kind | API | Key |
+| --- | --- | --- |
+| UniFi Network | `https://<console>/proxy/network/integration/v1` (Network 9.0+) | Network → Settings → Control Plane → Integrations |
+| Site Manager | `https://api.ui.com/v1` (all consoles and sites of an account) | unifi.ui.com → API |
+| UniFi Access | `https://<console>:12445/api/v1/developer` | Access → Settings → General → Advanced → API Token |
+
+A connection reaches its console **directly**, **through an agent** in the customer's network (the agent makes the
+HTTPS call, so nothing needs a port forward; needs agent 0.6.0, which agents install themselves) or, for Network,
+**through the Site Manager cloud connector**. Local consoles use self-signed certificates: pin the certificate's
+SHA-256 fingerprint (**Fetch** reads it); the pin is checked during the TLS handshake, before the key is sent. Mark a
+connection **read-only** to switch off all actions; use a key of a View Only admin for that.
+
+Every 5 minutes the app polls each connection: devices with status, uplink, firmware and clients, WiFi with VLAN,
+WAN state, doors. Differences become **events** (device offline/online, WAN change, uplink change, new firmware) and
+offline devices or unreachable connections raise **monitoring alerts** (mailed like the others, can be switched off).
+**UniFi → Network** shows all of it, with live device details, the client list, WiFi on/off, guest authorization,
+restart and PoE power-cycle, a WiFi troubleshooter and a guest isolation check (from the zone-based firewall).
+**UniFi → Access** shows doors and lock state, remote unlock, temporary lock rules, emergency lockdown/evacuation,
+schedules and the access log. Every action is in the audit log.
+
 ## Updates, production and test
 
 - `main` → production releases `vX.Y.Z` (published once per `VERSION`).
@@ -159,11 +189,11 @@ switches the `current` link and restarts; when the health check fails it rolls b
 The MCP endpoint is `https://<your address>/mcp` (Streamable HTTP). Claude, ChatGPT and VS Code connect with
 OAuth 2.1 (dynamic client registration + PKCE); scripts can use a personal API token. Each connection only gets the
 permissions you tick (read, backups, restore, updates, settings, nodes, node updates, logs, services, exec, guests,
-create and remove guests, templates, scheduled tasks, network, cluster, deployments),
+create and remove guests, templates, scheduled tasks, network, cluster, deployments, UniFi read, UniFi actions, doors),
 destructive tools require confirmation of the exact target, commands and service actions need a stated reason, and
 every call is recorded in the **AI activity log**. Through the agents an assistant can read logs and the journal,
 check and restart services, find which servers have a package (e.g. nginx for a CVE), read files, run commands,
-install updates and reboot nodes, and manage VMs, containers, snapshots, templates and scheduled tasks, read the network and change it with a dry run first, design and roll out SDN, manage HA, replication, backup jobs and storage, read monitoring and SMART data, and start deployments. **Help → What the MCP can do** lists everything. Step-by-step instructions are in the app under
+install updates and reboot nodes, and manage VMs, containers, snapshots, templates and scheduled tasks, read the network and change it with a dry run first, design and roll out SDN, manage HA, replication, backup jobs and storage, read monitoring and SMART data, start deployments, and look into UniFi networks and doors (devices, clients, WiFi problems, firmware, guest isolation, events, access log) and act on them when allowed. **Help → What the MCP can do** lists everything. Step-by-step instructions are in the app under
 **Help → Connect Claude, ChatGPT or Copilot**.
 
 ## Backups

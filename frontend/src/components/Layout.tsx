@@ -36,6 +36,9 @@ import {
   FileSearch,
   ShieldCheck,
   Copy,
+  Wifi,
+  DoorClosed,
+  Cable,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -131,6 +134,14 @@ export function Layout() {
         { to: "/servers/software", icon: <ShieldCheck />, label: t("nav.srv_software"), admin: true },
         { to: "/servers/copy", icon: <Copy />, label: t("nav.srv_copy"), admin: true },
         { to: "/monitoring", icon: <Activity />, label: t("nav.monitoring") },
+      ],
+    },
+    {
+      title: t("nav.section.unifi"),
+      items: [
+        { to: "/unifi/network", icon: <Wifi />, label: t("nav.unifi_network") },
+        { to: "/unifi/access", icon: <DoorClosed />, label: t("nav.unifi_access") },
+        { to: "/unifi/connections", icon: <Cable />, label: t("nav.unifi_connections") },
       ],
     },
     {

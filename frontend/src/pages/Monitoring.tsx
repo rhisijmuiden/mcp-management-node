@@ -329,6 +329,7 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
           </div>
           <Switch checked={v.smart} onCheckedChange={(x) => set({ smart: x })} label={t("mon.th_smart")} />
           {v.smart && <div className="max-w-xs">{num("wearout_pct", t("mon.th_wearout"), t("mon.th_wearout_hint"))}</div>}
+          <Switch checked={v.unifi !== false} onCheckedChange={(x) => set({ unifi: x })} label={t("mon.th_unifi")} description={t("mon.th_unifi_hint")} />
         </div>
       )}
     </Dialog>

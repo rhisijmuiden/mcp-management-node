@@ -25,6 +25,9 @@ const ClusterPage = lazy(() => import("@/pages/Cluster").then((m) => ({ default:
 const DeploymentsPage = lazy(() => import("@/pages/Deployments").then((m) => ({ default: m.DeploymentsPage })));
 const DeploymentDetailPage = lazy(() => import("@/pages/Deployments").then((m) => ({ default: m.DeploymentDetailPage })));
 const MonitoringPage = lazy(() => import("@/pages/Monitoring").then((m) => ({ default: m.MonitoringPage })));
+const UnifiNetworkPage = lazy(() => import("@/pages/Unifi").then((m) => ({ default: m.UnifiNetworkPage })));
+const UnifiAccessPage = lazy(() => import("@/pages/Unifi").then((m) => ({ default: m.UnifiAccessPage })));
+const UnifiConnectionsPage = lazy(() => import("@/pages/Unifi").then((m) => ({ default: m.UnifiConnectionsPage })));
 const NetworkPage = lazy(() => import("@/pages/Network").then((m) => ({ default: m.NetworkPage })));
 const SdnDesignerPage = lazy(() => import("@/pages/SdnDesigner").then((m) => ({ default: m.SdnDesignerPage })));
 const L = ({ children }: { children: ReactNode }) => <Suspense fallback={<Spinner />}>{children}</Suspense>;
@@ -74,6 +77,10 @@ export default function App() {
         <Route path="proxmox/network/sdn-designer" element={<RequireAuth admin><L><SdnDesignerPage /></L></RequireAuth>} />
         <Route path="proxmox/network/sdn-designer/:id" element={<RequireAuth admin><L><SdnDesignerPage /></L></RequireAuth>} />
         <Route path="proxmox/cluster" element={<L><ClusterPage /></L>} />
+        <Route path="unifi" element={<Navigate to="/unifi/network" replace />} />
+        <Route path="unifi/network" element={<L><UnifiNetworkPage /></L>} />
+        <Route path="unifi/access" element={<L><UnifiAccessPage /></L>} />
+        <Route path="unifi/connections" element={<L><UnifiConnectionsPage /></L>} />
         <Route path="servers" element={<ServersPage />} />
         <Route path="servers/logs" element={<RequireAuth admin><LogSearchPage /></RequireAuth>} />
         <Route path="servers/software" element={<RequireAuth admin><SoftwarePage /></RequireAuth>} />
