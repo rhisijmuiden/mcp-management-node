@@ -1,4 +1,4 @@
-# MCP Management Node
+# Stackpilot
 
 One modern management interface for Proxmox VE environments and stand-alone servers, with a built-in
 MCP server so Claude, ChatGPT or Copilot can answer questions and carry out tasks, with every action logged.
@@ -26,6 +26,14 @@ MCP server so Claude, ChatGPT or Copilot can answer questions and carry out task
 > UniFi Access, per environment/customer, in a UniFi section of the menu, with MCP tools so an assistant can answer
 > "why can't this laptop get on WiFi?", "which APs need firmware?", "is guest isolated from the LAN?" and "who opened
 > the server room last night?".
+
+> **Name.** The product was called *MCP Management Node* (and before that *Proxmox Management*) up to 0.6.2 and is
+> now **Stackpilot**. Only the name you see changed. The internal names stay the same, so existing installs and agents
+> keep working without any action: the repository `rhisijmuiden/mcp-management-node`, the services
+> `mcp-management-node`, `mcp-management-node-updater` and `mmn-agent`, the paths `/opt/mcp-management-node`,
+> `/etc/mcp-management-node`, `/etc/mmn-agent`, the commands `mmn-ctl` and `mmn-agent`, the `.deb`/MSI package names,
+> the Windows install folder and registry key, and the production/test update channels. A saved app name or mail
+> sender name that still holds the old default shows as Stackpilot after the update.
 
 The interface is in English and Dutch, in the RHIS house style (see [`branding/`](branding/)).
 

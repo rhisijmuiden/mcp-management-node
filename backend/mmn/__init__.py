@@ -1,4 +1,4 @@
-"""MCP Management Node backend."""
+"""Stackpilot backend."""
 
 from mmn.version import get_build_info
 

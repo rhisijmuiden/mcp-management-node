@@ -1,4 +1,4 @@
-// mmn-agent connects a Proxmox VE node (or another Linux / Windows server) to MCP Management Node.
+// mmn-agent connects a Proxmox VE node (or another Linux / Windows server) to Stackpilot.
 //
 //	mmn-agent enroll --server mmn.example.nl:8443 --fingerprint <sha256> --code ABCD-EFGH-JKLM
 //	mmn-agent run          (what the systemd service runs)
@@ -27,7 +27,7 @@ import (
 var version = "dev"
 
 func usage() {
-	fmt.Fprintf(os.Stderr, `mmn-agent %s: agent for MCP Management Node
+	fmt.Fprintf(os.Stderr, `mmn-agent %s: agent for Stackpilot
 
 Usage:
   mmn-agent enroll --server HOST[:PORT] --fingerprint SHA256 --code CODE [--name NAME]
@@ -49,7 +49,7 @@ func main() {
 		fmt.Println(version)
 	case "enroll":
 		fs := flag.NewFlagSet("enroll", flag.ExitOnError)
-		server := fs.String("server", "", "agent endpoint of MCP Management Node (host:port)")
+		server := fs.String("server", "", "agent endpoint of Stackpilot (host:port)")
 		fp := fs.String("fingerprint", "", "SHA-256 fingerprint of the app's agent CA")
 		code := fs.String("code", "", "one-time pairing code from the app")
 		name := fs.String("name", "", "name to report (default: host name)")

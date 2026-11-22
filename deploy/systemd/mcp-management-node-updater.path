@@ -1,5 +1,5 @@
 [Unit]
-Description=Watch for MCP Management Node update and web server requests
+Description=Watch for Stackpilot update and web server requests
 
 [Path]
 PathExistsGlob=/var/lib/mcp-management-node/run/*-request.json

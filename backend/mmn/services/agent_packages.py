@@ -130,7 +130,7 @@ def agent_endpoint(agents: dict[str, Any], general: dict[str, Any], request_host
 
 
 INSTALL_SCRIPT = r"""#!/usr/bin/env bash
-# MCP Management Node: install the agent on this Proxmox VE node or Linux server and pair it.
+# Stackpilot: install the agent on this Proxmox VE node or Linux server and pair it.
 #   curl -fsSL __APP__/api/agent/install.sh | bash -s -- --code ABCD-EFGH-JKLM
 # Debian, Ubuntu and Proxmox VE get the .deb package; other distributions with systemd (RHEL, Rocky,
 # Alma, Fedora, SUSE, Arch, ...) get the binary in /usr/local/bin plus a systemd unit.
@@ -184,7 +184,7 @@ else
   install -d -m 0700 /etc/mmn-agent /var/lib/mmn-agent
   cat > /etc/systemd/system/mmn-agent.service <<'UNIT'
 [Unit]
-Description=MCP Management Node agent
+Description=Stackpilot agent
 Documentation=https://github.com/rhisijmuiden/mcp-management-node
 After=network-online.target
 Wants=network-online.target
@@ -211,10 +211,10 @@ ARGS=(--server "$SERVER" --fingerprint "$FINGERPRINT" --code "$CODE")
 "$BIN" enroll "${ARGS[@]}"
 systemctl enable --now mmn-agent.service >/dev/null
 systemctl restart mmn-agent.service
-echo "==> done: the server appears in MCP Management Node within a few seconds"
+echo "==> done: the server appears in Stackpilot within a few seconds"
 """
 
-INSTALL_PS1 = r"""# MCP Management Node: install the agent on this Windows server and pair it (run as Administrator).
+INSTALL_PS1 = r"""# Stackpilot: install the agent on this Windows server and pair it (run as Administrator).
 #   powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm '__APP__/api/agent/install.ps1'))) -Code ABCD-EFGH-JKLM"
 param([Parameter(Mandatory = $true)][string]$Code, [string]$Name = '', [string]$Server = __SERVER_PS__)
 $ErrorActionPreference = 'Stop'
@@ -225,7 +225,7 @@ $File = 'mmn-agent-windows-amd64.msi'
 $Sha = __SHA_PS__
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Run this in PowerShell as Administrator.' }
-if (-not $Sha) { throw 'This build of MCP Management Node has no Windows installer.' }
+if (-not $Sha) { throw 'This build of Stackpilot has no Windows installer.' }
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $tmp = Join-Path $env:TEMP $File
 Write-Host "==> downloading $File"
@@ -237,7 +237,7 @@ if ($Name) { $msiArgs += "NAME=$Name" }
 $p = Start-Process msiexec.exe -ArgumentList $msiArgs -Wait -PassThru
 Remove-Item $tmp -ErrorAction SilentlyContinue
 if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { throw "msiexec failed with exit code $($p.ExitCode)" }
-Write-Host '==> done: the server appears in MCP Management Node within a few seconds'
+Write-Host '==> done: the server appears in Stackpilot within a few seconds'
 """
 
 

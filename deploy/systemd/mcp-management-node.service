@@ -1,5 +1,5 @@
 [Unit]
-Description=MCP Management Node
+Description=Stackpilot
 Documentation=https://github.com/rhisijmuiden/mcp-management-node
 After=network-online.target postgresql.service
 Wants=network-online.target postgresql.service

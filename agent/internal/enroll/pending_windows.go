@@ -4,7 +4,8 @@ package enroll
 
 import "golang.org/x/sys/windows/registry"
 
-// RegistryKey holds the pairing written by the MSI (HKLM, 64-bit view).
+// RegistryKey holds the pairing written by the MSI (HKLM, 64-bit view). It keeps the product's
+// former name (MCP Management Node) on purpose, so agents installed before the rename keep pairing.
 const RegistryKey = `SOFTWARE\MCP Management Node\Agent`
 
 func loadPlatformPending() *Pending {

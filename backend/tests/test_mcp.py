@@ -37,7 +37,7 @@ async def test_mcp_tools_and_scopes(admin_client, client):
     assert read_token.startswith("mmn_") and r.json()["scopes"] == ["read"]
 
     init = await _init(client, read_token)
-    assert init["result"]["serverInfo"]["name"] == "MCP Management Node"
+    assert init["result"]["serverInfo"]["name"] == "Stackpilot"
     tools = (await _rpc(client, read_token, "tools/list", id_=2)).json()["result"]["tools"]
     names = {t["name"] for t in tools}
     assert {"get_system_info", "run_backup", "restore_backup", "install_update", "send_test_mail"} <= names
@@ -48,7 +48,7 @@ async def test_mcp_tools_and_scopes(admin_client, client):
     content = res["result"]
     assert not content.get("isError"), content
     data = content.get("structuredContent") or json.loads(content["content"][0]["text"])
-    assert data["name"] == "MCP Management Node"
+    assert data["name"] == "Stackpilot"
 
     # A read-only token cannot run a backup.
     res = (await _rpc(client, read_token, "tools/call",

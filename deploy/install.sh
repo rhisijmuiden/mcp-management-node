@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# MCP Management Node installer for Debian 13 (trixie). Native install, no Docker.
+# Stackpilot installer for Debian 13 (trixie). Native install, no Docker.
 #
 # Quick start (production channel):
 #   curl -fsSL https://raw.githubusercontent.com/rhisijmuiden/mcp-management-node/main/deploy/install.sh | sudo bash
@@ -91,7 +91,7 @@ fi
 command -v systemctl >/dev/null || die "systemd is required"
 
 echo
-echo "${c_bold}MCP Management Node${c_off} ${c_dim}installer · channel: $CHANNEL${c_off}"
+echo "${c_bold}Stackpilot${c_off} ${c_dim}installer · channel: $CHANNEL${c_off}"
 echo
 
 FRESH=1
@@ -152,7 +152,7 @@ SELECT 'CREATE DATABASE mmn OWNER mmn ENCODING ''UTF8'' TEMPLATE template0' WHER
 SQL
   umask 027
   cat > "$ENV_FILE" <<EOF
-# MCP Management Node settings. Read by the app (user $APP_USER) and the updater (root).
+# Stackpilot settings. Read by the app (user $APP_USER) and the updater (root).
 MMN_DATABASE_URL=postgresql+asyncpg://mmn:${DB_PASS}@127.0.0.1:5432/mmn
 MMN_DATA_DIR=$DATA_DIR
 MMN_INSTALL_DIR=$INSTALL_DIR
@@ -267,7 +267,7 @@ step "Installing $VERSION_TAG"
 mkdir -p "$WORK/peek"
 tar -xzf "$TARBALL" -C "$WORK/peek"
 PEEK="$(find "$WORK/peek" -mindepth 1 -maxdepth 1 -type d | head -1)"
-[[ -f "$PEEK/backend/mmn/updater_root.py" ]] || die "this is not an MCP Management Node release"
+[[ -f "$PEEK/backend/mmn/updater_root.py" ]] || die "this is not a Stackpilot release"
 RELEASE="$(cd "$PEEK/backend" && MMN_INSTALL_DIR="$INSTALL_DIR" python3 -m mmn.updater_root install-tarball "$TARBALL" "$VERSION_TAG" | tail -1)"
 info "installed in $RELEASE"
 CURRENT="$INSTALL_DIR/current"
@@ -284,7 +284,7 @@ step "Installing services"
 install -m 0644 "$CURRENT"/deploy/systemd/*.service "$CURRENT"/deploy/systemd/*.path /etc/systemd/system/
 cat > /usr/local/sbin/mmn-ctl <<EOF
 #!/usr/bin/env bash
-# Run MCP Management Node commands as the app user, e.g. 'sudo mmn-ctl setup-token'.
+# Run Stackpilot commands as the app user, e.g. 'sudo mmn-ctl setup-token'.
 set -euo pipefail
 [[ \$EUID -eq 0 ]] || { echo "run with sudo" >&2; exit 1; }
 cd "$DATA_DIR"
@@ -368,7 +368,7 @@ BASE_NOW="$(python3 -c "import json;print(json.load(open('$PROXY_FILE')).get('ba
 if [[ "$MODE_NOW" == "direct" ]]; then URL="https://$IP${BASE_NOW}"; else URL="http://$IP${BASE_NOW} (or your Zoraxy address)"; fi
 
 echo
-echo "${c_green}✓${c_off} ${c_bold}MCP Management Node $VERSION_TAG is running${c_off}"
+echo "${c_green}✓${c_off} ${c_bold}Stackpilot $VERSION_TAG is running${c_off}"
 echo "    Open:      $URL"
 if [[ "$STATUS" == *'"setup_required":true'* ]]; then
   CODE="$(/usr/local/sbin/mmn-ctl setup-token)"

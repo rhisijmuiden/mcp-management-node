@@ -176,7 +176,7 @@ func ApplyNotify(ctx context.Context, n Notify) (map[string]any, error) {
 	}
 	path := "/cluster/notifications/endpoints/smtp"
 	args := []string{"--server", n.Server, "--from-address", n.FromAddress, "--mode", mode,
-		"--comment", "Managed by MCP Management Node"}
+		"--comment", "Managed by Stackpilot"}
 	if n.Port > 0 {
 		args = append(args, "--port", strconv.Itoa(n.Port))
 	}
@@ -219,7 +219,7 @@ func ApplyNotify(ctx context.Context, n Notify) (map[string]any, error) {
 			continue
 		}
 		margs := []string{"--target", n.target(), "--mode", "all", "--match-field", "exact:type=" + t,
-			"--comment", "Managed by MCP Management Node"}
+			"--comment", "Managed by Stackpilot"}
 		if sev != "" {
 			margs = append(margs, "--match-severity", sev)
 		}

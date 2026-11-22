@@ -13,7 +13,7 @@ from mmn.version import get_build_info
 
 DEFAULTS: dict[str, dict[str, Any]] = {
     "general": {
-        "app_name": "MCP Management Node",
+        "app_name": "Stackpilot",
         "base_url": "",
         "default_language": "en",
     },
@@ -24,7 +24,7 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "security": "starttls",  # none | starttls | tls
         "username": "",
         "password_enc": None,
-        "from_name": "MCP Management Node",
+        "from_name": "Stackpilot",
         "from_address": "",
         "reply_to": "",
         "verify_tls": True,
@@ -77,6 +77,19 @@ DEFAULTS: dict[str, dict[str, Any]] = {
 }
 
 
+# Names the product had before it was called Stackpilot. Settings saved under an older version store
+# the full section, so a stored default name is shown as the current name instead.
+LEGACY_NAMES = {"MCP Management Node", "Proxmox Management"}
+_NAME_FIELDS = {"general": "app_name", "mail": "from_name"}
+
+
+def _rename_legacy(key: str, value: dict[str, Any]) -> dict[str, Any]:
+    field = _NAME_FIELDS.get(key)
+    if field and value.get(field) in LEGACY_NAMES:
+        value[field] = DEFAULTS[key][field]
+    return value
+
+
 APPLIED_PROXY_FILE = Path("/etc/mcp-management-node/proxy.json")
 
 
@@ -100,7 +113,7 @@ async def get_setting(db: AsyncSession, key: str) -> dict[str, Any]:
     value = _defaults(key)
     if row is not None:
         value.update(row.value or {})
-    return value
+    return _rename_legacy(key, value)
 
 
 async def set_setting(db: AsyncSession, key: str, value: dict[str, Any]) -> dict[str, Any]:
@@ -108,6 +121,7 @@ async def set_setting(db: AsyncSession, key: str, value: dict[str, Any]) -> dict
     merged = _defaults(key)
     if row is not None:
         merged.update(row.value or {})
+        _rename_legacy(key, merged)
     merged.update(value)
     if row is None:
         db.add(Setting(key=key, value=merged))

@@ -1,4 +1,4 @@
-// Package client keeps the outgoing mTLS WebSocket connection to MCP Management Node open and
+// Package client keeps the outgoing mTLS WebSocket connection to Stackpilot open and
 // answers the app's requests. The connection is always started by the agent, so nodes behind
 // NAT or a firewall need no port forward or VPN.
 package client
@@ -657,7 +657,7 @@ func (a *Agent) handle(ctx context.Context, m proto.Envelope) {
 			a.reply(m, map[string]any{"rebooting": true}, nil)
 			go func() {
 				time.Sleep(3 * time.Second)
-				_ = exec.Command("shutdown.exe", "/r", "/t", "10", "/d", "p:0:0", "/c", "Restart requested from MCP Management Node").Run()
+				_ = exec.Command("shutdown.exe", "/r", "/t", "10", "/d", "p:0:0", "/c", "Restart requested from Stackpilot").Run()
 			}()
 		default:
 			a.reply(m, nil, errors.New("reboot is not supported on this system"))

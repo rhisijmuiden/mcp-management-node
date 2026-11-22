@@ -218,7 +218,7 @@ def _request_base(request: Request) -> str:
 @router.get("/api/agent/install.sh", include_in_schema=False)
 async def install_script(request: Request, db: AsyncSession = Depends(get_db)):
     if not agent_packages.manifest():
-        return PlainTextResponse("echo 'This build of MCP Management Node has no agent packages.' >&2; exit 1\n",
+        return PlainTextResponse("echo 'This build of Stackpilot has no agent packages.' >&2; exit 1\n",
                                  media_type="text/x-shellscript")
     info = await nodes.connect_info(db, request.headers.get("host"), _request_base(request))
     return PlainTextResponse(agent_packages.install_script(info["app_url"], info["endpoint"], info["fingerprint"]),

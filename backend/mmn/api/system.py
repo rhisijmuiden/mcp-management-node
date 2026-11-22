@@ -31,7 +31,7 @@ async def system_info(db: AsyncSession) -> dict:
         rev = None
     cfg = await get_setting(db, "updates")
     return {
-        "name": "MCP Management Node", "version": b.version, "tag": b.tag, "build_channel": b.channel,
+        "name": "Stackpilot", "version": b.version, "tag": b.tag, "build_channel": b.channel,
         "commit": b.commit, "built_at": b.built_at, "dev": b.dev, "channel": cfg["channel"],
         "python": platform.python_version(), "postgres": pg, "db_revision": rev,
         "os": _os_name(), "uptime_seconds": int(time.time() - STARTED),

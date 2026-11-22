@@ -72,6 +72,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="${{ steps.tag.outputs.tag }}"
-          flags=(--target "$GITHUB_SHA" --title "MCP Management Node $tag" --generate-notes)
+          flags=(--target "$GITHUB_SHA" --title "Stackpilot $tag" --generate-notes)
           [[ "${{ steps.tag.outputs.pre }}" == "true" ]] && flags+=(--prerelease)
           gh release create "$tag" "${flags[@]}" dist/mcp-management-node-"$tag".tar.gz dist/mcp-management-node-"$tag".tar.gz.sha256

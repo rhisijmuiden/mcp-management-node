@@ -1,5 +1,5 @@
 [Unit]
-Description=MCP Management Node agent
+Description=Stackpilot agent
 Documentation=https://github.com/rhisijmuiden/mcp-management-node
 After=network-online.target
 Wants=network-online.target

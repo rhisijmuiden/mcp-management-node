@@ -239,7 +239,7 @@ def render_nginx(cfg: ProxyIn, frontend: str = "/opt/mcp-management-node/current
     def v6(port: int, extra: str = "") -> str:
         return f"    listen [::]:{port}{extra};\n" if cfg.listen_ipv6 else ""
 
-    lines = ["# Managed by MCP Management Node. Change it in the app (Administration > Web server & proxy); edits here are lost.",
+    lines = ["# Managed by Stackpilot. Change it in the app (Administration > Web server & proxy); edits here are lost.",
              f"upstream mmn_backend {{\n    server {UPSTREAM};\n    keepalive 16;\n}}",
              "map $http_upgrade $connection_upgrade {\n    default upgrade;\n    ''      close;\n}"]
     if cfg.mode == "proxy":

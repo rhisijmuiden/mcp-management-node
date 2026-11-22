@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds a release tarball of MCP Management Node.
+# Builds a release tarball of Stackpilot.
 #
 #   deploy/build-release.sh --tag v0.1.0 --channel production --out dist [--wheels] [--commit SHA]
 #

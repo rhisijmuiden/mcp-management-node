@@ -351,7 +351,7 @@ async def _door_action(db, request, admin, cid: str, did: str, action: str, fn, 
 async def unlock(cid: str, did: str, body: ReasonIn, request: Request, db: AsyncSession = Depends(get_db),
                  admin: User = Depends(require_admin)):
     return await _door_action(db, request, admin, cid, did, "unlock",
-                              lambda api: api.unlock(did, f"{admin.username} (MCP Management Node)"), reason=body.reason)
+                              lambda api: api.unlock(did, f"{admin.username} (Stackpilot)"), reason=body.reason)
 
 
 class LockRuleIn(BaseModel):
