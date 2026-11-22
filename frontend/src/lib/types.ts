@@ -312,6 +312,8 @@ export interface NodeJob {
 
 export interface ConnectInfo {
   endpoint: string;
+  endpoint_source?: "address" | "lan_ip" | "base_url" | "request";
+  proxy_mode?: boolean;
   app_url: string;
   fingerprint: string;
   fingerprint_pretty: string;

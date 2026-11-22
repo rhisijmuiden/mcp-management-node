@@ -839,7 +839,7 @@
     "endpoint_desc": "Agents keep one outgoing connection (mutual TLS) to this address.",
     "agents_connect_to": "Agents connect to",
     "address": "Address for agents",
-    "address_hint": "Host name or IP the nodes can reach. Empty: the host of the public address (General).",
+    "address_hint": "Host name or IP (optionally :port) the servers can reach on this server's agent port. Empty: this server's LAN IP when it runs behind a reverse proxy, otherwise the host of the public address (General).",
     "port": "Port",
     "port_hint": "Default 8443. Changing it reconfigures Nginx.",
     "nginx_queued": "Nginx is being reconfigured for the new port.",
@@ -857,7 +857,13 @@
     "zoraxy_3": "The install command itself is downloaded through the normal web address (HTTPS via Zoraxy).",
     "security_title": "Security",
     "security_text": "This app runs its own certificate authority for agents. Each node gets its own certificate at pairing; its private key never leaves the node. The agent only trusts this CA (pinned by its fingerprint).",
-    "bundled": "Agent in this release: {{version}}"
+    "bundled": "Agent in this release: {{version}}",
+    "addr_title": "No agent address set",
+    "addr_lan": "Agents connect to {{endpoint}}, this server's LAN address, because the app runs behind a reverse proxy. That works when the servers can reach this network. For servers elsewhere, set an address that leads to port {{port}} of this server, for example a Zoraxy TCP stream proxy.",
+    "addr_public_proxy": "Agents would connect to {{endpoint}}, the public name of the app. Behind a reverse proxy that name usually points at your router or gateway, which answers on port {{port}} with its own certificate, so agents cannot connect. Set the LAN IP of this server or a TCP stream proxy as agent address.",
+    "addr_public": "Agents connect to {{endpoint}}, taken from the public address of the app. Make sure port {{port}} on that name reaches this server directly.",
+    "addr_fix": "Set the agent address",
+    "addr_fix_here": "Set it below."
   },
   "nodeshelp": {
     "title": "Connect a Proxmox node",

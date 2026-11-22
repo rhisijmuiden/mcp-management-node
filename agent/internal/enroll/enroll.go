@@ -97,7 +97,7 @@ func Run(server, fingerprint, code, hostname, version string) (*Response, error)
 		TLSClientConfig: tlsutil.PinnedEnrollConfig(fingerprint, &ca), Proxy: http.ProxyFromEnvironment}}
 	resp, err := hc.Post("https://"+server+"/agent/enroll", "application/json", bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("could not reach %s: %w", server, err)
+		return nil, fmt.Errorf("could not reach %s: %w", server, tlsutil.Explain(server, err))
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))

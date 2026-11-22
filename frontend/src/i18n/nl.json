@@ -839,7 +839,7 @@
     "endpoint_desc": "Agents houden één uitgaande verbinding (mutual TLS) open naar dit adres.",
     "agents_connect_to": "Agents verbinden met",
     "address": "Adres voor agents",
-    "address_hint": "Hostnaam of IP dat de nodes kunnen bereiken. Leeg: de host van het publieke adres (Algemeen).",
+    "address_hint": "Hostnaam of IP (eventueel :poort) waarmee de servers de agent-poort van deze server bereiken. Leeg: het LAN-IP van deze server als hij achter een reverse proxy draait, anders de host van het publieke adres (Algemeen).",
     "port": "Poort",
     "port_hint": "Standaard 8443. Wijzigen stelt Nginx opnieuw in.",
     "nginx_queued": "Nginx wordt ingesteld op de nieuwe poort.",
@@ -857,7 +857,13 @@
     "zoraxy_3": "Het installatiecommando zelf wordt via het normale webadres gedownload (HTTPS via Zoraxy).",
     "security_title": "Beveiliging",
     "security_text": "Deze app heeft een eigen certificaatautoriteit voor agents. Elke node krijgt bij het koppelen een eigen certificaat; de privésleutel verlaat de node nooit. De agent vertrouwt alleen deze CA (vastgepind op de vingerafdruk).",
-    "bundled": "Agent in deze release: {{version}}"
+    "bundled": "Agent in deze release: {{version}}",
+    "addr_title": "Geen agent-adres ingesteld",
+    "addr_lan": "Agents verbinden met {{endpoint}}, het LAN-adres van deze server, omdat de app achter een reverse proxy draait. Dat werkt als de servers dit netwerk kunnen bereiken. Voor servers elders stel je een adres in dat naar poort {{port}} van deze server leidt, bijvoorbeeld een Zoraxy TCP stream proxy.",
+    "addr_public_proxy": "Agents zouden verbinden met {{endpoint}}, de publieke naam van de app. Achter een reverse proxy wijst die naam meestal naar je router of gateway, die op poort {{port}} met een eigen certificaat antwoordt, waardoor agents niet kunnen verbinden. Stel het LAN-IP van deze server of een TCP stream proxy in als agent-adres.",
+    "addr_public": "Agents verbinden met {{endpoint}}, afgeleid van het publieke adres van de app. Zorg dat poort {{port}} op die naam rechtstreeks bij deze server uitkomt.",
+    "addr_fix": "Agent-adres instellen",
+    "addr_fix_here": "Stel het hieronder in."
   },
   "nodeshelp": {
     "title": "Een Proxmox-node koppelen",

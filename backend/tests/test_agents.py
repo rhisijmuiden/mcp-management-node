@@ -274,3 +274,42 @@ def test_nginx_agent_endpoint():
     assert 'X-MMN-Agent-Secret "' + "s" * 40 in out
     with pytest.raises(ValueError):
         render_nginx(ProxyIn(mode="proxy", trusted_proxies=["10.0.0.2"], agent_port=80))
+
+
+def test_agent_endpoint_behind_proxy(monkeypatch):
+    """Behind Zoraxy the public name points at the router/gateway, so agents get the LAN IP instead."""
+    from mmn.services import agent_packages as ap
+    from mmn.services import nodes
+
+    general = {"base_url": "https://proxmox.home.example.nl"}
+    proxy = {"mode": "proxy", "trusted_proxies": ["10.10.4.2"]}
+    seen = {}
+
+    def fake_lan_ip(towards):
+        seen["towards"] = towards
+        return "10.10.4.140"
+
+    monkeypatch.setattr(ap, "lan_ip", fake_lan_ip)
+    assert ap.agent_endpoint_info({}, general, "proxmox.home.example.nl", proxy) == ("10.10.4.140:8443", "lan_ip")
+    assert seen["towards"] == ["10.10.4.2"]
+    # An explicit agent address always wins.
+    assert ap.agent_endpoint_info({"address": "agents.example.nl", "port": 9443}, general, None, proxy) == \
+        ("agents.example.nl:9443", "address")
+    # Direct mode keeps using the host of the public address.
+    assert ap.agent_endpoint_info({}, general, None, {"mode": "direct"}) == ("proxmox.home.example.nl:8443", "base_url")
+    # Without a LAN address it falls back to the public name, then to the request host.
+    monkeypatch.setattr(ap, "lan_ip", lambda towards: None)
+    assert ap.agent_endpoint_info({}, general, None, proxy)[1] == "base_url"
+    assert ap.agent_endpoint_info({}, {}, "10.0.0.5:443", proxy) == ("10.0.0.5:8443", "request")
+    assert ap.agent_endpoint_info({}, {}, "[fd00::5]:443", None) == ("[fd00::5]:8443", "request")
+
+    # After enrolling, an agent keeps the address it enrolled through, unless one is configured.
+    assert nodes._enrolled_server({}, general, "10.10.4.140:8443", proxy) == "10.10.4.140:8443"
+    assert nodes._enrolled_server({"address": "a.example.nl"}, general, "10.10.4.140:8443", proxy) == "a.example.nl:8443"
+
+
+def test_lan_ip_is_a_real_address():
+    from mmn.services.agent_packages import lan_ip
+
+    ip = lan_ip(["127.0.0.1/32", "not-an-ip"])  # loopback route is skipped, garbage ignored
+    assert ip is None or not ip.startswith("127.")
