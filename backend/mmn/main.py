@@ -16,6 +16,7 @@ from mmn.api import (
     deploy,
     gateway,
     guests,
+    hub,
     library,
     monitoring,
     network,
@@ -104,6 +105,12 @@ def create_app() -> FastAPI:
         except Exception:  # noqa: BLE001
             log.exception("agent TLS files could not be written")
         try:
+            from mmn.services import hub as hub_service
+
+            await hub_service.sync()
+        except Exception:  # noqa: BLE001
+            log.exception("MCP hub tools could not be loaded")
+        try:
             await _announce_version()
         except Exception:  # noqa: BLE001
             log.exception("version announcement failed")
@@ -159,7 +166,7 @@ def create_app() -> FastAPI:
     for r in (auth.router, users.router, tokens.router, settings.router, backups.router, system.router,
               oauth.router, ws.router, agent.router, proxmox.router, guests.router, library.router, network.router,
               cluster.router, monitoring.router, deploy.router, servers.router, unifi.router, customers.router,
-              gateway.router):
+              gateway.router, hub.router):
         app.include_router(r)
     app.mount("/mcp", mcp_app)
     return app

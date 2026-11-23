@@ -8,6 +8,7 @@ import { AiActivityPage, AuditPage, ConnectionsPage, TokensPage } from "@/pages/
 import { ConsentPage, ForgotPage, LoginPage, ResetPage, SetupPage } from "@/pages/AuthPages";
 import { BackupsPage } from "@/pages/Backups";
 import { ApprovalsPage, CommandCenterPage, PoliciesPage, SessionsPage } from "@/pages/Gateway";
+import { HubPage, ToolCatalogPage } from "@/pages/Hub";
 import { HelpPage, McpCapabilitiesPage, McpHelpPage, NodesHelpPage } from "@/pages/Help";
 import { ConsolePage } from "@/pages/Console";
 import { GuestDetailPage, GuestsPage } from "@/pages/Guests";
@@ -69,6 +70,8 @@ export default function App() {
         <Route path="ai/approvals" element={<RequireAuth admin><ApprovalsPage /></RequireAuth>} />
         <Route path="ai/policies" element={<RequireAuth admin><PoliciesPage /></RequireAuth>} />
         <Route path="ai/sessions" element={<RequireAuth admin><SessionsPage /></RequireAuth>} />
+        <Route path="ai/hub" element={<RequireAuth admin><HubPage /></RequireAuth>} />
+        <Route path="ai/tools" element={<RequireAuth admin><ToolCatalogPage /></RequireAuth>} />
         <Route path="help" element={<HelpPage />} />
         <Route path="help/mcp" element={<McpHelpPage />} />
         <Route path="help/capabilities" element={<McpCapabilitiesPage />} />

@@ -67,6 +67,9 @@ class ToolSpec:
     all_customers: bool
     description: str
     call: Callable[..., Awaitable[Any]] | None = None  # the audited wrapper
+    source: str | None = None  # None = built in, "hub" = a tool of another MCP server (MCP hub)
+    customer_id: str | None = None  # hub tools: the customer the MCP server belongs to
+    upstream_id: str | None = None
 
 
 REGISTRY: dict[str, ToolSpec] = {}
@@ -85,8 +88,29 @@ def register(spec: ToolSpec) -> None:
 
 
 def catalog() -> list[dict[str, Any]]:
-    return [{"name": s.name, "risk": s.risk, "scope": s.scope, "description": s.description}
+    return [{"name": s.name, "risk": s.risk, "scope": s.scope, "description": s.description,
+             "source": s.source or "stackpilot", "upstream_id": s.upstream_id, "customer_id": s.customer_id,
+             "all_customers": s.all_customers}
             for s in sorted(REGISTRY.values(), key=lambda s: (RISKS.index(s.risk), s.name))]
+
+
+HUB_SEP = "__"
+
+
+def namespace_of(tool: str) -> str | None:
+    """The MCP hub prefix of a tool name ("github" for "github__create_issue"), None for built-in tools."""
+    if HUB_SEP not in tool:
+        return None
+    return tool.split(HUB_SEP, 1)[0] or None
+
+
+def valid_rule_key(key: str) -> bool:
+    """Policy rules name a tool, a hub tool (also while its server is offline) or a whole hub server
+    ("github__*")."""
+    if key in REGISTRY:
+        return True
+    ns = namespace_of(key)
+    return bool(ns) and re.fullmatch(r"[a-z][a-z0-9_]{0,23}__(\*|[A-Za-z0-9_-]{1,64})", key) is not None
 
 
 # Set while the app runs an approved call, so the policy check is skipped for exactly that call.
@@ -203,10 +227,11 @@ async def local_now(db: AsyncSession) -> datetime:
 
 
 # ------------------------------------------------------------------ which customers a call touches
-async def customers_of(db: AsyncSession, args: dict[str, Any], token_customers: frozenset[str] | None) -> list[Environment]:
+async def customers_of(db: AsyncSession, args: dict[str, Any], token_customers: frozenset[str] | None,
+                       extra: list[str] | None = None) -> list[Environment]:
     from mmn.services import nodes
 
-    env_ids: set[str] = set()
+    env_ids: set[str] = set(extra or [])
 
     async def by_node(ref: Any) -> None:
         if not ref:
@@ -288,7 +313,7 @@ def clean_policy(scope: str, risks: dict[str, str], tools: dict[str, str], outsi
     r = {k: v for k, v in (risks or {}).items() if k in RISKS and v in allowed and v != "inherit"}
     if scope == "global":
         r = {**DEFAULT_RISKS, **r}
-    t = {k: v for k, v in (tools or {}).items() if k in REGISTRY and v in ACTIONS}
+    t = {k: v for k, v in (tools or {}).items() if valid_rule_key(k) and v in ACTIONS}
     ow_allowed = {"ignore", "approve", "block"} | (set() if scope == "global" else {"inherit"})
     ow = outside_window if outside_window in ow_allowed else ("approve" if scope == "global" else "inherit")
     if scope == "token":
@@ -318,9 +343,13 @@ def _layer(p: AiPolicy | None, risk: str, tool: str) -> tuple[str | None, str | 
     """(action, "tool"|"risk") of one policy layer, or (None, None) to inherit."""
     if p is None:
         return None, None
-    v = (p.tools or {}).get(tool)
+    rules = p.tools or {}
+    v = rules.get(tool)
     if v in ACTIONS:
         return v, "tool"
+    ns = namespace_of(tool)
+    if ns and rules.get(f"{ns}{HUB_SEP}*") in ACTIONS:
+        return rules[f"{ns}{HUB_SEP}*"], "tool"
     v = (p.risks or {}).get(risk)
     if v in ACTIONS:
         return v, "risk"
@@ -359,7 +388,13 @@ def reason_text(r: dict[str, Any]) -> str:
 async def decide(db: AsyncSession, *, tool: str, risk: str, args: dict[str, Any], token_id: str | None,
                  token_customers: frozenset[str] | None) -> Decision:
     cfg = await gateway_settings(db)
-    envs = await customers_of(db, args, token_customers)
+    spec = REGISTRY.get(tool)
+    if spec is not None and spec.source == "hub":
+        # A hub tool works on its MCP server, not on Stackpilot's machines: its arguments say nothing
+        # about customers; the server's own customer does.
+        envs = await customers_of(db, {}, token_customers, [spec.customer_id] if spec.customer_id else None)
+    else:
+        envs = await customers_of(db, args, token_customers)
     d = Decision(action="allow", risk=risk, customers=[(e.id, e.name) for e in envs])
     gpol = await get_policy(db, "global")
     tpol = await get_policy(db, "token", token_id) if token_id else None

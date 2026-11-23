@@ -90,10 +90,11 @@ def _summary(result: Any) -> Any:
 
 
 async def _audit(p: Principal | None, tool_name: str, args: dict[str, Any], success: bool, *,
-                 result: Any = None, error: str | None = None, ms: int = 0, approval_id: str | None = None) -> None:
+                 result: Any = None, error: str | None = None, ms: int = 0, approval_id: str | None = None,
+                 target: str | None = None, extra: dict[str, Any] | None = None) -> None:
     from mmn.models import AuditLog
 
-    detail = {"tool": tool_name, "args": _redact(args), "duration_ms": ms}
+    detail = {"tool": tool_name, "args": _redact(args), "duration_ms": ms, **(extra or {})}
     if approval_id:
         detail["approval_id"] = approval_id
     if p is not None:
@@ -104,7 +105,7 @@ async def _audit(p: Principal | None, tool_name: str, args: dict[str, Any], succ
         detail["error"] = (error or "")[:1000]
     async with sessionmaker()() as db:
         db.add(AuditLog(action=f"mcp.{tool_name}", user_id=p.user_id if p else None,
-                        username=p.username if p else None, source="mcp", target=_target_of(args),
+                        username=p.username if p else None, source="mcp", target=target or _target_of(args),
                         ip=p.ip if p else None, success=success, detail=_jsonable(detail)))
         await db.commit()
 
@@ -279,6 +280,13 @@ A call that needs approval answers status "pending_approval" with an `approval_i
 Tell the user, do not retry, and check later with `get_approval`; once an admin approves it, the app
 runs it and `get_approval` returns the result. An admin can pause all AI actions; calls are then
 refused until they resume.
+
+MCP hub: other MCP servers (for example Keystone VoIP or GitHub) are registered in Stackpilot; their tools
+appear here as `<prefix>__<tool>` (for example `github__create_issue`, `keystone__list_calls`) and follow
+the same guardrails, approvals and audit log. `list_mcp_servers` shows them with their status; a token needs
+the `hub` scope. With GitHub you can run a project from A to Z: create the repository, issues, pull
+requests, releases and Actions through `github__*`, then deploy it into a container with `save_deployment`
+and `run_deployment`. New or changed tools of a server only appear after an admin accepted them.
 
 Nodes and servers can be named by id or by name. Every call is written to the audit log with your token's name.
 Destructive tools need `confirm` set to the exact node name, or are marked destructive: ask the user
@@ -2599,6 +2607,197 @@ async def get_guardrails(customer: str | None = None) -> dict:
     if not customer:
         out["tools"] = {t["name"]: t["risk"] for t in gateway.catalog()}
     return _jsonable(out)
+
+
+# ------------------------------------------------------------------ MCP hub
+@tool("hub", RO)
+async def list_mcp_servers() -> list[dict]:
+    """The other MCP servers registered in the MCP hub that this token can use: prefix of their tools,
+    customer, status (online, error, auth_required), number of tools offered and waiting for an admin."""
+    from mmn.models import McpUpstream
+    from mmn.services import hub
+
+    p = current_principal()
+    async with sessionmaker()() as db:
+        names = await hub.env_names(db)
+        with tenancy_unrestricted():
+            rows = list((await db.execute(select_upstreams(McpUpstream))).scalars())
+    out = []
+    for u in rows:
+        if p is not None and p.customers is not None and (u.environment_id is None or u.environment_id not in p.customers):
+            continue
+        o = hub.upstream_out(u, names)
+        out.append({k: o[k] for k in ("name", "namespace", "description", "customer_name", "transport", "enabled",
+                                      "status", "last_error", "last_checked_at", "active_count", "pending_count")}
+                   | {"tool_prefix": f"{u.namespace}__"})
+    return _jsonable(out)
+
+
+@tool("hub", WRITE)
+async def refresh_mcp_server(server: str) -> dict:
+    """Reconnect to one MCP hub server (prefix or name) and read its tools again. Tools that are new or
+    changed still wait for an admin to accept them in Stackpilot (MCP hub)."""
+    from mmn.models import McpUpstream
+    from mmn.services import hub
+
+    p = current_principal()
+    async with sessionmaker()() as db:
+        with tenancy_unrestricted():
+            rows = list((await db.execute(select_upstreams(McpUpstream))).scalars())
+        u = next((r for r in rows if server.lower() in (r.namespace, r.name.lower(), r.id)), None)
+        if u is None or (p is not None and p.customers is not None
+                         and (u.environment_id is None or u.environment_id not in p.customers)):
+            raise ToolDenied("MCP server not found")
+        try:
+            diff = await hub.refresh(db, u)
+        except hub.HubError as e:
+            await db.commit()
+            raise ToolDenied(f"{u.name}: {e}") from e
+        await db.commit()
+        await hub.sync(db)
+    return {"ok": True, "server": u.name, "status": u.status, **diff}
+
+
+def tenancy_unrestricted():
+    from mmn.services import tenancy
+
+    return tenancy.unrestricted()
+
+
+def select_upstreams(model):
+    from sqlalchemy import select
+
+    return select(model).order_by(model.name)
+
+
+def _hub_result_summary(res: Any) -> dict[str, Any]:
+    if not isinstance(res, dict):
+        return {"type": type(res).__name__}
+    text = " ".join(str(c.get("text") or "") for c in res.get("content") or [] if isinstance(c, dict))
+    return {"is_error": bool(res.get("isError")), "output": text[:1500]}
+
+
+async def run_hub_tool(name: str, arguments: dict[str, Any]) -> Any:
+    """Call a tool of an MCP hub server, with the same checks as built-in tools: the ``hub`` scope, the
+    token's customers, the guardrails (allow, approve, block, paused) and the audit log."""
+    from mmn.services import gateway, hub
+
+    started = time.monotonic()
+    p = _principal.get()
+    approval_id = gateway.approved_call.get()
+    extra_kw = {"approval_id": approval_id} if approval_id else {}
+    spec = gateway.REGISTRY.get(name)
+    h = hub.HUB_TOOLS.get(name)
+    args = dict(arguments or {})
+    target = h.upstream_name if h else gateway.namespace_of(name)
+    info = {"upstream": h.upstream_name if h else None, "upstream_tool": h.name if h else None}
+
+    def ms() -> int:
+        return int((time.monotonic() - started) * 1000)
+
+    try:
+        _check("hub")
+        if spec is None or spec.source != "hub" or h is None:
+            raise ToolDenied(f"unknown tool {name}; the MCP hub may not offer it (anymore)")
+        if p is not None and p.customers is not None and (spec.customer_id is None or spec.customer_id not in p.customers):
+            raise ToolDenied("this MCP server is not available to this token (it belongs to another customer, or "
+                             "is shared and this token is tied to specific customers)")
+        if approval_id is None:
+            outcome = await _guard(p, name, spec.risk, args)
+            if outcome is not None:
+                await _audit(p, name, args, True, result=outcome, ms=ms(), target=target, extra=info)
+                return outcome
+        result = await hub.call_tool(name, args)
+    except Exception as e:
+        msg = str(e) or type(e).__name__
+        await _audit(p, name, args, False, error=msg, ms=ms(), target=target, extra=info, **extra_kw)
+        if isinstance(e, ToolError):
+            raise
+        raise ToolDenied(msg if isinstance(e, hub.HubError) else f"{type(e).__name__}: {msg}") from e
+    summary = _hub_result_summary(result)
+    if summary.get("is_error"):
+        await _audit(p, name, args, False, error=summary.get("output") or "the tool reported an error", ms=ms(),
+                     target=target, extra=info, **extra_kw)
+    else:
+        await _audit(p, name, args, True, result=summary, ms=ms(), target=target, extra=info, **extra_kw)
+    return result
+
+
+async def _rules(p: Principal | None) -> tuple[dict[str, str], dict[str, str]]:
+    from mmn.services import gateway
+
+    async with sessionmaker()() as db:
+        g = await gateway.get_policy(db, "global")
+        t = await gateway.get_policy(db, "token", p.token_id) if p is not None else None
+    return dict(g.tools or {}) if g else {}, dict(t.tools or {}) if t else {}
+
+
+def _blocked(name: str, *layers: dict[str, str]) -> bool:
+    from mmn.services import gateway
+
+    ns = gateway.namespace_of(name)
+    for rules in layers:
+        if rules.get(name) == "block" or (ns and rules.get(f"{ns}__*") == "block"):
+            return True
+    return False
+
+
+_builtin_list_tools = mcp.list_tools
+_builtin_call_tool = mcp.call_tool
+
+
+async def _list_tools():
+    """Built-in tools plus the MCP hub tools this token may use. Tools that the tool catalog switched off
+    (a "block" rule for the tool in the defaults or for this token) are left out."""
+    from mcp.types import Tool as MCPTool
+
+    from mmn.services import hub
+
+    tools = await _builtin_list_tools()
+    p = _principal.get()
+    g_rules, t_rules = await _rules(p)
+    out = [t for t in tools if not _blocked(t.name, g_rules, t_rules)]
+    if p is None or "hub" not in p.scopes:
+        return out
+    await hub.ensure_synced()
+    for h in sorted(hub.HUB_TOOLS.values(), key=lambda h: h.exposed):
+        if p.customers is not None and (h.customer_id is None or h.customer_id not in p.customers):
+            continue
+        if _blocked(h.exposed, g_rules, t_rules):
+            continue
+        ann = {k: v for k, v in h.annotations.items() if k != "title"}
+        ann.setdefault("readOnlyHint", h.risk == "read")
+        ann["destructiveHint"] = h.risk == "destructive"
+        out.append(MCPTool(name=h.exposed, title=h.title, description=f"[{h.upstream_name}] {h.description}".strip(),
+                           input_schema=h.input_schema or {"type": "object", "properties": {}},
+                           annotations=ToolAnnotations(**ann)))
+    return out
+
+
+async def _call_tool(name: str, arguments: dict[str, Any], context=None):
+    from mcp.types import CallToolResult, TextContent
+
+    from mmn.services import gateway, hub
+
+    spec = gateway.REGISTRY.get(name)
+    if gateway.namespace_of(name) is None or (spec is not None and spec.source is None):
+        return await _builtin_call_tool(name, arguments, context)
+    await hub.ensure_synced()
+    try:
+        res = await run_hub_tool(name, arguments)
+    except ToolError as e:
+        return CallToolResult(content=[TextContent(type="text", text=str(e))], is_error=True)
+    if isinstance(res, dict) and isinstance(res.get("content"), list) and "status" not in res:
+        try:
+            return CallToolResult.model_validate(res)
+        except Exception:  # noqa: BLE001 - fall back to plain JSON
+            pass
+    return CallToolResult(content=[TextContent(type="text", text=json.dumps(res, default=str))],
+                          structured_content=res if isinstance(res, dict) else None)
+
+
+mcp.list_tools = _list_tools  # type: ignore[method-assign]
+mcp.call_tool = _call_tool  # type: ignore[method-assign]
 
 
 # ------------------------------------------------------------------ resources: customer context

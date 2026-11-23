@@ -161,7 +161,22 @@ async def _approvals_expire_job() -> None:
         await db.commit()
 
 
+async def _hub_health_job() -> None:
+    from mmn.models import McpUpstream
+    from mmn.services import hub, tenancy
+
+    async with sessionmaker()() as db:
+        with tenancy.unrestricted():
+            rows = list((await db.execute(select(McpUpstream).where(McpUpstream.enabled.is_(True)))).scalars())
+        for u in rows:
+            await hub.check(db, u)
+            await db.commit()
+        await hub.sync(db)
+
+
 async def start() -> None:
+    scheduler.add_job(_hub_health_job, "interval", minutes=5, id="hub-health", replace_existing=True,
+                      coalesce=True, max_instances=1)
     scheduler.add_job(_approvals_expire_job, "interval", minutes=5, id="ai-approvals-expire", replace_existing=True)
     scheduler.add_job(_update_check_job, CronTrigger(hour="*/6", minute=17, timezone="UTC"), id="update-check",
                       replace_existing=True, coalesce=True)
