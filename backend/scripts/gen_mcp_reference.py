@@ -38,6 +38,7 @@ SECTION_TITLES = {
     "GitHub deployments": "Deployments from GitHub",
     "UniFi (phase 6)": "UniFi Network and Access",
     "AI gateway: approvals and guardrails": "AI gateway: approvals and guardrails",
+    "MCP hub": "MCP hub (tools of other MCP servers appear as `<prefix>__<tool>`)",
 }
 SKIP_SECTIONS = {"ASGI wiring", "resources: customer context"}
 RISK_BADGE = {"read": "🟢 read", "operate": "🔵 operate", "change": "🟠 change", "destructive": "🔴 destructive"}

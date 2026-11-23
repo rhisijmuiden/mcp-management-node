@@ -2755,9 +2755,11 @@ async def _list_tools():
 
     tools = await _builtin_list_tools()
     p = _principal.get()
+    if p is None:
+        return tools
     g_rules, t_rules = await _rules(p)
     out = [t for t in tools if not _blocked(t.name, g_rules, t_rules)]
-    if p is None or "hub" not in p.scopes:
+    if "hub" not in p.scopes:
         return out
     await hub.ensure_synced()
     for h in sorted(hub.HUB_TOOLS.values(), key=lambda h: h.exposed):

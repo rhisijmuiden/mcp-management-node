@@ -126,12 +126,43 @@ UniFi actions and doors. See [scopes](mcp-tools.md#scopes).
 waited for approval or failed. Together with the app's [audit log](#audit-log) you can always see
 who, or which AI, did what.
 
+### MCP hub
+
+**MCP hub** brings your other MCP servers behind the same endpoint, so your AI needs one connection for
+everything: Keystone (VoIP), GitHub, Home Assistant or any other MCP server.
+
+- **Connect** over Streamable HTTP (directly, or **through an agent** in the customer's network, so a server on the
+  LAN needs no open port), the older HTTP + SSE transport, or as a **command** that Stackpilot starts itself (stdio,
+  for example `github-mcp-server stdio`). Certificates can be checked, pinned or (not recommended) ignored.
+- **Sign-in per server**: a bearer token, your own headers (API key) or **OAuth** (you sign in once, Stackpilot keeps
+  and renews the tokens). Every secret is stored encrypted.
+- **Prefix per server**: tools appear as `<prefix>__<tool>`, for example `github__create_issue` or
+  `keystone__list_calls` (Claude and most AI tools do not accept a dot in tool names).
+- **You accept tools first.** A new or changed tool (name, description, parameters or hints) is withdrawn until you
+  accept it again, so a server can't quietly slip new instructions to your AI ("tool poisoning").
+- **Same rules**: every tool gets a risk level, suggested from the server's own `readOnlyHint` / `destructiveHint`
+  and adjustable, and goes through the same policies, approvals, maintenance windows, kill switch and audit log. A
+  server can belong to a customer: only tokens for that customer see it and its calls follow that customer's
+  policies. Shared servers (GitHub) are only for tokens for all customers.
+- **Access**: an AI connection or token needs the `hub` scope; switch it on per AI app on the MCP hub page.
+- **Health**: status, tool count, response time and the last error per server, checked every 5 minutes. New tools
+  are written to the audit log.
+- **Ready-made**: **GitHub** (the official GitHub MCP server, with a fine-grained token or GitHub App with minimal
+  permissions) to run projects from A to Z: repository, issues, pull requests, releases and Actions, then deploy into a
+  container with [Deployments](#deployments-from-github). **Keystone** for the VoIP central, through an agent.
+
+### Tool catalog
+
+**Tool catalog** lists every tool your AI can get, from Stackpilot itself and from the MCP hub, with its risk
+level. Switch single tools or a whole MCP hub server off for every token, or for one token. A switched-off tool is
+not shown to the AI and calls are refused (stored as a "block" rule, so it also shows on Policies & guardrails).
+
 ### The MCP server
 
 - Endpoint `https://<your address>/mcp`, Streamable HTTP.
 - **OAuth 2.1** with dynamic client registration and PKCE for Claude, ChatGPT and VS Code, or a personal **API token**
   for scripts.
-- **133 tools** across customers, Proxmox, servers, network, cluster, monitoring, deployments, UniFi, backups, updates
+- **135 tools** across customers, Proxmox, servers, network, cluster, monitoring, deployments, UniFi, backups, updates
   and the gateway itself. See the **[MCP tool reference](mcp-tools.md)**.
 - Destructive tools require confirmation of the exact target, commands and service actions need a stated reason, and
   network changes can be tried as a dry run first.
