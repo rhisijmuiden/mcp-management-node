@@ -20,7 +20,10 @@ func runPlatform(fn func(ctx context.Context)) bool {
 	if !winsvc.IsService() {
 		return false
 	}
-	// Exit with an error after a self-update so the service recovery restarts the new version.
+	// After a self-update the service stops cleanly and a helper starts the new version. Only
+	// if that helper cannot be started does the agent exit with an error, so the service
+	// recovery restarts it (Windows then logs event 7031).
+	client.RestartHook = winsvc.Restart
 	client.RestartExitCode = 1
 	if err := winsvc.Run(config.StateDir, fn); err != nil {
 		log.Printf("service: %v", err)
