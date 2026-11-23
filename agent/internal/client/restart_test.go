@@ -9,11 +9,11 @@ import (
 	"github.com/rhisijmuiden/stackpilot/agent/internal/winsvc"
 )
 
-func withRestartSettings(t *testing.T, drain time.Duration, hook func() bool) {
+func withRestartSettings(t *testing.T, drain time.Duration, before func()) {
 	t.Helper()
-	oldDrain, oldDelay, oldHook := DrainTimeout, restartDelay, RestartHook
-	DrainTimeout, restartDelay, RestartHook = drain, 0, hook
-	t.Cleanup(func() { DrainTimeout, restartDelay, RestartHook = oldDrain, oldDelay, oldHook })
+	oldDrain, oldDelay, oldBefore := DrainTimeout, restartDelay, BeforeRestart
+	DrainTimeout, restartDelay, BeforeRestart = drain, 0, before
+	t.Cleanup(func() { DrainTimeout, restartDelay, BeforeRestart = oldDrain, oldDelay, oldBefore })
 }
 
 // The update waits for a running command to finish before the agent restarts.
@@ -52,35 +52,38 @@ func TestRestartAfterDrainTimeout(t *testing.T) {
 	}
 }
 
-// With a restart hook (the Windows service) the agent does not exit with an error.
-func TestRestartUsesHook(t *testing.T) {
-	var exited, hooked atomic.Int32
-	a := &Agent{exit: func(int) { exited.Add(1) }}
-	withRestartSettings(t, time.Second, func() bool { hooked.Add(1); return true })
+// The agent always exits so the service manager restarts it (on Windows: the service recovery),
+// after arming the safety net. A clean stop that relies on a helper process to start the service
+// again left every Windows agent stopped after the 0.8.0 update.
+func TestRestartArmsSafetyNetThenExits(t *testing.T) {
+	var order []string
+	var code atomic.Int32
+	code.Store(-1)
+	a := &Agent{exit: func(c int) { order = append(order, "exit"); code.Store(int32(c)) }}
+	withRestartSettings(t, time.Second, func() { order = append(order, "arm") })
 	a.inflight.Store(1)
 	a.restartAfterUpdate("9.9.9")
-	if hooked.Load() != 1 || exited.Load() != 0 {
-		t.Fatalf("hook %d, exit %d; want the hook only", hooked.Load(), exited.Load())
+	if strings.Join(order, ",") != "arm,exit" || code.Load() != int32(RestartExitCode) {
+		t.Fatalf("order %v code %d; want arm then exit(%d)", order, code.Load(), RestartExitCode)
 	}
 }
 
-// When the hook cannot arrange a restart the agent falls back to exiting.
-func TestRestartHookFailureFallsBackToExit(t *testing.T) {
-	var exited atomic.Int32
-	a := &Agent{exit: func(int) { exited.Add(1) }}
-	withRestartSettings(t, time.Second, func() bool { return false })
-	a.inflight.Store(1)
-	a.restartAfterUpdate("9.9.9")
-	if exited.Load() != 1 {
-		t.Fatal("agent did not exit after the hook failed")
-	}
-}
-
-func TestWindowsRestartScript(t *testing.T) {
-	s := winsvc.RestartScript("mmn-agent")
-	for _, want := range []string{"$n='mmn-agent'", "Get-Service -Name $n", "'Stopped'", "Start-Service -Name $n"} {
+func TestWindowsRestartTaskScript(t *testing.T) {
+	s := winsvc.RestartTaskScript("mmn-agent", 90)
+	for _, want := range []string{
+		"Register-ScheduledTask -TaskName 'Stackpilot agent restart'",
+		"-UserId 'SYSTEM'",
+		"AddSeconds(90)",
+		"Get-Service -Name ''mmn-agent''", // quoted inside the single-quoted $cmd
+		"Start-Service -Name ''mmn-agent''",
+		"-Force",
+		"'armed'",
+	} {
 		if !strings.Contains(s, want) {
-			t.Errorf("script lacks %q: %s", want, s)
+			t.Errorf("script lacks %q:\n%s", want, s)
 		}
+	}
+	if !strings.Contains(winsvc.RemoveTaskScript(), "Unregister-ScheduledTask -TaskName 'Stackpilot agent restart'") {
+		t.Error("remove script")
 	}
 }
