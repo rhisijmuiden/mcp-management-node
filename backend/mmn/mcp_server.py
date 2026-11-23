@@ -80,7 +80,7 @@ def _summary(result: Any) -> Any:
         return {"items": len(result)}
     if isinstance(result, dict):
         keys = ("ok", "status", "state", "channel", "restored", "update_available", "error", "tag", "id", "exit_code",
-                "stage", "timed_out")
+                "stage", "timed_out", "approval_id")
         picked = {k: result[k] for k in keys if k in result and not isinstance(result[k], (dict, list))}
         if "exit_code" in result and ("stdout" in result or "stderr" in result):
             # Commands: keep the end of the output, so the audit log shows what happened.
@@ -90,10 +90,12 @@ def _summary(result: Any) -> Any:
 
 
 async def _audit(p: Principal | None, tool_name: str, args: dict[str, Any], success: bool, *,
-                 result: Any = None, error: str | None = None, ms: int = 0) -> None:
+                 result: Any = None, error: str | None = None, ms: int = 0, approval_id: str | None = None) -> None:
     from mmn.models import AuditLog
 
     detail = {"tool": tool_name, "args": _redact(args), "duration_ms": ms}
+    if approval_id:
+        detail["approval_id"] = approval_id
     if p is not None:
         detail.update(token=p.token_name, token_id=p.token_id, token_kind=p.token_kind, client=p.client)
     if success:
@@ -121,36 +123,100 @@ def _target_of(args: dict[str, Any]) -> str | None:
     return None
 
 
+# Tools the AI may always call, also while AI actions are paused: they only report on approvals
+# and guardrails.
+GUARD_EXEMPT = {"get_approval", "get_guardrails"}
+
+
+async def _guard(p: Principal | None, name: str, risk: str, args: dict[str, Any]) -> Any:
+    """Apply the AI gateway policy. Returns None when the call may run now, otherwise what the tool
+    answers instead: the result of an approval that was decided while waiting, or a pending notice."""
+    from mmn.services import ai_notify, gateway
+
+    clean = _jsonable(args)
+    async with sessionmaker()() as db:
+        d = await gateway.decide(db, tool=name, risk=risk, args=clean, token_id=p.token_id if p else None,
+                                 token_customers=p.customers if p else None)
+        if d.action == "allow":
+            return None
+        texts = "; ".join(gateway.reason_text(r) for r in d.reasons)
+        if d.action == "paused":
+            raise ToolDenied(f"Refused: {texts}. Nothing was changed. Tell the user; an admin can resume AI actions "
+                             "in Stackpilot (Command center).")
+        if d.action == "block":
+            raise ToolDenied(f"Blocked by policy: {texts}. Nothing was changed; this cannot be approved. Tell the user.")
+        a, created = await gateway.create_approval(
+            db, tool=name, risk=risk, args=clean, args_view=_redact(clean), target=_target_of(clean), decision=d,
+            token_id=p.token_id if p else None, token_name=p.token_name if p else None,
+            user_id=p.user_id if p else None, username=p.username if p else None, client=p.client if p else {})
+        await db.commit()
+        if created:
+            await ai_notify.notify(db, a)
+        cfg = await gateway.gateway_settings(db)
+        url = await ai_notify.approval_url(db, a.id)
+        wait = max(0, min(int(cfg.get("approval_wait_seconds") or 0), 120))
+    final = await gateway.wait_for(a.id, wait) or a
+    if final.status == "executed":
+        return final.result
+    if final.status == "failed":
+        raise ToolDenied(f"Approved by {final.decided_by}, but the call failed: {final.error}")
+    if final.status == "rejected":
+        note = f": {final.decision_note}" if final.decision_note else ""
+        raise ToolDenied(f"Rejected by {final.decided_by}{note}. Nothing was changed. Do not retry; ask the user.")
+    if final.status == "expired":
+        raise ToolDenied("The approval request expired. Nothing was changed.")
+    return gateway.pending_response(final, url)
+
+
 def tool(scope: str, annotations: ToolAnnotations, *, all_customers: bool = False):
-    """Register an MCP tool that checks ``scope`` and writes every call to the audit log.
+    """Register an MCP tool that checks ``scope``, applies the AI gateway policy (allow, approve,
+    block, paused) and writes every call to the audit log.
 
     ``all_customers``: the tool works on the app itself or across customers (app updates, app
     backups, mail server, audit log, template library, scheduled tasks), so a token that is tied
     to some customers may not use it. Every other tool only sees the token's customers.
     """
+    from mmn.services import gateway
 
     def deco(fn):
+        name = fn.__name__
+        risk = gateway.risk_from_annotations(name, bool(annotations.read_only_hint), bool(annotations.destructive_hint))
+        sig = inspect.signature(fn)
+        dry_default = sig.parameters["dry_run"].default if "dry_run" in sig.parameters else None
+
         @functools.wraps(fn)
         async def wrapper(*args: Any, **kwargs: Any):
             started = time.monotonic()
             bound = inspect.signature(fn).bind_partial(*args, **kwargs).arguments
             p = _principal.get()
+            approval_id = gateway.approved_call.get()
+            extra = {"approval_id": approval_id} if approval_id else {}
             try:
                 _check(scope)
                 if all_customers and p is not None and p.customers is not None:
                     raise ToolDenied("this tool works on the whole app or across customers; this token is tied to "
                                      "specific customers. Use a token for all customers.")
+                if approval_id is None and name not in GUARD_EXEMPT:
+                    # A dry run only shows what would change.
+                    call_risk = "read" if bound.get("dry_run", dry_default) is True else risk
+                    outcome = await _guard(p, name, call_risk, bound)
+                    if outcome is not None:
+                        await _audit(p, name, bound, True, result=outcome, ms=int((time.monotonic() - started) * 1000))
+                        return outcome
                 result = await fn(*args, **kwargs)
             except Exception as e:
                 msg = str(e) or type(e).__name__
-                await _audit(p, fn.__name__, bound, False, error=msg, ms=int((time.monotonic() - started) * 1000))
+                await _audit(p, name, bound, False, error=msg, ms=int((time.monotonic() - started) * 1000), **extra)
                 if isinstance(e, ToolError):
                     raise
                 raise ToolDenied(f"{type(e).__name__}: {msg}") from e
-            await _audit(p, fn.__name__, bound, True, result=result, ms=int((time.monotonic() - started) * 1000))
+            await _audit(p, name, bound, True, result=result, ms=int((time.monotonic() - started) * 1000), **extra)
             return result
 
         mcp.tool(annotations=annotations)(wrapper)
+        doc = inspect.getdoc(fn) or ""
+        gateway.register(gateway.ToolSpec(name=name, scope=scope, risk=risk, all_customers=all_customers,
+                                          description=" ".join(doc.split("\n\n")[0].split()), call=wrapper))
         return fn
 
     return deco
@@ -205,6 +271,14 @@ gateways, switches and APs with status, uplink, firmware and clients, WiFi with 
 ("who opened the server room last night"), `list_door_schedules`. Actions (restart a device,
 power-cycle a PoE port, guest access, switch an SSID, unlock a door, lock rules) need a key with write
 rights, `confirm` and the user's go-ahead; unlocking a door is physical security, always ask.
+
+Guardrails (AI gateway): every tool has a risk level (read, operate, change, destructive) and the
+admin's policies decide per customer and per token whether a call runs, needs approval or is blocked
+(`get_guardrails` shows them; changes outside a customer's maintenance window often need approval).
+A call that needs approval answers status "pending_approval" with an `approval_id`: it has NOT run.
+Tell the user, do not retry, and check later with `get_approval`; once an admin approves it, the app
+runs it and `get_approval` returns the result. An admin can pause all AI actions; calls are then
+refused until they resume.
 
 Nodes and servers can be named by id or by name. Every call is written to the audit log with your token's name.
 Destructive tools need `confirm` set to the exact node name, or are marked destructive: ask the user
@@ -1644,7 +1718,7 @@ async def set_firewall(node: str, level: str, enable: bool | None = None, policy
 async def add_firewall_rule(node: str, level: str, action: str, type: str = "in", proto: str | None = None,
                             dport: str | None = None, source: str | None = None, dest: str | None = None,
                             macro: str | None = None, comment: str = "", enable: bool = True,
-                            guest: str | None = None, group: str | None = None) -> list[dict]:
+                            guest: str | None = None, group: str | None = None) -> list[dict] | dict:
     """Add a firewall rule at level cluster, node, guest or group (security group). action ACCEPT,
     DROP or REJECT (or a group name with type 'group'). Returns the rules of that level."""
     from mmn.services import network
@@ -1660,7 +1734,7 @@ async def add_firewall_rule(node: str, level: str, action: str, type: str = "in"
 
 @tool("network", DESTRUCTIVE)
 async def delete_firewall_rule(node: str, level: str, pos: int, confirm: int, guest: str | None = None,
-                               group: str | None = None) -> list[dict]:
+                               group: str | None = None) -> list[dict] | dict:
     """Delete the firewall rule at position `pos` (see get_firewall). Set `confirm` to the same position."""
     from mmn.services import network
 
@@ -1855,7 +1929,7 @@ async def save_backup_job(node: str, storage: str, schedule: str = "sun 01:00", 
 
 
 @tool("cluster", WRITE)
-async def run_backup_job(node: str, job_id: str) -> list[dict]:
+async def run_backup_job(node: str, job_id: str) -> list[dict] | dict:
     """Run a backup job now (a vzdump task per node). Follow the jobs with get_node_job."""
     from mmn.services import cluster
 
@@ -2481,6 +2555,50 @@ async def set_door_lock_rule(door: str, rule: str, reason: str, confirm: str, mi
         return {"ok": True, "door": d["name"], "rule": rule, "minutes": minutes}
 
     return await _with_db(run)
+
+
+# ------------------------------------------------------------------ AI gateway: approvals and guardrails
+@tool("read", RO)
+async def get_approval(approval_id: str) -> dict:
+    """The state of a call that waited for approval: pending, approved, running, executed (with the
+    tool's result), failed (with the error), rejected (with the admin's note) or expired. Only
+    approvals of this token. Do not retry a pending call; check again later."""
+    from mmn.models import AiApproval
+    from mmn.services import gateway
+
+    p = current_principal()
+    async with sessionmaker()() as db:
+        await gateway.expire_old(db)
+        await db.commit()
+        a = await db.get(AiApproval, approval_id)
+        if a is None or p is None or a.token_id != p.token_id:
+            raise ToolDenied("approval not found")
+        out = gateway.approval_out(a)
+    keep = ("id", "status", "tool", "target", "customer_names", "reason_texts", "created_at", "expires_at",
+            "decided_at", "decided_by", "decision_note", "executed_at", "error", "result")
+    return _jsonable({k: out[k] for k in keep})
+
+
+@tool("read", RO)
+async def get_guardrails(customer: str | None = None) -> dict:
+    """What this token may do without asking: per risk level (read, operate, change, destructive)
+    allow, approve or block, for one customer (name or id) or in general, plus whether AI actions are
+    paused and whether the customer is inside its maintenance window now. Also lists the tools with
+    their risk level when called without a customer."""
+    from mmn.services import gateway, nodes
+
+    p = current_principal()
+    async with sessionmaker()() as db:
+        cid = None
+        if customer:
+            try:
+                cid = (await nodes.get_environment(db, customer)).id
+            except nodes.NodeError as e:
+                raise ToolDenied(str(e)) from e
+        out = await gateway.effective_for(db, cid, p.token_id if p else None)
+    if not customer:
+        out["tools"] = {t["name"]: t["risk"] for t in gateway.catalog()}
+    return _jsonable(out)
 
 
 # ------------------------------------------------------------------ resources: customer context

@@ -153,7 +153,16 @@ def next_task_run(task_id: str) -> str | None:
     return nrt.isoformat() if nrt else None
 
 
+async def _approvals_expire_job() -> None:
+    from mmn.services import gateway
+
+    async with sessionmaker()() as db:
+        await gateway.expire_old(db)
+        await db.commit()
+
+
 async def start() -> None:
+    scheduler.add_job(_approvals_expire_job, "interval", minutes=5, id="ai-approvals-expire", replace_existing=True)
     scheduler.add_job(_update_check_job, CronTrigger(hour="*/6", minute=17, timezone="UTC"), id="update-check",
                       replace_existing=True, coalesce=True)
     scheduler.add_job(_stale_jobs, "interval", minutes=15, id="node-stale-jobs", replace_existing=True,

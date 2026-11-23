@@ -72,6 +72,13 @@ export function useLiveEvents() {
             qc.invalidateQueries({ queryKey: ["transfers"] });
             qc.invalidateQueries({ queryKey: ["transfer", String(msg.data.id ?? "")] });
           }
+          if (msg.event === "approval.created" || msg.event === "approval.changed") {
+            for (const k of ["approvals", "approvals-count", "approval", "gateway-overview"]) qc.invalidateQueries({ queryKey: [k] });
+            if (msg.event === "approval.created") window.dispatchEvent(new CustomEvent("mmn:approval", { detail: msg.data }));
+          }
+          if (msg.event === "gateway.paused" || msg.event === "gateway.policy") {
+            for (const k of ["gateway-status", "gateway-overview", "gateway-policies"]) qc.invalidateQueries({ queryKey: [k] });
+          }
           if (msg.event === "node.job") {
             const jid = String(msg.data.job_id ?? "");
             if (msg.data.line === undefined) {

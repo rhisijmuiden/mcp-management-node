@@ -29,12 +29,21 @@ def _psql(sql: str) -> None:
     subprocess.run(["psql", PG_ADMIN_URL, "-v", "ON_ERROR_STOP=1", "-q", "-c", sql], check=True)
 
 
+def _psql_db(sql: str) -> None:
+    url = _user_url.replace("postgresql+asyncpg://", "postgresql://")
+    subprocess.run(["psql", url, "-v", "ON_ERROR_STOP=1", "-q", "-c", sql], check=True)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def database():
     if not os.environ.get("MMN_TEST_DATABASE_URL"):
         _psql(f"DROP DATABASE IF EXISTS {TEST_DB} WITH (FORCE)")
         _psql(f"CREATE DATABASE {TEST_DB} OWNER mmn")
     subprocess.run([sys.executable, "-m", "mmn.cli", "migrate"], check=True)
+    # Most tests call destructive MCP tools directly: let them run without approval. The AI gateway
+    # tests set their own policies (see test_gateway.py).
+    _psql_db("INSERT INTO ai_policies (id, scope, scope_id, risks, tools, outside_window, paused, updated_at) "
+             "VALUES ('testglobal', 'global', NULL, '{\"destructive\": \"allow\"}', '{}', 'ignore', false, now())")
     yield
 
 

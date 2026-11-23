@@ -7,7 +7,7 @@ import { AgentsPage } from "@/pages/Agents";
 import { AiActivityPage, AuditPage, ConnectionsPage, TokensPage } from "@/pages/Ai";
 import { ConsentPage, ForgotPage, LoginPage, ResetPage, SetupPage } from "@/pages/AuthPages";
 import { BackupsPage } from "@/pages/Backups";
-import { Dashboard } from "@/pages/Dashboard";
+import { ApprovalsPage, CommandCenterPage, PoliciesPage, SessionsPage } from "@/pages/Gateway";
 import { HelpPage, McpCapabilitiesPage, McpHelpPage, NodesHelpPage } from "@/pages/Help";
 import { ConsolePage } from "@/pages/Console";
 import { GuestDetailPage, GuestsPage } from "@/pages/Guests";
@@ -60,11 +60,15 @@ export default function App() {
       <Route path="/console/node/:node" element={<RequireAuth admin><ConsolePage kind="node" /></RequireAuth>} />
       <Route path="/console/session/:sid" element={<RequireAuth admin><ConsolePage kind="session" /></RequireAuth>} />
       <Route element={<RequireAuth><Layout /></RequireAuth>}>
-        <Route index element={<Dashboard />} />
+        <Route index element={<CommandCenterPage />} />
+        <Route path="dashboard" element={<Navigate to="/" replace />} />
         <Route path="account" element={<AccountPage />} />
         <Route path="ai/connections" element={<ConnectionsPage />} />
         <Route path="ai/tokens" element={<TokensPage />} />
         <Route path="ai/activity" element={<RequireAuth admin><AiActivityPage /></RequireAuth>} />
+        <Route path="ai/approvals" element={<RequireAuth admin><ApprovalsPage /></RequireAuth>} />
+        <Route path="ai/policies" element={<RequireAuth admin><PoliciesPage /></RequireAuth>} />
+        <Route path="ai/sessions" element={<RequireAuth admin><SessionsPage /></RequireAuth>} />
         <Route path="help" element={<HelpPage />} />
         <Route path="help/mcp" element={<McpHelpPage />} />
         <Route path="help/capabilities" element={<McpCapabilitiesPage />} />
