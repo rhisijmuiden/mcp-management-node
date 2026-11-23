@@ -174,7 +174,32 @@ async def _hub_health_job() -> None:
         await hub.sync(db)
 
 
+async def _inventory_job() -> None:
+    from mmn.services import tenancy, workstations
+
+    try:
+        with tenancy.unrestricted():
+            await workstations.refresh_stale()
+    except Exception:  # noqa: BLE001
+        log.exception("workstation inventory refresh failed")
+
+
+async def _reports_job() -> None:
+    from mmn.services import reports
+
+    try:
+        done = await reports.run_schedule()
+        if done:
+            log.info("monthly reports made for: %s", ", ".join(done))
+    except Exception:  # noqa: BLE001
+        log.exception("monthly reports failed")
+
+
 async def start() -> None:
+    scheduler.add_job(_inventory_job, "interval", minutes=30, id="workstation-inventory", replace_existing=True,
+                      coalesce=True, max_instances=1)
+    scheduler.add_job(_reports_job, CronTrigger(minute=23, timezone="UTC"), id="customer-reports",
+                      replace_existing=True, coalesce=True, max_instances=1)
     scheduler.add_job(_hub_health_job, "interval", minutes=5, id="hub-health", replace_existing=True,
                       coalesce=True, max_instances=1)
     scheduler.add_job(_approvals_expire_job, "interval", minutes=5, id="ai-approvals-expire", replace_existing=True)

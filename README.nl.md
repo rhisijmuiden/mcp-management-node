@@ -15,7 +15,7 @@
   <a href="https://github.com/rhisijmuiden/stackpilot/releases/latest"><img alt="Laatste release" src="https://img.shields.io/github/v/release/rhisijmuiden/stackpilot?label=release&color=14213D"></a>
   <a href="https://github.com/rhisijmuiden/stackpilot/actions/workflows/release.yml"><img alt="Release build" src="https://img.shields.io/github/actions/workflow/status/rhisijmuiden/stackpilot/release.yml?label=build"></a>
   <img alt="Debian 13" src="https://img.shields.io/badge/draait%20op-Debian%2013-FF6B57">
-  <img alt="MCP-tools" src="https://img.shields.io/badge/MCP--tools-135-9CC3FF">
+  <img alt="MCP-tools" src="https://img.shields.io/badge/MCP--tools-144-9CC3FF">
   <img alt="Engels en Nederlands" src="https://img.shields.io/badge/talen-EN%20%7C%20NL-F6F7FB">
 </p>
 
@@ -51,7 +51,9 @@ AI-acties.
 | | |
 | --- | --- |
 | 🤖 **AI-gateway** | Commandocentrum, goedkeuringen-inbox (app + mail), beleid per risiconiveau, klant en token, onderhoudsvensters, noodknop, AI-sessies en activiteitenlog. |
-| 🧰 **135 MCP-tools** | Logs lezen, services herstarten, commando's uitvoeren, patchen, VM's, netwerk, HA, deploys en UniFi beheren, alles via één endpoint met OAuth 2.1 of API-tokens. [Volledige lijst](docs/mcp-tools.md). |
+| 🧰 **144 MCP-tools** | Logs lezen, services herstarten, commando's uitvoeren, patchen, VM's, netwerk, HA, deploys en UniFi beheren, alles via één endpoint met OAuth 2.1 of API-tokens. [Volledige lijst](docs/mcp-tools.md). |
+| 💻 **Werkplekken** | Pc's en laptops per klant: hardware, OS, aangemelde gebruiker, geïnstalleerde software, schijven en SSD-slijtage, Windows Update-geschiedenis, Defender, BitLocker/LUKS, firewall, TPM, een beveiligingsstatus, en acties op afstand (Defender-scan, definities bijwerken, groepsbeleid vernieuwen, bericht, afmelden). |
+| 📄 **Maandrapporten** | Eén rapport per klant per maand (PDF en HTML): beschikbaarheid, incidenten, updates, Proxmox-back-ups, beveiliging van werkplekken, AI-acties en aanbevelingen, op een vaste dag gemaild naar de klant of op verzoek gemaakt. |
 | 🏢 **Klanten** | Klantkiezer, klantpagina met Proxmox, servers, werkplekken, netwerk en AI-toegang, contactpersonen, notities voor de AI, onderhoudsvenster, SLA en een optimalisatiescan. |
 | 🖥️ **Proxmox VE** | Nodes, VM's en containers, console in de browser (noVNC / xterm.js), snapshots, migratie, aanmaken vanuit templates, community scripts, ISO of cloud image, CT-templatebibliotheek die naar alle nodes synct. |
 | 🌐 **Netwerk & cluster** | Bridges en VLAN's met gebruiksoverzicht, wijzigingen eerst als diff met automatische rollback, firewall, SDN-ontwerper, HA, replicatie, backupjobs en storage. |
@@ -151,7 +153,7 @@ zie **[installatie](docs/install.md)** (Engels).
 | Document | Inhoud |
 | --- | --- |
 | [Functiegids](docs/features.md) | Elk onderdeel van de app, pagina voor pagina |
-| [MCP-toolreferentie](docs/mcp-tools.md) | Alle 135 tools met risiconiveau, scope en parameters (gegenereerd uit de code) |
+| [MCP-toolreferentie](docs/mcp-tools.md) | Alle 144 tools met risiconiveau, scope en parameters (gegenereerd uit de code) |
 | [Installatie](docs/install.md) | Installeren, upgraden, reverse proxy (Zoraxy), agents, bestandslocaties, ontwikkelen |
 | [Architectuur](docs/architecture.md) | Onderdelen, agentprotocol, beveiligingsmodel |
 | [Releasegeschiedenis](docs/history.md) | Wat elke fase en release toevoegde |
@@ -165,7 +167,7 @@ zie **[installatie](docs/install.md)** (Engels).
 | 7 | Klanten centraal | ✅ Klaar (v0.7.0) |
 | 8 | AI-gateway: commandocentrum, goedkeuringen, beleid, noodknop | ✅ Klaar (v0.8.0) |
 | 9 | **MCP-hub**: andere MCP-servers registreren (Keystone VoIP, GitHub) en hun tools doorgeven met dezelfde authenticatie, beleid en audit; toolcatalogus met aan/uit per tool en token | ✅ Klaar (v0.9.0) |
-| 10 | **Werkplekken en maandrapport**: pc's en laptops met de agent, maandrapport per klant als PDF (updates, incidenten, backups, AI-acties) | 📅 Gepland |
+| 10 | **Werkplekken en maandrapport**: inventaris en beveiligingsstatus per pc (Defender, BitLocker, patches, schijven, software), acties op afstand, maandrapport per klant als PDF gemaild naar de contactpersonen | ✅ Klaar (v0.10.0) |
 
 ## Releases en kanalen
 

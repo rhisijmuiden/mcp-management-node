@@ -63,7 +63,12 @@ def _tls_context(cfg: dict[str, Any]) -> ssl.SSLContext:
     return ctx
 
 
-def build_message(cfg: dict[str, Any], to: list[str], subject: str, html: str, text: str) -> EmailMessage:
+# (filename, mime type such as "application/pdf", content)
+Attachment = tuple[str, str, bytes]
+
+
+def build_message(cfg: dict[str, Any], to: list[str], subject: str, html: str, text: str,
+                  attachments: list[Attachment] | None = None) -> EmailMessage:
     msg = EmailMessage()
     from_addr = cfg["from_address"]
     msg["From"] = formataddr((cfg.get("from_name") or "", from_addr))
@@ -76,6 +81,9 @@ def build_message(cfg: dict[str, Any], to: list[str], subject: str, html: str, t
     msg["Auto-Submitted"] = "auto-generated"
     msg.set_content(text)
     msg.add_alternative(html, subtype="html")
+    for name, mime, data in attachments or []:
+        maintype, _, subtype = mime.partition("/")
+        msg.add_attachment(data, maintype=maintype, subtype=subtype or "octet-stream", filename=name)
     return msg
 
 
@@ -95,10 +103,11 @@ def dkim_sign(cfg: dict[str, Any], raw: bytes) -> bytes:
     return sig + raw
 
 
-async def send_with_config(cfg: dict[str, Any], to: list[str], subject: str, html: str, text: str) -> None:
+async def send_with_config(cfg: dict[str, Any], to: list[str], subject: str, html: str, text: str,
+                           attachments: list[Attachment] | None = None) -> None:
     if not cfg.get("host") or not cfg.get("from_address"):
         raise MailNotConfigured("SMTP host and from address are required")
-    msg = build_message(cfg, to, subject, html, text)
+    msg = build_message(cfg, to, subject, html, text, attachments)
     if "Date" not in msg:
         from email.utils import formatdate
 
@@ -123,14 +132,15 @@ async def send_with_config(cfg: dict[str, Any], to: list[str], subject: str, htm
     await aiosmtplib.send(raw, sender=cfg["from_address"], recipients=to, **kwargs)
 
 
-async def send_mail(db: AsyncSession, to: list[str] | str, content: MailContent, lang: str = "en") -> None:
+async def send_mail(db: AsyncSession, to: list[str] | str, content: MailContent, lang: str = "en",
+                    attachments: list[Attachment] | None = None) -> None:
     cfg = await get_setting(db, "mail")
     if not cfg.get("enabled"):
         raise MailNotConfigured("Mail is disabled")
     general = await get_setting(db, "general")
     recipients = [to] if isinstance(to, str) else to
     html, text = render(content, app=general["app_name"], lang=lang)
-    await send_with_config(cfg, recipients, content.subject, html, text)
+    await send_with_config(cfg, recipients, content.subject, html, text, attachments)
 
 
 async def try_send_mail(db: AsyncSession, to: list[str] | str, content: MailContent, lang: str = "en") -> bool:
