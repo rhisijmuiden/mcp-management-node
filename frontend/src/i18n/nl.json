@@ -3095,5 +3095,108 @@
     "send_title": "Rapport mailen",
     "send_hint": "De pdf en de HTML-versie gaan als bijlage mee.",
     "sent_to": "Gemaild naar {{to}}"
+  },
+  "opt": {
+    "node_offline": {
+      "f": "De node is offline (geen agentverbinding).",
+      "s": "Controleer stroom en netwerk, of de mmn-agent-service op de node."
+    },
+    "node_mem_high": {
+      "f": "Het geheugengebruik is {{pct}}%.",
+      "s": "Verplaats een guest naar een rustigere node, verlaag het guestgeheugen of voeg RAM toe."
+    },
+    "storage_full": {
+      "f": "Opslag {{storage}} is {{pct}}% vol.",
+      "s": "Verwijder oude back-ups, ISO's, snapshots of ongebruikte schijven, of vergroot de opslag."
+    },
+    "smart_bad": {
+      "f": "De SMART-status van {{disk}} ({{model}}) is {{health}}.",
+      "s": "Vervang de schijf binnenkort en controleer of de back-ups recent zijn."
+    },
+    "cluster_imbalance": {
+      "f": "{{busy}} gebruikt {{busy_pct}}% geheugen terwijl {{quiet}} {{quiet_pct}}% gebruikt.",
+      "s": "Verplaats {{guest}} naar {{quiet}} om het cluster te balanceren."
+    },
+    "cluster_imbalance_any": {
+      "f": "{{busy}} gebruikt {{busy_pct}}% geheugen terwijl {{quiet}} {{quiet_pct}}% gebruikt.",
+      "s": "Verplaats een guest naar {{quiet}} om het cluster te balanceren."
+    },
+    "guest_disk_full": {
+      "f": "De rootschijf is {{pct}}% vol.",
+      "s": "Ruim logs en caches in de container op of vergroot de schijf."
+    },
+    "guest_mem_high": {
+      "f": "Gebruikt {{pct}}% van het geheugen.",
+      "s": "Geef meer geheugen als hij traag is of swapt."
+    },
+    "guests_stopped": {
+      "f": "Gestopt: {{names}}.",
+      "s": "Verwijder guests die niet meer nodig zijn (na een back-up) om schijfruimte vrij te maken.",
+      "t": "{{count}} gestopte guest(s)"
+    },
+    "machine_offline": {
+      "f": "Offline (geen agentverbinding).",
+      "s": "Controleer de machine en de agent-service."
+    },
+    "workstation_offline": {
+      "f": "Offline of in slaapstand.",
+      "s": "Werkplekken worden opnieuw gecontroleerd zodra ze online komen."
+    },
+    "updates_pending": {
+      "f": "{{count}} update(s) wachten.",
+      "s": "Installeer ze in het onderhoudsvenster."
+    },
+    "updates_pending_sec": {
+      "f": "{{count}} update(s) wachten, waarvan {{security}} beveiligingsupdate(s).",
+      "s": "Installeer ze in het onderhoudsvenster."
+    },
+    "reboot_pending": {
+      "f": "Na updates is een herstart nodig.",
+      "s": "Herstart in het onderhoudsvenster."
+    },
+    "agent_old": {
+      "f": "Agent {{version}} is ouder dan {{bundled}}.",
+      "s": "Werk de agent bij (zonder downtime)."
+    },
+    "services_failed": {
+      "f": "{{count}} mislukte service(s).",
+      "s": "Bekijk de mislukte services en herstart of schakel ze uit."
+    },
+    "disk_full": {
+      "f": "Schijf {{disk}} is {{pct}}% vol.",
+      "s": "Verwijder oude logs, tijdelijke bestanden en oude back-ups, of vergroot de schijf."
+    },
+    "machine_mem_high": {
+      "f": "Het geheugengebruik is {{pct}}%.",
+      "s": "Zoek het proces dat het geheugen gebruikt, of voeg geheugen toe."
+    },
+    "unifi_error": {
+      "f": "De UniFi-verbinding faalt: {{error}}.",
+      "s": "Controleer de API-sleutel en het adres van de console."
+    },
+    "unifi_offline": {
+      "f": "{{count}} UniFi-apparaat/apparaten offline.",
+      "s": "Controleer stroom, PoE en uplinks van die apparaten."
+    },
+    "firmware": {
+      "f": "Firmware-update beschikbaar voor {{device}} (nu {{firmware}}).",
+      "s": "Werk de firmware bij op een rustig moment."
+    },
+    "guest_isolation_open": {
+      "f": "Het gastnetwerk ({{networks}}) kan het LAN bereiken.",
+      "s": "Isoleer het gastnetwerk van het LAN met een firewall-zonebeleid."
+    },
+    "guest_isolation_partial": {
+      "f": "Het gastnetwerk ({{networks}}) kan het LAN deels bereiken.",
+      "s": "Isoleer het gastnetwerk van het LAN met een firewall-zonebeleid."
+    },
+    "open_alerts": {
+      "f": "{{count}} openstaande monitoringmelding(en).",
+      "s": "Bekijk de openstaande meldingen."
+    },
+    "no_window": {
+      "f": "Voor deze klant is geen onderhoudsvenster ingesteld.",
+      "s": "Spreek een onderhoudsvenster af en stel het in op de klantpagina, zodat updates gepland kunnen worden."
+    }
   }
 }

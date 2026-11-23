@@ -362,8 +362,8 @@ function ScanCard({ customer, admin }: { customer: Customer; admin: boolean }) {
               <li key={i} className="flex gap-3 rounded-md border border-line p-3 text-sm">
                 <Badge tone={SEV_TONE[f.severity]} className="h-fit shrink-0">{t(`cust.sev_${f.severity}`)}</Badge>
                 <div className="min-w-0 flex-1">
-                  <div><span className="font-semibold">{f.target}</span> · {f.finding}</div>
-                  <div className="text-muted">{f.suggestion}</div>
+                  <div><span className="font-semibold">{f.code ? t(`opt.${f.code}.t`, { ...f.params, defaultValue: f.target }) : f.target}</span> · {f.code ? t(`opt.${f.code}.f`, { ...f.params, defaultValue: f.finding }) : f.finding}</div>
+                  <div className="text-muted">{f.code ? t(`opt.${f.code}.s`, { ...f.params, defaultValue: f.suggestion }) : f.suggestion}</div>
                 </div>
               </li>
             ))}

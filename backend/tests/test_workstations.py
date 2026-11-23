@@ -329,3 +329,20 @@ async def test_report_periods():
     assert reports.period_label("2026-03", "nl") == "maart 2026"
     with pytest.raises(reports.NodeError):
         reports.month_bounds("2026-13", tz)
+
+
+def test_scan_findings_translate_to_dutch():
+    from mmn.services import customers, reports
+
+    f = customers._finding("medium", "updates", "srv1", "3 pending update(s), 1 security.", "Install them.",
+                           "install_node_updates", code="updates_pending_sec", count=3, security=1)
+    assert f["code"] == "updates_pending_sec" and f["params"] == {"count": 3, "security": 1}
+    assert reports.finding_texts(f, "en") == ("srv1", "3 pending update(s), 1 security.", "Install them.")
+    assert reports.finding_texts(f, "nl") == ("srv1", "3 update(s) wachten, waarvan 1 beveiligingsupdate(s).",
+                                              "Installeer ze in het onderhoudsvenster.")
+    stopped = customers._finding("low", "guests", "2 stopped guest(s)", "Stopped: 101 a, 102 b.", "Remove.",
+                                 code="guests_stopped", count=2, names="101 a, 102 b")
+    assert reports.finding_texts(stopped, "nl")[0] == "2 gestopte guest(s)"
+    # Missing parameters or an unknown code fall back to the English text.
+    assert reports.finding_texts({**f, "params": {}}, "nl")[1] == f["finding"]
+    assert reports.finding_texts({"target": "x", "finding": "y", "suggestion": "z"}, "nl") == ("x", "y", "z")

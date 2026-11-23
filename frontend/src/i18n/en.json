@@ -3095,5 +3095,108 @@
     "send_title": "Mail report",
     "send_hint": "The PDF and the HTML version are attached.",
     "sent_to": "Mailed to {{to}}"
+  },
+  "opt": {
+    "node_offline": {
+      "f": "The node is offline (no agent connection).",
+      "s": "Check power and network, or the mmn-agent service on the node."
+    },
+    "node_mem_high": {
+      "f": "Memory use is {{pct}}%.",
+      "s": "Move a guest to a quieter node, lower guest memory or add RAM."
+    },
+    "storage_full": {
+      "f": "Storage {{storage}} is {{pct}}% full.",
+      "s": "Remove old backups, ISOs, snapshots or unused disks, or extend the storage."
+    },
+    "smart_bad": {
+      "f": "SMART health of {{disk}} ({{model}}) is {{health}}.",
+      "s": "Replace the disk soon and check that backups are recent."
+    },
+    "cluster_imbalance": {
+      "f": "{{busy}} uses {{busy_pct}}% memory while {{quiet}} uses {{quiet_pct}}%.",
+      "s": "Move {{guest}} to {{quiet}} to balance the cluster."
+    },
+    "cluster_imbalance_any": {
+      "f": "{{busy}} uses {{busy_pct}}% memory while {{quiet}} uses {{quiet_pct}}%.",
+      "s": "Move a guest to {{quiet}} to balance the cluster."
+    },
+    "guest_disk_full": {
+      "f": "Root disk is {{pct}}% full.",
+      "s": "Clean up logs and caches in the container or grow its disk."
+    },
+    "guest_mem_high": {
+      "f": "Uses {{pct}}% of its memory.",
+      "s": "Give it more memory if it is slow or swaps."
+    },
+    "guests_stopped": {
+      "f": "Stopped: {{names}}.",
+      "s": "Remove guests that are no longer needed (after a backup) to free disk space.",
+      "t": "{{count}} stopped guest(s)"
+    },
+    "machine_offline": {
+      "f": "Offline (no agent connection).",
+      "s": "Check the machine and the agent service."
+    },
+    "workstation_offline": {
+      "f": "Offline or asleep.",
+      "s": "Workstations are checked again when they come online."
+    },
+    "updates_pending": {
+      "f": "{{count}} pending update(s).",
+      "s": "Install them in the maintenance window."
+    },
+    "updates_pending_sec": {
+      "f": "{{count}} pending update(s), {{security}} security.",
+      "s": "Install them in the maintenance window."
+    },
+    "reboot_pending": {
+      "f": "A reboot is pending after updates.",
+      "s": "Reboot in the maintenance window."
+    },
+    "agent_old": {
+      "f": "Agent {{version}} is older than {{bundled}}.",
+      "s": "Update the agent (no downtime)."
+    },
+    "services_failed": {
+      "f": "{{count}} failed service(s).",
+      "s": "Look at the failed services and restart or disable them."
+    },
+    "disk_full": {
+      "f": "Disk {{disk}} is {{pct}}% full.",
+      "s": "Remove old logs, temp files and old backups, or extend the disk."
+    },
+    "machine_mem_high": {
+      "f": "Memory use is {{pct}}%.",
+      "s": "Find the process that uses the memory, or add memory."
+    },
+    "unifi_error": {
+      "f": "The UniFi connection fails: {{error}}.",
+      "s": "Check the API key and the address of the console."
+    },
+    "unifi_offline": {
+      "f": "{{count}} UniFi device(s) offline.",
+      "s": "Check power, PoE and uplinks of those devices."
+    },
+    "firmware": {
+      "f": "Firmware update available for {{device}} (now {{firmware}}).",
+      "s": "Update the firmware in a quiet moment."
+    },
+    "guest_isolation_open": {
+      "f": "The guest network ({{networks}}) can reach the LAN (open).",
+      "s": "Isolate the guest network from the LAN with a firewall zone policy."
+    },
+    "guest_isolation_partial": {
+      "f": "The guest network ({{networks}}) can reach the LAN (partial).",
+      "s": "Isolate the guest network from the LAN with a firewall zone policy."
+    },
+    "open_alerts": {
+      "f": "{{count}} open monitoring alert(s).",
+      "s": "Look at the open alerts."
+    },
+    "no_window": {
+      "f": "No maintenance window is set for this customer.",
+      "s": "Agree on a maintenance window and set it on the customer page, so updates can be planned."
+    }
   }
 }
