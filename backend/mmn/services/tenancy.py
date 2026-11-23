@@ -65,6 +65,7 @@ def _criteria(ids: list[str]):
     from mmn.models import (
         Alert,
         ConfigBackup,
+        CustomerReport,
         Deployment,
         DeploymentRun,
         Environment,
@@ -85,6 +86,7 @@ def _criteria(ids: list[str]):
     return [
         with_loader_criteria(Environment, Environment.id.in_(ids), include_aliases=True),
         with_loader_criteria(Node, Node.environment_id.in_(ids), include_aliases=True),
+        with_loader_criteria(CustomerReport, CustomerReport.environment_id.in_(ids), include_aliases=True),
         with_loader_criteria(PairingCode, PairingCode.environment_id.in_(ids), include_aliases=True),
         with_loader_criteria(UnifiConnection, UnifiConnection.environment_id.in_(ids), include_aliases=True),
         with_loader_criteria(UnifiEvent, UnifiEvent.connection_id.in_(conn_ids), include_aliases=True),

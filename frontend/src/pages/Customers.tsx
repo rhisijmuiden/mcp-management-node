@@ -2,7 +2,7 @@ import * as DM from "@radix-ui/react-dropdown-menu";
 import * as Tabs from "@radix-ui/react-tabs";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  AlertTriangle, ArrowRight, Bot, Building2, ChevronDown, FileText, KeyRound, Laptop, MessageSquare, Monitor, Network, Pencil, Plus,
+  AlertTriangle, ArrowRight, Bot, Building2, ChevronDown, KeyRound, Laptop, MessageSquare, Monitor, Network, Pencil, Plus,
   Search, Server, Sparkles, Trash2, UserRound, Wifi, X,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { CopyButton } from "@/components/CopyButton";
 import { CustomerDialog, CustomerKindIcon, NewCustomerButton, useCustomer, useCustomers } from "@/components/customers";
 import { EnvDot, PairDialog, StatusDot } from "@/components/proxmox";
+import { ReportsTab } from "@/components/reports";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
@@ -25,6 +26,7 @@ import { timeAgo } from "@/lib/utils";
 import { NewTokenDialog } from "./Ai";
 import { NotifyCard } from "./Proxmox";
 import { AddServerDialog } from "./Servers";
+import { useWorkstations, WorkstationsTable } from "./Workstations";
 
 const tabCls =
   "cursor-pointer border-b-2 border-transparent px-1 pb-2.5 pt-1 text-[14px] font-semibold text-muted transition-colors hover:text-ink data-[state=active]:border-koraal data-[state=active]:text-ink";
@@ -188,19 +190,34 @@ export function CustomerPage() {
         <Tabs.Content value="servers"><MachinesCard title={t("cust.tab_servers")} icon={<Monitor />} rows={d.machines.filter((m) => m.type === "server")} emptyText={t("cust.empty_servers")} onAdd={admin ? () => setPair("server") : undefined} /></Tabs.Content>
         <Tabs.Content value="workstations">
           <Alert tone="info" className="mb-4">{t("cust.ws_hint")}</Alert>
-          <MachinesCard title={t("cust.workstations")} icon={<Laptop />} rows={d.machines.filter((m) => m.type === "workstation")} emptyText={t("cust.empty_workstations")} onAdd={admin ? () => setPair("workstation") : undefined} />
+          <CustomerWorkstations customerId={c.id} admin={admin} onAdd={() => setPair("workstation")} />
         </Tabs.Content>
         <Tabs.Content value="network"><NetworkTab d={d} /></Tabs.Content>
         <Tabs.Content value="ai"><AiTab d={d} /></Tabs.Content>
         <Tabs.Content value="contacts"><ContactsTab c={c} admin={admin} machines={d.machines.length + d.unifi.length} /></Tabs.Content>
-        <Tabs.Content value="reports">
-          <Card><EmptyState icon={<FileText />} title={t("cust.reports_title")}>{t("cust.reports_text")}</EmptyState></Card>
-        </Tabs.Content>
+        <Tabs.Content value="reports"><ReportsTab customer={c} admin={admin} /></Tabs.Content>
       </Tabs.Root>
       <CustomerDialog open={edit} onOpenChange={setEdit} customer={c} />
       <PairDialog open={pair === "proxmox"} onOpenChange={(v) => !v && setPair(null)} environmentId={c.id} />
       <AddServerDialog open={pair === "server" || pair === "workstation"} onOpenChange={(v) => !v && setPair(null)} customerId={c.id} role={pair === "workstation" ? "workstation" : "server"} />
     </>
+  );
+}
+
+/* ------------------------------------------------------------------ workstations tab */
+function CustomerWorkstations({ customerId, admin, onAdd }: { customerId: string; admin: boolean; onAdd: () => void }) {
+  const { t } = useTranslation();
+  const q = useWorkstations(customerId);
+  const tot = q.data?.totals;
+  return (
+    <Card className="min-w-0">
+      <CardHeader icon={<Laptop />} title={t("cust.workstations")}
+        description={tot ? t("ws.cust_summary", { online: tot.online, total: tot.total, attention: tot.critical + tot.warning, unencrypted: tot.not_encrypted }) : undefined}
+        action={admin && <Button size="sm" onClick={onAdd}><Plus /> {t("cust.add_workstation")}</Button>} />
+      {q.isLoading ? <CardBody><Spinner /></CardBody> : !q.data?.workstations.length
+        ? <EmptyState icon={<Laptop />} title={t("cust.ws_empty")}>{t("cust.empty_workstations")}</EmptyState>
+        : <WorkstationsTable rows={q.data.workstations} showCustomer={false} />}
+    </Card>
   );
 }
 

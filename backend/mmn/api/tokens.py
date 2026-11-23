@@ -43,11 +43,15 @@ SCOPES: dict[str, str] = {
     "unifi": "Read UniFi Network and Access: devices, clients, WiFi, firewall zones, events, doors and the access log",
     "unifi_admin": "UniFi Network actions: restart devices, power-cycle switch ports, authorize guests, switch WiFi on or off",
     "doors": "UniFi Access: unlock doors and change door lock rules (every action is logged)",
+    "workstations": "Remote actions on workstations: Defender scans and signature updates, Group Policy refresh, "
+                    "messages to the user and logging users off",
+    "reports": "Mail monthly customer reports to the customer's contacts",
     "hub": "Use the tools of other MCP servers registered in the MCP hub (Keystone, GitHub, ...), within the guardrails",
 }
 ADMIN_ONLY_SCOPES = {"restore", "updates", "settings", "backups", "nodes", "node_updates", "logs", "services", "exec", "copy",
                      "guests", "guests_admin", "templates", "tasks", "network", "cluster", "deploy",
-                     "unifi", "unifi_admin", "doors", "hub"}
+                     "unifi", "unifi_admin", "doors", "hub",
+                     "workstations", "reports"}
 
 
 async def clean_customer_ids(db: AsyncSession, ids: list[str] | None) -> list[str] | None:

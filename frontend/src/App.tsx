@@ -20,6 +20,7 @@ import { TemplatesPage } from "@/pages/Templates";
 import { GeneralPage, MailPage, NotificationsPage, WebServerPage } from "@/pages/Settings";
 import { UsersPage } from "@/pages/Users";
 import { CopyPage, LogSearchPage, ServersPage, SoftwarePage } from "@/pages/Servers";
+import { WorkstationDetailPage, WorkstationsPage } from "@/pages/Workstations";
 import { lazy, Suspense, type ReactNode } from "react";
 
 // Phase 4 pages are loaded on demand to keep the first load small.
@@ -97,7 +98,8 @@ export default function App() {
         <Route path="unifi/access" element={<L><UnifiAccessPage /></L>} />
         <Route path="unifi/connections" element={<L><UnifiConnectionsPage /></L>} />
         <Route path="servers" element={<ServersPage />} />
-        <Route path="workstations" element={<ServersPage role="workstation" />} />
+        <Route path="workstations" element={<WorkstationsPage />} />
+        <Route path="workstations/:id" element={<WorkstationDetailPage />} />
         <Route path="servers/logs" element={<RequireAuth admin><LogSearchPage /></RequireAuth>} />
         <Route path="servers/software" element={<RequireAuth admin><SoftwarePage /></RequireAuth>} />
         <Route path="servers/copy" element={<RequireAuth admin><CopyPage /></RequireAuth>} />

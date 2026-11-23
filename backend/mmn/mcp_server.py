@@ -117,7 +117,7 @@ def _target_of(args: dict[str, Any]) -> str | None:
         return ", ".join(map(str, args["servers"]))[:255]
     if args.get("door"):
         return f"door {args['door']}"[:255]
-    for k in ("wifi", "client", "device", "connection", "deployment", "design_id", "guest", "node", "server", "customer", "slug", "template", "task_id", "run_id", "name", "backup_id",
+    for k in ("wifi", "client", "device", "connection", "deployment", "design_id", "guest", "node", "server", "workstation", "customer", "slug", "template", "task_id", "run_id", "name", "backup_id",
               "target_id", "tag", "channel", "to", "package", "transfer_id", "pattern"):
         if args.get(k):
             return str(args[k])[:255]
@@ -272,6 +272,14 @@ gateways, switches and APs with status, uplink, firmware and clients, WiFi with 
 ("who opened the server room last night"), `list_door_schedules`. Actions (restart a device,
 power-cycle a PoE port, guest access, switch an SSID, unlock a door, lock rules) need a key with write
 rights, `confirm` and the user's go-ahead; unlocking a door is physical security, always ask.
+
+Workstations (PCs and laptops per customer): `list_workstations` (security status, user, encryption, updates),
+`get_workstation` (full inventory: hardware, OS, disks, Defender, BitLocker, firewall, update history),
+`diagnose_workstation` ("my PC is slow": start here), `find_software` ("who has TeamViewer installed"),
+`refresh_workstation_inventory`, `workstation_action` (Defender scan or signature update, Group Policy refresh,
+message to the user) and `log_off_workstation_user`. Workstations are often asleep; offline is normal.
+Monthly reports: `get_customer_report` (latest report, or generate=true for a fresh one) and
+`send_customer_report` (mails the PDF to the customer's contacts: ask first).
 
 Guardrails (AI gateway): every tool has a risk level (read, operate, change, destructive) and the
 admin's policies decide per customer and per token whether a call runs, needs approval or is blocked
@@ -2563,6 +2571,205 @@ async def set_door_lock_rule(door: str, rule: str, reason: str, confirm: str, mi
         return {"ok": True, "door": d["name"], "rule": rule, "minutes": minutes}
 
     return await _with_db(run)
+
+
+# ------------------------------------------------------------------ workstations (phase 10)
+async def _ws(workstation: str):
+    from mmn.services import nodes, workstations
+
+    async with sessionmaker()() as db:
+        try:
+            return await workstations.get_workstation(db, workstation)
+        except nodes.NodeError as e:
+            raise ToolDenied(str(e)) from e
+
+
+@tool("read", RO)
+async def list_workstations(customer: str | None = None) -> dict:
+    """Workstations (PCs and laptops with the agent), optionally of one customer: online and last
+    seen, OS and build, model and serial, logged-in user, antivirus, disk encryption (BitLocker or
+    LUKS), pending updates, last update installed, security status (ok, warning, critical) with issue
+    codes, and totals. Workstations are often asleep: offline is normal, the data is from when it was
+    last seen. Start here for "how are the PCs at customer X"."""
+    from mmn.services import nodes, workstations
+
+    async with sessionmaker()() as db:
+        try:
+            env_id = (await nodes.get_environment(db, customer)).id if customer else None
+        except nodes.NodeError as e:
+            raise ToolDenied(str(e)) from e
+        return _jsonable(await workstations.list_workstations(db, env_id))
+
+
+@tool("read", RO)
+async def get_workstation(workstation: str, include_software: bool = False) -> dict:
+    """The full inventory of one workstation: hardware (manufacturer, model, serial, BIOS, CPU,
+    memory), OS (version, build, install date, last boot, domain), logged-in users, disks with health
+    and SSD wear, volumes and free space, Microsoft Defender (real-time protection, signature age,
+    scans, threats) or another antivirus, BitLocker per volume, firewall profiles, TPM, Secure Boot,
+    Windows Update history and hotfixes, pending updates and the security checks. include_software
+    adds the installed programs (long); use find_software to search them instead."""
+    from mmn.services import workstations
+
+    n = await _ws(workstation)
+    d = workstations.detail(n)
+    if not include_software:
+        inv = dict(d["inventory"])
+        inv["software_count"] = len(inv.pop("software", None) or [])
+        d["inventory"] = inv
+    return _jsonable(d)
+
+
+@tool("logs", RO)
+async def diagnose_workstation(workstation: str) -> dict:
+    """Health and security check of one workstation in a single call: refreshes the inventory when it
+    is older than an hour, runs the agent's health check (CPU, memory, disks, failed services, recent
+    errors, busiest processes) and returns the security checks (antivirus, signatures, threats,
+    firewall, BitLocker/LUKS, updates, pending reboot, disk health and space) with findings and the
+    next tools to use. Start here when a user says "my PC is slow" or "something is wrong"."""
+    from mmn.services import workstations
+
+    n = await _ws(workstation)
+    try:
+        return _jsonable(await workstations.diagnose(n))
+    except Exception as e:
+        raise _agent_errors(e) from e
+
+
+@tool("read", RO)
+async def refresh_workstation_inventory(workstation: str) -> dict:
+    """Collect the inventory of a workstation now (read-only script through the agent, about 10-60
+    seconds). The app also refreshes it every few hours while the machine is online."""
+    from mmn.services import workstations
+
+    n = await _ws(workstation)
+    try:
+        d = await workstations.collect(n.id)
+    except Exception as e:
+        raise _agent_errors(e) from e
+    inv = dict(d["inventory"])
+    inv["software_count"] = len(inv.pop("software", None) or [])
+    d["inventory"] = inv
+    return _jsonable(d)
+
+
+@tool("read", RO)
+async def find_software(name: str, customer: str | None = None, include_servers: bool = False) -> list[dict]:
+    """Which workstations (and with include_servers also servers) have a program installed, with the
+    version: e.g. 'teamviewer', 'office', 'chrome', '7-zip*'. Searches the stored inventories, so it
+    also finds machines that are offline now. For a CVE on servers use check_cve."""
+    from mmn.services import nodes, workstations
+
+    async with sessionmaker()() as db:
+        try:
+            env_id = (await nodes.get_environment(db, customer)).id if customer else None
+            return _jsonable(await workstations.find_software(db, name, env_id, include_servers=include_servers))
+        except nodes.NodeError as e:
+            raise ToolDenied(str(e)) from e
+
+
+@tool("workstations", WRITE)
+async def workstation_action(workstation: str, action: str, reason: str, message: str | None = None) -> dict:
+    """Remote action on a workstation through the agent. action: defender_quick_scan or
+    defender_full_scan (starts a Microsoft Defender scan in the background), defender_update (update
+    the virus signatures), gpupdate (refresh Group Policy) or message (show `message` to the logged-in
+    user(s); on Linux through wall). Windows only, except message. Give a short `reason`. Restarts go
+    through reboot_node, updates through install_node_updates."""
+    from mmn.services import nodes, workstations
+
+    n = await _ws(workstation)
+    try:
+        return _jsonable(await workstations.run_action(n, action, message=message))
+    except nodes.NodeError as e:
+        raise ToolDenied(str(e)) from e
+    except Exception as e:
+        raise _agent_errors(e) from e
+
+
+@tool("workstations", DESTRUCTIVE)
+async def log_off_workstation_user(workstation: str, user: str, confirm: str, reason: str) -> dict:
+    """Log a user off a workstation (all their sessions; unsaved work is lost). confirm must be the
+    workstation's exact name. Ask the user first."""
+    from mmn.services import nodes, workstations
+
+    n = await _ws(workstation)
+    if confirm != n.name:
+        raise ToolDenied(f"confirm must be the workstation name '{n.name}'")
+    try:
+        return _jsonable(await workstations.log_off(n, user))
+    except nodes.NodeError as e:
+        raise ToolDenied(str(e)) from e
+    except Exception as e:
+        raise _agent_errors(e) from e
+
+
+# ------------------------------------------------------------------ monthly customer reports (phase 10)
+@tool("read", RO)
+async def get_customer_report(customer: str, period: str | None = None, generate: bool = False,
+                              lang: str | None = None) -> dict:
+    """The monthly IT report of a customer: availability per server, incidents, updates installed and
+    pending, Proxmox backups, workstations with their security status, security points, what the AI
+    did (audit log, approvals) and recommendations. period: 'YYYY-MM' (default: the latest report).
+    With generate=true a fresh report is made for the period (default: the current month so far),
+    without mailing it. Returns the report data and the link to the PDF in Stackpilot."""
+    from datetime import UTC, datetime
+
+    from mmn.services import nodes, reports
+    from mmn.services.settings_store import get_setting
+
+    async with sessionmaker()() as db:
+        try:
+            e = await nodes.get_environment(db, customer)
+            tz = await reports.timezone(db)
+            r = None
+            if not generate:
+                r = await reports.latest(db, e.id, period)
+            if r is None:
+                if not generate and period is None:
+                    raise ToolDenied("this customer has no report yet; call again with generate=true")
+                p = period or reports.current_period(datetime.now(UTC), tz)
+                r = await reports.generate(db, e, p, lang=lang, trigger="mcp",
+                                           created_by=(current_principal().token_name if current_principal() else None))
+                await db.commit()
+        except nodes.NodeError as ex:
+            raise ToolDenied(str(ex)) from ex
+        out = reports.report_out(r, with_data=True)
+        general = await get_setting(db, "general")
+    base = (general.get("base_url") or "").rstrip("/")
+    if base:
+        out["pdf_url"] = f"{base}/api/customers/{r.environment_id}/reports/{r.id}/pdf"
+        out["app_url"] = f"{base}/customers/{r.environment_id}?tab=reports"
+    return _jsonable(out)
+
+
+@tool("reports", WRITE)
+async def send_customer_report(customer: str, period: str | None = None, to: list[str] | None = None) -> dict:
+    """Mail the customer's report (PDF and HTML attached) to the report recipients of the customer,
+    or to `to`. period 'YYYY-MM': the latest report of that month, made when there is none (default:
+    last month). This sends mail outside Stackpilot: ask the user first."""
+    from datetime import UTC, datetime
+
+    from mmn.services import nodes, reports
+    from mmn.services.mailer import MailNotConfigured
+
+    async with sessionmaker()() as db:
+        try:
+            e = await nodes.get_environment(db, customer)
+            tz = await reports.timezone(db)
+            p = period or reports.previous_period(datetime.now(UTC), tz)
+            r = await reports.latest(db, e.id, p)
+            if r is None:
+                r = await reports.generate(db, e, p, trigger="mcp",
+                                           created_by=(current_principal().token_name if current_principal() else None))
+                await db.commit()
+            sent = await reports.send(db, r, e, to)
+            await db.commit()
+        except nodes.NodeError as ex:
+            raise ToolDenied(str(ex)) from ex
+        except MailNotConfigured as ex:
+            await db.commit()
+            raise ToolDenied("the mail server is not configured in Stackpilot (Settings > Mail)") from ex
+        return _jsonable({"ok": True, "sent_to": sent, "period": r.period, "report_id": r.id})
 
 
 # ------------------------------------------------------------------ AI gateway: approvals and guardrails

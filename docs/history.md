@@ -17,7 +17,7 @@ Stackpilot is built in phases. Each phase is one pull request and one minor rele
 | 7 | v0.7.0 | Customers central |
 | 8 | v0.8.0 | AI gateway: command center, approvals, policies, kill switch |
 | 9 | v0.9.0 | MCP hub and tool catalog |
-| 10 | – | Workstations and monthly report (planned) |
+| 10 | v0.10.0 | Workstations (inventory, security status, actions) and monthly customer reports |
 
 ## What each phase added
 
@@ -79,5 +79,15 @@ switches tools or whole servers on or off for all tokens or one token. New MCP t
 `refresh_mcp_server`.
 Default policy after the update: read, operate and change run, destructive tools (commands, updates, reboots,
 deletes, doors) ask for approval first; change it under AI Gateway → Policies & guardrails.
+
+**Phase 10** makes **workstations** first-class: an inventory per PC or laptop (hardware, OS, users, software,
+disks and SSD wear, Windows Update history, Defender, BitLocker/LUKS, firewall, TPM, Secure Boot) collected through
+the existing agent with a read-only script, a security status with the issues per PC, software search across PCs and
+remote actions (Defender scan and signature update, Group Policy refresh, message to the user, log off). The
+**monthly report** per customer (PDF and HTML in the house style) covers availability, incidents, updates, Proxmox
+backups, workstation security, AI actions and recommendations, and is mailed to the customer's contacts on a set day
+or made on demand. New MCP tools: `list_workstations`, `get_workstation`, `diagnose_workstation`, `find_software`,
+`refresh_workstation_inventory`, `workstation_action`, `log_off_workstation_user`, `get_customer_report`,
+`send_customer_report`; new scopes `workstations` and `reports`.
 
 Bug fix releases in between (v0.2.1, v0.6.1, v0.6.2, v0.7.1) are listed on the releases page.

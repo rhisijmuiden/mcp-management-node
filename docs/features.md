@@ -162,7 +162,7 @@ not shown to the AI and calls are refused (stored as a "block" rule, so it also 
 - Endpoint `https://<your address>/mcp`, Streamable HTTP.
 - **OAuth 2.1** with dynamic client registration and PKCE for Claude, ChatGPT and VS Code, or a personal **API token**
   for scripts.
-- **135 tools** across customers, Proxmox, servers, network, cluster, monitoring, deployments, UniFi, backups, updates
+- **144 tools** across customers, Proxmox, servers, network, cluster, monitoring, deployments, UniFi, backups, updates
   and the gateway itself. See the **[MCP tool reference](mcp-tools.md)**.
 - Destructive tools require confirmation of the exact target, commands and service actions need a stated reason, and
   network changes can be tried as a dry run first.
@@ -245,8 +245,45 @@ Across servers, for people and AI:
 
 ### Workstations
 
-Linux and Windows machines can be marked as **workstation** (PC or laptop) and appear under **Workstations** and on
-the customer page, managed by the same agent. Phase 10 extends this; see the [roadmap](../README.md#roadmap).
+Linux and Windows machines can be marked as **workstation** (PC or laptop). They appear under **Workstations** and
+on the customer's **Workstations** tab, managed by the same agent as servers (no extra software).
+
+- **Inventory**, collected with a fixed read-only script through the agent every 6 hours while the PC is online (or
+  now with *Refresh inventory*): manufacturer, model, serial number, BIOS, CPU and memory; OS, version/build, install
+  date, last boot and domain; logged-in users; installed software; disks with health, SSD wear and temperature;
+  volumes and free space; Windows Update history and hotfixes (apt history on Linux); TPM, Secure Boot and battery.
+  Works with every agent version, so no agent update is needed.
+- **Security status** per PC (OK, Attention, Action needed) from checks for antivirus (Microsoft Defender real-time
+  protection, or another product registered in Windows Security Center), signature age, threats found in 30 days,
+  firewall profiles, BitLocker on the system drive (LUKS on Linux), pending updates, the last installed update,
+  pending reboot, disk health, SSD wear and free space. The list shows the issues; the stats count PCs that need
+  attention and PCs without encryption.
+- **Find software**: which PCs have a program installed (`teamviewer`, `office*`), also PCs that are switched off.
+- **Actions** (admins): Defender quick or full scan, update virus signatures, refresh Group Policy, send a message to
+  the logged-in users, log off a user (type the PC name to confirm). Updates, reboots, logs, services and the console
+  are on the machine page (*Logs, services and console*).
+- MCP tools: `list_workstations`, `get_workstation`, `diagnose_workstation` ("my PC is slow"), `find_software`,
+  `refresh_workstation_inventory` (read), `workstation_action` (operate, scope `workstations`) and
+  `log_off_workstation_user` (destructive). Existing tokens with `exec` got the new `workstations` scope.
+
+### Monthly reports
+
+The customer's **Reports** tab makes an IT report per month, as PDF (house style, A4) and HTML:
+
+- **Summary** with machines, availability of servers and Proxmox nodes, incidents, updates installed, backups OK and
+  failed, security points and AI changes, plus an overall verdict.
+- **Availability** per server from the offline alerts (workstations are left out: they sleep), **incidents** from
+  monitoring alerts, **updates** installed per machine (update jobs plus Windows Update / apt history) and pending,
+  **Proxmox backups** (vzdump tasks of the month per cluster and guests without a backup job), **workstations** with
+  their security status and issues, **security** points, **AI actions** (changes from the AI activity log and
+  approvals) and **recommendations** from the optimisation scan.
+- **Monthly report**: switch it on, choose the day (1-28), the language (English or Dutch) and the recipients (empty
+  = the customer's main contact). On that day the report of the previous month is made and mailed with the PDF and
+  HTML attached, through your own mail server.
+- **Make a report** for any month (the current month shows the days so far), with or without mailing it; view,
+  download the PDF, mail again or delete it.
+- MCP tools: `get_customer_report` (read; `generate=true` makes a fresh one) and `send_customer_report` (operate,
+  scope `reports`; existing tokens with `settings` got it).
 
 ### UniFi
 

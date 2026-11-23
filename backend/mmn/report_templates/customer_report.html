@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>{{ T.title }} · {{ d.customer.name }} · {{ d.period_label }}</title>
+<style>
+  :root { --nacht:#14213d; --koraal:#ff6b57; --wolk:#f6f7fb; --ink:#14213d; --muted:#4f5b73; --line:#dce1eb;
+          --ok:#1c8a57; --warn:#a86b00; --crit:#c23434; --ok-soft:#e3f4ec; --warn-soft:#fbf0dc; --crit-soft:#fbe5e5; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--wolk); color:var(--ink); font:14px/1.5 Archivo,"Segoe UI",Helvetica,Arial,sans-serif; }
+  header { background:var(--nacht); color:#fff; padding:18px 32px; display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap; }
+  header .brand { font-weight:800; font-size:20px; letter-spacing:.3px; }
+  header .brand i { display:inline-block; width:8px; height:8px; border-radius:4px; background:var(--koraal); margin-left:6px; vertical-align:middle; }
+  header .meta { font-size:13px; opacity:.85; }
+  main { max-width:1040px; margin:0 auto; padding:28px 24px 48px; }
+  h1 { font-size:28px; margin:0 0 4px; font-weight:800; }
+  h2 { font-size:18px; margin:32px 0 10px; font-weight:800; padding-left:10px; border-left:4px solid var(--koraal); }
+  .sub { color:var(--muted); margin:0 0 20px; }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; }
+  .tile { background:#fff; border:1px solid var(--line); border-radius:12px; padding:12px 14px; }
+  .tile .l { color:var(--muted); font-size:12px; }
+  .tile .v { font-size:22px; font-weight:800; margin-top:2px; }
+  .status { margin:16px 0 0; padding:10px 14px; border-radius:10px; font-weight:700; }
+  .status.ok { background:var(--ok-soft); color:var(--ok); }
+  .status.warning { background:var(--warn-soft); color:var(--warn); }
+  .status.critical { background:var(--crit-soft); color:var(--crit); }
+  .card { background:#fff; border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  .scroll { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; }
+  th { text-align:left; font-size:12px; color:var(--muted); font-weight:700; background:var(--wolk); padding:8px 12px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  td { padding:8px 12px; border-bottom:1px solid var(--line); vertical-align:top; }
+  tr:last-child td { border-bottom:0; }
+  .muted { color:var(--muted); }
+  .empty { color:var(--muted); background:#fff; border:1px dashed var(--line); border-radius:12px; padding:14px; }
+  .b { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; font-weight:700; white-space:nowrap; }
+  .b.ok { background:var(--ok-soft); color:var(--ok); }
+  .b.warning, .b.medium { background:var(--warn-soft); color:var(--warn); }
+  .b.critical, .b.high { background:var(--crit-soft); color:var(--crit); }
+  .b.low, .b.info, .b.unknown { background:var(--wolk); color:var(--muted); }
+  ul.issues { margin:0; padding-left:18px; }
+  footer { color:var(--muted); font-size:12px; text-align:center; padding:0 24px 32px; }
+  @media print { body { background:#fff; } header { -webkit-print-color-adjust:exact; print-color-adjust:exact; } h2 { break-after:avoid; } tr { break-inside:avoid; } }
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">{{ d.app }}<i></i></span>
+  <span class="meta">{{ d.customer.name }} · {{ d.period_label }}</span>
+</header>
+<main>
+  <h1>{{ T.title }}</h1>
+  <p class="sub">{{ T.customer }}: <strong>{{ d.customer.name }}</strong> · {{ T.period }}: {{ d.period_label }} · {{ T.generated }}: {{ dt(d.generated_at) }}</p>
+
+  {% set s = d.summary %}
+  <div class="tiles">
+    <div class="tile"><div class="l">{{ T.k_machines }}</div><div class="v">{{ s.machines.proxmox + s.machines.servers + s.machines.workstations }}</div></div>
+    <div class="tile"><div class="l">{{ T.k_availability }}</div><div class="v">{% if s.availability is not none %}{{ '%.2f'|format(s.availability) }}%{% else %}–{% endif %}</div></div>
+    <div class="tile"><div class="l">{{ T.k_incidents }}</div><div class="v">{{ s.incidents }}</div></div>
+    <div class="tile"><div class="l">{{ T.k_updates }}</div><div class="v">{{ s.updates_installed }}</div></div>
+    <div class="tile"><div class="l">{{ T.k_backups }}</div><div class="v">{{ s.backups_ok }} / {{ s.backups_failed }}</div></div>
+    <div class="tile"><div class="l">{{ T.k_security }}</div><div class="v">{{ s.security }}</div></div>
+    <div class="tile"><div class="l">{{ T.k_ai }}</div><div class="v">{{ s.ai_changes }}</div></div>
+  </div>
+  <p class="status {{ d.status }}">{{ T['overall_' ~ d.status] }}</p>
+
+  <h2>{{ T.availability }}</h2>
+  {% if d.availability %}
+  <div class="card scroll"><table>
+    <tr><th>{{ T.machine }}</th><th>{{ T.type }}</th><th>{{ T.uptime }}</th><th>{{ T.downtime }}</th><th>{{ T.count }}</th></tr>
+    {% for a in d.availability %}
+    <tr><td>{{ a.machine }}</td><td>{{ T[a.type] }}</td>
+      <td><span class="b {{ 'ok' if a.availability >= 99.5 else ('warning' if a.availability >= 98 else 'critical') }}">{{ '%.2f'|format(a.availability) }}%</span></td>
+      <td>{{ a.downtime_minutes }} {{ T.minutes }}</td><td>{{ a.outages }}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% else %}<p class="empty">–</p>{% endif %}
+
+  <h2>{{ T.incidents }}</h2>
+  {% if d.incidents['items'] %}
+  <div class="card scroll"><table>
+    <tr><th>{{ T.when }}</th><th>{{ T.machine }}</th><th>{{ T.severity }}</th><th>{{ T.what }}</th><th>{{ T.duration }}</th></tr>
+    {% for i in d.incidents['items'] %}
+    <tr><td class="muted">{{ dt(i.started_at) }}</td><td>{{ i.machine }}</td>
+      <td><span class="b {{ i.severity }}">{{ T['sev_' ~ i.severity] or i.severity }}</span></td>
+      <td>{{ i.message }}</td><td>{{ i.duration_minutes }} {{ T.minutes }}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% else %}<p class="empty">{{ T.none_incidents }}</p>{% endif %}
+
+  <h2>{{ T.updates }}</h2>
+  {% if d.updates.machines %}
+  <div class="card scroll"><table>
+    <tr><th>{{ T.machine }}</th><th>{{ T.installed }}</th><th>{{ T.pending }}</th><th>{{ T.reboot }}</th></tr>
+    {% for u in d.updates.machines %}
+    <tr><td>{{ u.machine }}{% if u.titles %}<div class="muted" style="font-size:12px">{{ u.titles|join(' · ') }}</div>{% endif %}</td>
+      <td>{{ u.installed }}</td><td>{% if u.pending %}<span class="b warning">{{ u.pending }}</span>{% else %}0{% endif %}</td>
+      <td>{{ T.yes if u.reboot else T.no }}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% else %}<p class="empty">{{ T.none_updates }}</p>{% endif %}
+
+  <h2>{{ T.backups }}</h2>
+  {% if d.backups.clusters %}
+  <div class="card scroll"><table>
+    <tr><th>{{ T.machine }}</th><th>{{ T.ok }}</th><th>{{ T.failed }}</th><th>{{ T.last_seen }}</th><th>{{ T.not_backed_up }}</th></tr>
+    {% for c in d.backups.clusters %}
+    <tr><td>{{ c.name }}</td><td>{{ c.ok }}</td><td>{% if c.failed %}<span class="b critical">{{ c.failed }}</span>{% else %}0{% endif %}</td>
+      <td class="muted">{{ dt(c.last_ok) }}</td><td>{{ c.not_backed_up|join(', ') if c.not_backed_up else '–' }}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% else %}<p class="empty">{{ T.none_backups }}</p>{% endif %}
+  {% if d.backups.errors %}<p class="muted">{{ T.backups_error }}: {{ d.backups.errors|join(', ') }}</p>{% endif %}
+
+  <h2>{{ T.workstations }}</h2>
+  {% if d.workstations %}
+  <div class="card scroll"><table>
+    <tr><th>{{ T.machine }}</th><th>OS</th><th>{{ T.user }}</th><th>{{ T.status }}</th><th>{{ T.issues }}</th></tr>
+    {% for w in d.workstations %}
+    <tr><td>{{ w.machine }}<div class="muted" style="font-size:12px">{{ T.last_seen }}: {{ dt(w.last_seen) }}</div></td>
+      <td>{{ w.os or '–' }}</td><td>{{ w.user or '–' }}</td>
+      <td><span class="b {{ w.status }}">{{ T['st_' ~ w.status] }}</span></td>
+      <td>{% if w.issues %}<ul class="issues">{% for x in w.issues %}<li>{{ x }}</li>{% endfor %}</ul>{% else %}–{% endif %}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% else %}<p class="empty">{{ T.none_ws }}</p>{% endif %}
+
+  <h2>{{ T.security }}</h2>
+  {% if d.security %}
+  <div class="card scroll"><table>
+    <tr><th>{{ T.severity }}</th><th>{{ T.machine }}</th><th>{{ T.what }}</th></tr>
+    {% for x in d.security %}
+    <tr><td><span class="b {{ x.severity }}">{{ T['sev_' ~ x.severity] }}</span></td><td>{{ x.machine }}</td><td>{{ x.text }}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% else %}<p class="empty">{{ T.none_security }}</p>{% endif %}
+
+  <h2>{{ T.ai }}</h2>
+  <p class="muted">{{ T.ai_calls }}: {{ d.ai.calls }} · {{ T.ai_changes }}: {{ d.ai.changes|length }} · {{ T.ai_approvals }}: {{ d.ai.approvals.total }} ({{ T.ai_rejected }}: {{ d.ai.approvals.rejected }})</p>
+  {% if d.ai.changes %}
+  <div class="card scroll"><table>
+    <tr><th>{{ T.when }}</th><th>{{ T.tool }}</th><th>{{ T.target }}</th><th>{{ T.by }}</th><th>{{ T.result }}</th></tr>
+    {% for c in d.ai.changes %}
+    <tr><td class="muted">{{ dt(c.at) }}</td><td><code>{{ c.tool }}</code></td><td>{{ c.target or '–' }}</td><td>{{ c.by or '–' }}</td>
+      <td><span class="b {{ 'ok' if c.success else 'critical' }}">{{ T.ok if c.success else T.failed }}</span></td></tr>
+    {% endfor %}
+  </table></div>
+  {% else %}<p class="empty">{{ T.none_ai }}</p>{% endif %}
+
+  <h2>{{ T.recommendations }}</h2>
+  {% if d.recommendations %}
+  <div class="card scroll"><table>
+    <tr><th>{{ T.severity }}</th><th>{{ T.target }}</th><th>{{ T.what }}</th></tr>
+    {% for r in d.recommendations %}
+    <tr><td><span class="b {{ r.severity }}">{{ T['sev_' ~ r.severity] }}</span></td><td>{{ r.target or '–' }}</td>
+      <td>{{ r.finding }} <span class="muted">{{ r.suggestion }}</span></td></tr>
+    {% endfor %}
+  </table></div>
+  {% else %}<p class="empty">{{ T.none_rec }}</p>{% endif %}
+</main>
+<footer>{{ footer }}</footer>
+</body>
+</html>

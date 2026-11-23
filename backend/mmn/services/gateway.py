@@ -52,7 +52,7 @@ OPERATE_TOOLS = {
     "refresh_node_updates", "refresh_unifi", "create_snapshot", "guest_power", "run_backup", "run_backup_job",
     "send_test_mail", "send_node_test_notification", "create_pairing_code", "sync_templates",
     "run_scheduled_task", "run_deployment", "update_node_agent", "set_cpu_governor", "manage_service",
-    "restart_unifi_device", "refresh_mcp_server",
+    "restart_unifi_device", "refresh_mcp_server", "workstation_action", "send_customer_report",
 }
 
 FINAL = {"executed", "failed", "rejected", "expired"}

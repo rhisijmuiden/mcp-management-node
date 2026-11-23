@@ -1158,3 +1158,137 @@ export interface UnifiIsolation {
 export interface UnifiDoor { id: string; name: string; full_name: string | null; lock: string | null; position: string | null; has_hub: boolean }
 export interface UnifiAccessConn extends UnifiConnection { doors: UnifiDoor[] }
 export interface UnifiLogRow { at: string; actor: string | null; actor_type: string | null; event: string | null; result: string | null; message: string | null; method: string | null; targets: { type: string; id: string; name: string }[] }
+
+/* ------------------------------------------------------------------ phase 10: workstations and reports */
+export type SecurityStatus = "ok" | "warning" | "critical";
+
+export interface WorkstationRow {
+  id: string;
+  name: string;
+  kind: "linux" | "windows";
+  role: string;
+  hostname: string | null;
+  customer_id: string;
+  customer: string | null;
+  online: boolean;
+  last_seen_at: string | null;
+  agent_version: string | null;
+  os: string | null;
+  os_build: string | null;
+  model: string | null;
+  serial: string | null;
+  cpu: string | null;
+  memory: number | null;
+  user: string | null;
+  users: string[];
+  antivirus: string | null;
+  encryption: "ok" | "info" | "warning" | null;
+  updates: number;
+  reboot_required: boolean;
+  last_update_installed: string | null;
+  security: SecurityStatus | null;
+  issues: string[];
+  attention: string[];
+  software_count: number;
+  inventory_at: string | null;
+  inventory_error: string | null;
+  metrics: { cpu_percent?: number; mem_used?: number; mem_total?: number } | null;
+}
+
+export interface WorkstationsOverview {
+  workstations: WorkstationRow[];
+  totals: { total: number; online: number; windows: number; linux: number; critical: number; warning: number; not_encrypted: number; updates: number; no_inventory: number };
+}
+
+export interface WsCheck {
+  key: string;
+  status: "ok" | "info" | "warning" | "critical";
+  code: string;
+  text: string;
+  [k: string]: unknown;
+}
+
+export interface WsInventory {
+  collected_at?: string;
+  platform?: "windows" | "linux";
+  hardware?: { manufacturer?: string | null; model?: string | null; serial?: string | null; bios?: string | null; cpu?: string | null; cores?: number | null; threads?: number | null; memory?: number | null; chassis?: string | null };
+  os?: { name?: string | null; version?: string | null; build?: string | null; display_version?: string | null; arch?: string | null; install_date?: string | null; last_boot?: string | null; domain?: string | null; part_of_domain?: boolean | null };
+  users?: string[];
+  last_user?: string | null;
+  software?: { name: string; version?: string | null; publisher?: string | null; installed?: string | null }[];
+  disks?: { name?: string; device?: string; media?: string | null; bus?: string | null; size?: number | null; health?: string | null; status?: string | null; temperature?: number | null; wear?: number | null; power_on_hours?: number | null }[];
+  volumes?: { mount?: string; label?: string | null; fs?: string | null; size?: number | null; free?: number | null; health?: string | null }[];
+  antivirus?: {
+    defender?: { service?: boolean; antivirus?: boolean; realtime?: boolean; tamper?: boolean; mode?: string; signature_updated?: string | null; signature_age_days?: number; signature_version?: string; engine?: string; quick_scan_age_days?: number; full_scan_age_days?: number; threats_30d?: number } | null;
+    products?: { name?: string; enabled?: boolean; up_to_date?: boolean }[];
+  };
+  encryption?: { kind?: "bitlocker" | "luks"; luks?: boolean; volumes?: { mount?: string; type?: string | null; status?: string | null; protection?: string | null; percent?: number | null; method?: string | null }[] };
+  firewall?: { profiles?: { profile?: string; enabled?: boolean }[]; ufw?: string | null; firewalld?: string | null; nft_rules?: number | null };
+  tpm?: { present?: boolean; ready?: boolean } | null;
+  secure_boot?: boolean | null;
+  updates?: { history?: { date?: string; title?: string; result?: string; packages?: number }[]; hotfixes?: { id?: string; description?: string; installed?: string }[]; reboot_pending?: boolean; last_installed?: string | null };
+  battery?: { charge?: number; status?: number } | null;
+  errors?: string[];
+}
+
+export interface WorkstationDetail extends WorkstationRow {
+  inventory: WsInventory;
+  checks: WsCheck[];
+  pending_updates: { name: string; current?: string; new?: string; security?: boolean }[];
+  disks_live: { path?: string; total?: number; used?: number }[];
+}
+
+export interface SoftwareHit {
+  machine: string;
+  node_id: string;
+  customer: string | null;
+  online: boolean;
+  inventory_at: string | null;
+  software: { name: string; version?: string | null; publisher?: string | null }[];
+}
+
+export interface ReportSettings {
+  enabled: boolean;
+  day: number;
+  recipients: string[];
+  lang: "en" | "nl";
+  include_ai: boolean;
+  default_recipients?: string[];
+}
+
+export interface ReportSummary {
+  machines: { proxmox: number; servers: number; workstations: number };
+  availability: number | null;
+  incidents: number;
+  updates_installed: number;
+  backups_ok: number;
+  backups_failed: number;
+  security: number;
+  ai_calls: number;
+  ai_changes: number;
+}
+
+export interface CustomerReportRow {
+  id: string;
+  customer_id: string;
+  period: string;
+  period_start: string;
+  period_end: string;
+  lang: string;
+  trigger: "schedule" | "manual" | "mcp";
+  created_by: string | null;
+  created_at: string;
+  sent_to: string[];
+  sent_at: string | null;
+  send_error: string | null;
+  status: SecurityStatus | null;
+  summary: ReportSummary | null;
+  has_pdf: boolean;
+}
+
+export interface CustomerReports {
+  settings: ReportSettings;
+  reports: CustomerReportRow[];
+  previous_period: string;
+  current_period: string;
+}

@@ -14,7 +14,7 @@
   <a href="https://github.com/rhisijmuiden/stackpilot/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/rhisijmuiden/stackpilot?label=release&color=14213D"></a>
   <a href="https://github.com/rhisijmuiden/stackpilot/actions/workflows/release.yml"><img alt="Release build" src="https://img.shields.io/github/actions/workflow/status/rhisijmuiden/stackpilot/release.yml?label=build"></a>
   <img alt="Debian 13" src="https://img.shields.io/badge/runs%20on-Debian%2013-FF6B57">
-  <img alt="MCP tools" src="https://img.shields.io/badge/MCP%20tools-135-9CC3FF">
+  <img alt="MCP tools" src="https://img.shields.io/badge/MCP%20tools-144-9CC3FF">
   <img alt="English and Dutch" src="https://img.shields.io/badge/languages-EN%20%7C%20NL-F6F7FB">
 </p>
 
@@ -50,8 +50,10 @@ pauses all AI actions.
 | | |
 | --- | --- |
 | 🤖 **AI gateway** | Command center, approvals inbox (app + mail), policies per risk level, customer and token, maintenance windows, kill switch, AI sessions and activity log. |
-| 🧰 **135 MCP tools** | Read logs, restart services, run commands, patch, manage VMs, network, HA, deployments and UniFi, all through one endpoint with OAuth 2.1 or API tokens. [Full list](docs/mcp-tools.md). |
+| 🧰 **144 MCP tools** | Read logs, restart services, run commands, patch, manage VMs, network, HA, deployments and UniFi, all through one endpoint with OAuth 2.1 or API tokens. [Full list](docs/mcp-tools.md). |
 | 🏢 **Customers** | Customer switcher, customer page with Proxmox, servers, workstations, network and AI access, contacts, notes for the AI, maintenance window, SLA and an optimisation scan. |
+| 💻 **Workstations** | PCs and laptops per customer: hardware, OS, logged-in user, installed software, disks and SSD wear, Windows Update history, Defender, BitLocker/LUKS, firewall, TPM, a security status, and remote actions (Defender scan, signature update, Group Policy refresh, message, log off). |
+| 📄 **Monthly reports** | One report per customer per month (PDF and HTML): availability, incidents, updates, Proxmox backups, workstation security, AI actions and recommendations, mailed to the customer on a set day or made on demand. |
 | 🖥️ **Proxmox VE** | Nodes, VMs and containers, browser console (noVNC / xterm.js), snapshots, migration, create from templates, community scripts, ISO or cloud image, CT template library synced to all nodes. |
 | 🌐 **Network & cluster** | Bridges and VLANs with a usage map, staged changes with diff and automatic rollback, firewall, SDN designer, HA, replication, backup jobs and storage. |
 | 🧑‍💻 **Linux & Windows servers** | Same agent on any Linux server or Windows Server/PC (MSI): services, journal/event log, packages and Windows Update, shell/PowerShell, files, health checks. |
@@ -157,7 +159,7 @@ see **[installation](docs/install.md)**.
 | Document | What's in it |
 | --- | --- |
 | [Feature guide](docs/features.md) | Every part of the app, page by page |
-| [MCP tool reference](docs/mcp-tools.md) | All 135 tools with risk level, scope and parameters (generated from the code) |
+| [MCP tool reference](docs/mcp-tools.md) | All 144 tools with risk level, scope and parameters (generated from the code) |
 | [Installation](docs/install.md) | Install, upgrade, reverse proxy (Zoraxy), agents, file locations, development |
 | [Architecture](docs/architecture.md) | Components, agent protocol, security model |
 | [Release history](docs/history.md) | What each phase and release added |
@@ -171,7 +173,7 @@ see **[installation](docs/install.md)**.
 | 7 | Customers central | ✅ Done (v0.7.0) |
 | 8 | AI gateway: command center, approvals, policies, kill switch | ✅ Done (v0.8.0) |
 | 9 | **MCP hub**: register other MCP servers (Keystone VoIP, GitHub) and pass their tools through with the same auth, policies and audit; tool catalog with on/off per tool and token | ✅ Done (v0.9.0) |
-| 10 | **Workstations and monthly report**: PCs and laptops with the agent, monthly PDF report per customer (updates, incidents, backups, AI actions) | 📅 Planned |
+| 10 | **Workstations and monthly report**: inventory and security status per PC (Defender, BitLocker, patches, disks, software), remote actions, monthly PDF report per customer mailed to the contacts | ✅ Done (v0.10.0) |
 
 ## Releases and channels
 

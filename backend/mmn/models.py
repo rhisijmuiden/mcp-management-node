@@ -12,6 +12,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -230,6 +231,8 @@ class Environment(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     maintenance_window: Mapped[str | None] = mapped_column(String(200), nullable=True)
     sla: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Phase 10: monthly report settings {"enabled", "day", "recipients", "lang", "include_ai"}.
+    report: Mapped[dict] = mapped_column(JsonType, default=dict)
 
     nodes: Mapped[list[Node]] = relationship(back_populates="environment", lazy="selectin")
 
@@ -272,6 +275,10 @@ class Node(Base):
     storage_scan: Mapped[dict] = mapped_column(JsonType, default=dict)
     # Monitoring: storages, physical disks with SMART health (collected every few minutes).
     health: Mapped[dict] = mapped_column(JsonType, default=dict)
+    # Phase 10: hardware/software inventory and security status (workstations, collected through the agent).
+    inventory: Mapped[dict] = mapped_column(JsonType, default=dict)
+    inventory_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    inventory_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     environment: Mapped[Environment] = relationship(back_populates="nodes", lazy="joined")
 
@@ -697,3 +704,26 @@ class McpUpstream(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
     created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class CustomerReport(Base):
+    """A monthly (or on-demand) report for one customer: availability, alerts, updates, backups,
+    security, AI actions and recommendations, kept as data plus the rendered HTML and PDF."""
+
+    __tablename__ = "customer_reports"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    environment_id: Mapped[str] = mapped_column(ForeignKey("environments.id", ondelete="CASCADE"), index=True)
+    period: Mapped[str] = mapped_column(String(7))  # YYYY-MM
+    period_start: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    period_end: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    lang: Mapped[str] = mapped_column(String(5), default="en")
+    trigger: Mapped[str] = mapped_column(String(16), default="manual")  # schedule | manual | mcp
+    created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    data: Mapped[dict] = mapped_column(JsonType, default=dict)
+    html: Mapped[str] = mapped_column(Text, default="")
+    pdf: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    sent_to: Mapped[list] = mapped_column(JsonType, default=list)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    send_error: Mapped[str | None] = mapped_column(Text, nullable=True)
