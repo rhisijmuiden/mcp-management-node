@@ -19,6 +19,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -45,6 +46,19 @@ import (
 // version (systemd: Restart=always; Windows: recovery on non-zero exit).
 var RestartExitCode = 0
 
+// RestartHook, when set, restarts the agent after a self-update instead of exiting with
+// RestartExitCode. The Windows service sets it so the service stops cleanly and starts the
+// new version, instead of Windows logging a crash (event 7031) and its recovery restarting it.
+// It returns false when it could not arrange the restart; the agent then exits as before.
+var RestartHook func() bool
+
+// DrainTimeout is how long a self-update waits for running requests (commands, scripts,
+// file transfers) to finish before the agent restarts.
+var DrainTimeout = 5 * time.Minute
+
+// restartDelay gives the update job's result time to reach the app before the restart.
+var restartDelay = 2 * time.Second
+
 var (
 	MetricsInterval = 15 * time.Second
 	UpdatesInterval = 6 * time.Hour
@@ -69,7 +83,8 @@ type Agent struct {
 	failedSvc   *int
 	failedAt    time.Time
 
-	exit func(int)
+	exit     func(int)
+	inflight atomic.Int64 // requests being handled right now
 }
 
 // New loads the enrollment from disk.
@@ -220,7 +235,11 @@ func (a *Agent) session(ctx context.Context) error {
 				continue
 			}
 			if m.Type == "req" {
-				go a.handle(ctx, m)
+				a.inflight.Add(1)
+				go func() {
+					defer a.inflight.Add(-1)
+					a.handle(ctx, m)
+				}()
 			}
 		}
 	}()
@@ -434,6 +453,32 @@ func (a *Agent) reply(m proto.Envelope, result any, err error) {
 	a.send(r)
 }
 
+// restartAfterUpdate waits until the other requests are done (the update request itself is
+// still in flight), then restarts into the new version.
+func (a *Agent) restartAfterUpdate(version string) {
+	time.Sleep(restartDelay)
+	if !a.waitIdle(1, DrainTimeout) {
+		log.Printf("update to %s: %d request(s) still running after %s, restarting anyway", version, a.inflight.Load()-1, DrainTimeout)
+	}
+	log.Printf("restarting to run version %s", version)
+	if RestartHook != nil && RestartHook() {
+		return
+	}
+	a.exit(RestartExitCode)
+}
+
+// waitIdle waits until at most max requests are in flight, or the timeout passes.
+func (a *Agent) waitIdle(max int64, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for a.inflight.Load() > max {
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return true
+}
+
 func (a *Agent) job(jobID string, fn func(line func(string)) (any, error)) {
 	line := func(s string) { a.send(proto.Envelope{Type: "job", JobID: jobID, Event: "line", Line: s}) }
 	res, err := fn(line)
@@ -504,6 +549,7 @@ func (a *Agent) handle(ctx context.Context, m proto.Envelope) {
 			req.URL = "https://" + a.cfg.Server + req.URL
 		}
 		jobID := str("job_id")
+		log.Printf("update to %s requested", req.Version)
 		a.reply(m, map[string]any{"started": true}, nil)
 		a.job(jobID, func(line func(string)) (any, error) {
 			line("downloading " + req.Version)
@@ -518,7 +564,7 @@ func (a *Agent) handle(ctx context.Context, m proto.Envelope) {
 			}
 			line("installed; the agent restarts with the new version")
 			if restart {
-				go func() { time.Sleep(2 * time.Second); a.exit(RestartExitCode) }()
+				go a.restartAfterUpdate(req.Version)
 			}
 			return map[string]any{"version": req.Version}, nil
 		})

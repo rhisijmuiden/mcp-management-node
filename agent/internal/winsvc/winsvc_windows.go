@@ -1,6 +1,5 @@
 //go:build windows
 
-// Package winsvc runs the agent as a Windows service and installs or removes that service.
 package winsvc
 
 import (
@@ -10,7 +9,10 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"sync"
+	"syscall"
 	"time"
 
 	"golang.org/x/sys/windows/svc"
@@ -31,10 +33,18 @@ func IsService() bool {
 
 type handler struct{ run func(ctx context.Context) }
 
+var (
+	stopMu   sync.Mutex
+	stopSelf context.CancelFunc // stops the running service cleanly
+)
+
 func (h *handler) Execute(args []string, req <-chan svc.ChangeRequest, status chan<- svc.Status) (bool, uint32) {
 	status <- svc.Status{State: svc.StartPending}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	stopMu.Lock()
+	stopSelf = cancel
+	stopMu.Unlock()
 	done := make(chan struct{})
 	go func() { h.run(ctx); close(done) }()
 	status <- svc.Status{State: svc.Running, Accepts: svc.AcceptStop | svc.AcceptShutdown}
@@ -58,6 +68,45 @@ func (h *handler) Execute(args []string, req <-chan svc.ChangeRequest, status ch
 			}
 		}
 	}
+}
+
+const (
+	detachedProcess        = 0x00000008
+	createNewProcessGroup  = 0x00000200
+	createBreakawayFromJob = 0x01000000
+	createNoWindow         = 0x08000000
+)
+
+// Restart stops the service cleanly and has a detached helper start it again (after a
+// self-update). It returns false when the helper could not be started.
+func Restart() bool {
+	stopMu.Lock()
+	stop := stopSelf
+	stopMu.Unlock()
+	if stop == nil {
+		return false
+	}
+	ps := filepath.Join(os.Getenv("SystemRoot"), "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+	start := func(flags uint32) error {
+		cmd := exec.Command(ps, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", RestartScript(Name))
+		cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: flags, HideWindow: true}
+		if err := cmd.Start(); err != nil {
+			return err
+		}
+		return cmd.Process.Release()
+	}
+	base := uint32(detachedProcess | createNewProcessGroup | createNoWindow)
+	if err := start(base | createBreakawayFromJob); err != nil {
+		if err := start(base); err != nil {
+			log.Printf("restart helper: %v", err)
+			return false
+		}
+	}
+	// Safety net: if the service does not stop in time, exit with an error so the service
+	// recovery restarts it.
+	go func() { time.Sleep(60 * time.Second); os.Exit(1) }()
+	stop()
+	return true
 }
 
 // Run runs fn as the service until Windows stops it. Logging goes to agent.log in dir.
