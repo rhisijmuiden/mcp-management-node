@@ -74,6 +74,8 @@ def _criteria(ids: list[str]):
         Node,
         NodeJob,
         PairingCode,
+        Runbook,
+        RunbookRun,
         SdnDesign,
         Transfer,
         UnifiConnection,
@@ -99,6 +101,10 @@ def _criteria(ids: list[str]):
         with_loader_criteria(ConfigBackup, ConfigBackup.node_id.in_(node_ids), include_aliases=True),
         with_loader_criteria(Deployment, Deployment.node_id.in_(node_ids), include_aliases=True),
         with_loader_criteria(DeploymentRun, DeploymentRun.deployment_id.in_(dep_ids), include_aliases=True),
+        # Global runbooks (no customer) are visible to everyone; runs only to their customer.
+        with_loader_criteria(Runbook, Runbook.customer_id.in_(ids) | Runbook.customer_id.is_(None),
+                             include_aliases=True),
+        with_loader_criteria(RunbookRun, RunbookRun.customer_id.in_(ids), include_aliases=True),
         with_loader_criteria(Transfer, Transfer.source_node_id.in_(node_ids) & Transfer.target_node_id.in_(node_ids),
                              include_aliases=True),
     ]

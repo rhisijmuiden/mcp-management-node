@@ -53,7 +53,7 @@ OPERATE_TOOLS = {
     "send_test_mail", "send_node_test_notification", "create_pairing_code", "sync_templates",
     "run_scheduled_task", "run_deployment", "update_node_agent", "set_cpu_governor", "manage_service",
     "restart_unifi_device", "refresh_mcp_server", "workstation_action", "send_customer_report",
-    "run_nightly_checks",
+    "run_nightly_checks", "run_runbook", "complete_runbook_step", "cancel_runbook_run",
 }
 
 FINAL = {"executed", "failed", "rejected", "expired"}
@@ -116,6 +116,9 @@ def valid_rule_key(key: str) -> bool:
 
 # Set while the app runs an approved call, so the policy check is skipped for exactly that call.
 approved_call: contextvars.ContextVar[str | None] = contextvars.ContextVar("mmn_approved_call", default=None)
+# Set while a runbook runs a step that the policy already allowed ("<run id>:<step>"), so the policy
+# is not asked twice; the audit log records the run.
+runbook_call: contextvars.ContextVar[str | None] = contextvars.ContextVar("mmn_runbook_call", default=None)
 
 
 # ------------------------------------------------------------------ settings
@@ -400,6 +403,9 @@ def reason_text(r: dict[str, Any]) -> str:
         return f"rule for {p.get('tool')}: {p.get('action')} ({where})"
     if c == "nightly":
         return "proposed by the nightly checks"
+    if c == "runbook":
+        return f"step {p.get('step')} of runbook {p.get('runbook')}" + (
+            " (the runbook asks approval for this step)" if p.get("always") else "")
     if c == "outside_window":
         return f"outside the maintenance window of {p.get('customer')} ({p.get('window')})"
     return c or ""
@@ -535,7 +541,18 @@ async def expire_old(db: AsyncSession) -> int:
     if rows:
         await db.flush()
         events.publish("approval.changed", {"count": len(rows)})
+        for a in rows:
+            _runbook_kick(a)
     return len(rows)
+
+
+def _runbook_kick(a: AiApproval) -> None:
+    """A step of a runbook waits for this approval: let the run go on now that it is decided."""
+    run_id = (a.client or {}).get("runbook_run")
+    if run_id:
+        from mmn.services import runbooks
+
+        runbooks.kick(run_id)
 
 
 async def create_approval(db: AsyncSession, *, tool: str, risk: str, args: dict[str, Any], args_view: dict[str, Any],
@@ -598,6 +615,8 @@ async def decide_approval(db: AsyncSession, a: AiApproval, *, approve: bool, by:
         a.args_enc = None
     await db.flush()
     events.publish("approval.changed", {"id": a.id, "status": a.status})
+    if not approve:
+        _runbook_kick(a)
     return a
 
 
@@ -608,7 +627,7 @@ def start_execution(approval_id: str) -> None:
 
 
 # Approval requests that Stackpilot itself makes (no token): client["source"].
-SYSTEM_SOURCES = {"nightly"}
+SYSTEM_SOURCES = {"nightly", "runbook"}
 
 
 async def _approver(db: AsyncSession, username: str | None):
@@ -674,6 +693,37 @@ async def create_system_approval(db: AsyncSession, *, source: str, label: str, t
     return a, True
 
 
+async def create_runbook_approval(db: AsyncSession, *, run_id: str, step: int, label: str, tool: str,
+                                  args: dict[str, Any], target: str | None, decision: Decision,
+                                  extra_reason: dict[str, Any], token_id: str | None, token_name: str | None,
+                                  user_id: str | None, username: str | None, ai_reason: str | None,
+                                  run_after: datetime | None) -> AiApproval:
+    """The approval request of one runbook step. Started by an AI token, it runs with that token's
+    rights once approved; started in the app, with the rights of the admin who approves it."""
+    from mmn.mcp_server import _redact
+
+    spec = REGISTRY.get(tool)
+    if spec is None:
+        raise ApprovalError(f"unknown tool {tool}")
+    await expire_old(db)
+    cfg = await gateway_settings(db)
+    hours = max(1, min(int(cfg.get("approval_expiry_hours") or 24), 24 * 14))
+    clean = json.loads(json.dumps(args, default=str))
+    a = AiApproval(
+        expires_at=(max(run_after, datetime.now(UTC)) if run_after else datetime.now(UTC)) + timedelta(hours=hours),
+        status="pending", tool=tool, risk=spec.risk, args_enc=encrypt_secret(json.dumps(clean)),
+        args_view=_redact(clean), fingerprint=fingerprint(f"runbook:{run_id}:{step}", tool, clean), target=target,
+        customer_ids=[c[0] for c in decision.customers], customer_names=[c[1] for c in decision.customers],
+        reasons=[extra_reason, *decision.reasons], ai_reason=ai_reason, token_id=token_id,
+        token_name=token_name or label, user_id=user_id, username=username,
+        client={"name": label, "source": "runbook", "runbook_run": run_id, "runbook_step": step},
+        run_after=run_after,
+    )
+    db.add(a)
+    await db.flush()
+    return a
+
+
 def _store_result(result: Any) -> Any:
     data = json.loads(json.dumps(result, default=str))
     raw = json.dumps(data)
@@ -717,6 +767,7 @@ async def execute(approval_id: str) -> None:
             a.status, a.error, a.executed_at, a.args_enc = "failed", problem, now, None
             await db.commit()
             events.publish("approval.changed", {"id": a.id, "status": a.status})
+            _runbook_kick(a)
             return
         if system:
             # Proposed by Stackpilot itself (nightly checks): it runs with the rights of the admin
@@ -751,6 +802,7 @@ async def execute(approval_id: str) -> None:
         a.result = _store_result(result) if status == "executed" else None
         await db.commit()
     events.publish("approval.changed", {"id": approval_id, "status": status})
+    _runbook_kick(a)
 
 
 def pending_response(a: AiApproval, url: str | None) -> dict[str, Any]:

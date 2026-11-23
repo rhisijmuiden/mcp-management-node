@@ -10,6 +10,7 @@ Later phases register their own tools here (Proxmox nodes, VMs, containers, serv
 
 from __future__ import annotations
 
+import asyncio
 import contextvars
 import functools
 import inspect
@@ -191,13 +192,16 @@ def tool(scope: str, annotations: ToolAnnotations, *, all_customers: bool = Fals
             bound = inspect.signature(fn).bind_partial(*args, **kwargs).arguments
             p = _principal.get()
             approval_id = gateway.approved_call.get()
-            extra = {"approval_id": approval_id} if approval_id else {}
+            rb_call = gateway.runbook_call.get()
+            extra: dict[str, Any] = {"approval_id": approval_id} if approval_id else {}
+            if rb_call:
+                extra["extra"] = {"runbook_run": rb_call}
             try:
                 _check(scope)
                 if all_customers and p is not None and p.customers is not None:
                     raise ToolDenied("this tool works on the whole app or across customers; this token is tied to "
                                      "specific customers. Use a token for all customers.")
-                if approval_id is None and name not in GUARD_EXEMPT:
+                if approval_id is None and rb_call is None and name not in GUARD_EXEMPT:
                     # A dry run only shows what would change.
                     call_risk = "read" if bound.get("dry_run", dry_default) is True else risk
                     outcome = await _guard(p, name, call_risk, bound)
@@ -305,6 +309,13 @@ the same guardrails, approvals and audit log. `list_mcp_servers` shows them with
 the `hub` scope. With GitHub you can run a project from A to Z: create the repository, issues, pull
 requests, releases and Actions through `github__*`, then deploy it into a container with `save_deployment`
 and `run_deployment`. New or changed tools of a server only appear after an admin accepted them.
+
+Runbooks: fixed procedures per customer or for everyone ("patch a server", "new employee", "new project via
+GitHub"). `list_runbooks`, then `run_runbook` (with the customer, parameters and a reason) instead of doing the
+steps yourself: Stackpilot runs them in order with your token's rights, asks approval per step where the policy or
+the runbook says so, waits for the maintenance window and logs everything. Follow it with `get_runbook_run`;
+a manual step for the AI waits for `complete_runbook_step`. `save_runbook` creates or changes one (show the user
+the steps first).
 
 Nodes and servers can be named by id or by name. Every call is written to the audit log with your token's name.
 Destructive tools need `confirm` set to the exact node name, or are marked destructive: ask the user
@@ -3108,6 +3119,256 @@ async def send_customer_report(customer: str, period: str | None = None, to: lis
         return _jsonable({"ok": True, "sent_to": sent, "period": r.period, "report_id": r.id})
 
 
+# ------------------------------------------------------------------ runbooks (phase 13)
+def _rb_err(e: Exception) -> ToolDenied:
+    return ToolDenied(str(e))
+
+
+@tool("read", RO)
+async def list_runbooks(customer: str | None = None) -> list[dict]:
+    """The runbooks (fixed procedures such as "patch a server", "new employee", "new project via
+    GitHub"): name, category, customer (none = for every customer), parameters and steps. Run one
+    with run_runbook instead of doing the steps yourself: Stackpilot runs them in order, asks
+    approval where the policy or the runbook says so and keeps the audit trail."""
+    from sqlalchemy import select
+
+    from mmn.models import Environment, Runbook
+    from mmn.services import nodes, runbooks
+
+    async with sessionmaker()() as db:
+        q = select(Runbook).where(Runbook.enabled.is_(True)).order_by(Runbook.name)
+        if customer:
+            try:
+                cid = (await nodes.get_environment(db, customer)).id
+            except nodes.NodeError as ex:
+                raise ToolDenied(str(ex)) from ex
+            q = q.where((Runbook.customer_id == cid) | Runbook.customer_id.is_(None))
+        names = {e.id: e.name for e in (await db.execute(select(Environment))).scalars()}
+        out = []
+        for rb in (await db.execute(q)).scalars():
+            d = runbooks.runbook_out(rb, names.get(rb.customer_id))
+            out.append({k: d[k] for k in ("id", "name", "description", "category", "customer_name", "params")}
+                       | {"steps": [{"id": s["id"], "kind": s["kind"], "title": s.get("title"), "tool": s.get("tool"),
+                                     "approval": s.get("approval")} for s in d["steps"]]})
+    return _jsonable(out)
+
+
+@tool("read", RO)
+async def get_runbook(runbook: str) -> dict:
+    """One runbook (id or exact name) with all steps, their arguments and placeholders."""
+    from mmn.services import runbooks
+
+    async with sessionmaker()() as db:
+        try:
+            rb = await runbooks.find_runbook(db, runbook)
+        except runbooks.RunbookError as e:
+            raise _rb_err(e) from e
+        return _jsonable(runbooks.runbook_out(rb))
+
+
+@tool("runbooks", WRITE)
+async def run_runbook(runbook: str, reason: str, customer: str | None = None,
+                      params: dict[str, Any] | None = None) -> dict:
+    """Start a runbook (id or exact name) for a customer with its parameters. Stackpilot runs the
+    steps one by one with this token's rights; steps that need approval wait for an admin (app and
+    mail), changes outside the maintenance window wait for it, and manual steps wait for a person.
+    Returns the run; follow it with get_runbook_run. Ask the user before starting a runbook that
+    changes something, and give a short `reason`."""
+    from mmn.models import Environment
+    from mmn.services import gateway, nodes, runbooks
+
+    p = current_principal()
+    if not reason.strip():
+        raise ToolDenied("give a reason")
+    async with sessionmaker()() as db:
+        try:
+            rb = await runbooks.find_runbook(db, runbook)
+            env: Environment | None = None
+            if customer:
+                try:
+                    env = await nodes.get_environment(db, customer)
+                except nodes.NodeError as ex:
+                    raise ToolDenied(str(ex)) from ex
+            elif rb.customer_id is None and p is not None and p.customers is not None:
+                if len(p.customers) != 1:
+                    raise ToolDenied("name the customer this run is for")
+                env = await db.get(Environment, next(iter(p.customers)))
+            missing = sorted({(gateway.REGISTRY[s["tool"]].scope if s["tool"] in gateway.REGISTRY else "hub")
+                              for s in rb.steps or [] if s.get("kind") == "tool"} - (p.scopes if p else set()))
+            if missing:
+                raise ToolDenied(f"this token lacks scope(s) the steps need: {', '.join(missing)}")
+            run = await runbooks.start_run(db, rb, customer=env, params=params, trigger="mcp", reason=reason,
+                                           user_id=p.user_id if p else None, username=p.username if p else None,
+                                           token_id=p.token_id if p else None, token_name=p.token_name if p else None)
+        except runbooks.RunbookError as e:
+            raise _rb_err(e) from e
+        await db.commit()
+        out = runbooks.run_out(run, full=False)
+    runbooks.kick(run.id)
+    await asyncio.sleep(0.3)  # the first (read) steps usually finish right away
+    async with sessionmaker()() as db:
+        from mmn.models import RunbookRun
+
+        r = await db.get(RunbookRun, run.id)
+        if r is not None:
+            out = runbooks.run_out(r)
+    out["message"] = ("The run has started. Steps that need approval wait for an admin in Stackpilot; tell the user. "
+                      "Check progress with get_runbook_run(run_id); do not start it again.")
+    out["run_id"] = run.id
+    return _jsonable(out)
+
+
+@tool("read", RO)
+async def get_runbook_run(run_id: str) -> dict:
+    """The state of a runbook run: status (running, waiting_approval, waiting_input, succeeded,
+    failed, cancelled) and per step its status, approval request, result or error. A manual step for
+    the AI (assignee "ai") waits for complete_runbook_step."""
+    from mmn.models import RunbookRun
+    from mmn.services import runbooks
+
+    async with sessionmaker()() as db:
+        r = await db.get(RunbookRun, run_id)
+        if r is None:
+            raise ToolDenied("run not found")
+        return _jsonable(runbooks.run_out(r))
+
+
+@tool("read", RO)
+async def list_runbook_runs(customer: str | None = None, runbook: str | None = None, active_only: bool = False,
+                            limit: int = 20) -> list[dict]:
+    """Recent runbook runs (newest first), optionally of one customer or runbook, or only the ones that
+    are not finished."""
+    from sqlalchemy import select
+
+    from mmn.models import RunbookRun
+    from mmn.services import nodes, runbooks
+
+    async with sessionmaker()() as db:
+        q = select(RunbookRun).order_by(RunbookRun.created_at.desc()).limit(max(1, min(limit, 100)))
+        if customer:
+            try:
+                q = q.where(RunbookRun.customer_id == (await nodes.get_environment(db, customer)).id)
+            except nodes.NodeError as ex:
+                raise ToolDenied(str(ex)) from ex
+        if runbook:
+            try:
+                q = q.where(RunbookRun.runbook_id == (await runbooks.find_runbook(db, runbook)).id)
+            except runbooks.RunbookError as e:
+                raise _rb_err(e) from e
+        if active_only:
+            q = q.where(RunbookRun.status.not_in(tuple(runbooks.FINAL)))
+        return _jsonable([runbooks.run_out(r, full=False) for r in (await db.execute(q)).scalars()])
+
+
+@tool("runbooks", WRITE)
+async def complete_runbook_step(run_id: str, note: str, failed: bool = False) -> dict:
+    """Confirm the manual step a run waits for, when that step is for the AI (assignee "ai"): you
+    did what its instructions say (with other tools). `note` says what you did or found. failed=true
+    stops the run (unless the step may fail). Steps for a person are confirmed in Stackpilot."""
+    from mmn.models import RunbookRun
+    from mmn.services import runbooks
+
+    p = current_principal()
+    if not note.strip():
+        raise ToolDenied("say in `note` what you did")
+    async with sessionmaker()() as db:
+        r = await db.get(RunbookRun, run_id)
+        if r is None:
+            raise ToolDenied("run not found")
+        try:
+            await runbooks.complete_step(db, r, by=p.token_name if p else "AI", note=note, ok=not failed, via="mcp",
+                                         ai=True)
+        except runbooks.RunbookError as e:
+            raise _rb_err(e) from e
+        await db.commit()
+    runbooks.kick(run_id)
+    return {"ok": True, "run_id": run_id, "message": "Confirmed; the run goes on. Follow it with get_runbook_run."}
+
+
+@tool("runbooks", WRITE)
+async def cancel_runbook_run(run_id: str, reason: str) -> dict:
+    """Cancel a runbook run that is not finished: its open approval requests are withdrawn and no
+    further steps run. Steps that already ran are not undone."""
+    from mmn.models import RunbookRun
+    from mmn.services import runbooks
+
+    p = current_principal()
+    async with sessionmaker()() as db:
+        r = await db.get(RunbookRun, run_id)
+        if r is None:
+            raise ToolDenied("run not found")
+        try:
+            await runbooks.cancel(db, r, by=p.token_name if p else "AI", via="mcp")
+        except runbooks.RunbookError as e:
+            raise _rb_err(e) from e
+        r.error = f"{r.error}: {reason}"[:2000] if reason else r.error
+        await db.commit()
+        return _jsonable(runbooks.run_out(r, full=False))
+
+
+@tool("runbooks", WRITE)
+async def save_runbook(name: str, steps: list[dict[str, Any]], params: list[dict[str, Any]] | None = None,
+                       description: str | None = None, category: str = "other", customer: str | None = None,
+                       runbook: str | None = None, enabled: bool = True, use_window: bool = True) -> dict:
+    """Create a runbook, or change one (`runbook` = its id or name). steps: [{"id", "title", "kind":
+    "tool"|"manual"|"wait", "tool", "args", "approval": "policy"|"always", "on_failure":
+    "stop"|"continue", "optional", "wait_for_job", "instructions", "assignee": "human"|"ai",
+    "minutes"}]. params: [{"name", "label", "required", "default"}]. Arguments may use {{params.x}},
+    {{customer.name}}, {{customer.id}}, {{run.id}} and {{steps.<id>.result.<path>}}. category:
+    maintenance, onboarding, project, remediation or other. customer: none = for every customer.
+    Show the user the steps before saving."""
+    from mmn.services import nodes, runbooks
+
+    p = current_principal()
+    async with sessionmaker()() as db:
+        cid = None
+        if customer:
+            try:
+                cid = (await nodes.get_environment(db, customer)).id
+            except nodes.NodeError as ex:
+                raise ToolDenied(str(ex)) from ex
+        elif p is not None and p.customers is not None:
+            raise ToolDenied("this token is tied to customers: give the customer the runbook is for")
+        try:
+            rb = await runbooks.find_runbook(db, runbook) if runbook else None
+            if rb is not None and rb.customer_id is None and p is not None and p.customers is not None:
+                raise ToolDenied("this runbook is for every customer; a token tied to customers cannot change it")
+            rb = await runbooks.save(db, rb, name=name, description=description, category=category, customer_id=cid,
+                                     enabled=enabled, params=params or [], steps=steps, use_window=use_window,
+                                     triggers=rb.triggers if rb else [], by=p.token_name if p else None)
+        except runbooks.RunbookError as e:
+            raise _rb_err(e) from e
+        await db.commit()
+        return _jsonable(runbooks.runbook_out(rb))
+
+
+@tool("runbooks", DESTRUCTIVE)
+async def delete_runbook(runbook: str, confirm: str) -> dict:
+    """Delete a runbook (its past runs stay in the history). Set `confirm` to the runbook's name."""
+    from sqlalchemy import func, select
+
+    from mmn.models import RunbookRun
+    from mmn.services import runbooks
+
+    p = current_principal()
+    async with sessionmaker()() as db:
+        try:
+            rb = await runbooks.find_runbook(db, runbook)
+        except runbooks.RunbookError as e:
+            raise _rb_err(e) from e
+        if confirm != rb.name:
+            raise ToolDenied(f"confirm must equal the runbook name '{rb.name}'")
+        if rb.customer_id is None and p is not None and p.customers is not None:
+            raise ToolDenied("this runbook is for every customer; a token tied to customers cannot delete it")
+        active = (await db.execute(select(func.count()).select_from(RunbookRun).where(
+            RunbookRun.runbook_id == rb.id, RunbookRun.status.not_in(tuple(runbooks.FINAL))))).scalar_one()
+        if active:
+            raise ToolDenied("this runbook has runs that are not finished")
+        await db.delete(rb)
+        await db.commit()
+    return {"ok": True, "deleted": runbook}
+
+
 # ------------------------------------------------------------------ AI gateway: approvals and guardrails
 @tool("read", RO)
 async def get_approval(approval_id: str) -> dict:
@@ -3228,12 +3489,15 @@ async def run_hub_tool(name: str, arguments: dict[str, Any]) -> Any:
     started = time.monotonic()
     p = _principal.get()
     approval_id = gateway.approved_call.get()
+    rb_call = gateway.runbook_call.get()
     extra_kw = {"approval_id": approval_id} if approval_id else {}
     spec = gateway.REGISTRY.get(name)
     h = hub.HUB_TOOLS.get(name)
     args = dict(arguments or {})
     target = h.upstream_name if h else gateway.namespace_of(name)
     info = {"upstream": h.upstream_name if h else None, "upstream_tool": h.name if h else None}
+    if rb_call:
+        info["runbook_run"] = rb_call
 
     def ms() -> int:
         return int((time.monotonic() - started) * 1000)
@@ -3245,7 +3509,7 @@ async def run_hub_tool(name: str, arguments: dict[str, Any]) -> Any:
         if p is not None and p.customers is not None and (spec.customer_id is None or spec.customer_id not in p.customers):
             raise ToolDenied("this MCP server is not available to this token (it belongs to another customer, or "
                              "is shared and this token is tied to specific customers)")
-        if approval_id is None:
+        if approval_id is None and rb_call is None:
             outcome = await _guard(p, name, spec.risk, args)
             if outcome is not None:
                 await _audit(p, name, args, True, result=outcome, ms=ms(), target=target, extra=info)

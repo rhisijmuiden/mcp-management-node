@@ -171,6 +171,24 @@ async def _approvals_due_job() -> None:
         log.exception("starting approved calls failed")
 
 
+async def _runbooks_job() -> None:
+    from mmn.services import runbooks
+
+    try:
+        await runbooks.tick()
+    except Exception:  # noqa: BLE001
+        log.exception("runbooks tick failed")
+
+
+async def _runbooks_prune_job() -> None:
+    from mmn.services import runbooks
+
+    try:
+        await runbooks.prune()
+    except Exception:  # noqa: BLE001
+        log.exception("pruning runbook runs failed")
+
+
 async def _nightly_job() -> None:
     from mmn.services import nightly
 
@@ -292,6 +310,10 @@ async def start() -> None:
     scheduler.add_job(_approvals_expire_job, "interval", minutes=5, id="ai-approvals-expire", replace_existing=True)
     scheduler.add_job(_approvals_due_job, "interval", minutes=1, id="ai-approvals-due", replace_existing=True,
                       coalesce=True, max_instances=1)
+    scheduler.add_job(_runbooks_job, "interval", seconds=30, id="runbooks-tick", replace_existing=True,
+                      coalesce=True, max_instances=1)
+    scheduler.add_job(_runbooks_prune_job, CronTrigger(hour=4, minute=53, timezone="UTC"), id="runbooks-prune",
+                      replace_existing=True, coalesce=True)
     scheduler.add_job(_nightly_prune_job, CronTrigger(hour=4, minute=47, timezone="UTC"), id="nightly-prune",
                       replace_existing=True, coalesce=True)
     scheduler.add_job(_update_check_job, CronTrigger(hour="*/6", minute=17, timezone="UTC"), id="update-check",
@@ -319,6 +341,12 @@ async def start() -> None:
     except Exception:  # noqa: BLE001
         log.exception("default scheduled tasks")
     await reload_task_jobs()
+    try:
+        from mmn.services import runbooks
+
+        await runbooks.recover()
+    except Exception:  # noqa: BLE001
+        log.exception("recovering runbook runs")
     try:
         await reload_nightly_jobs()
     except Exception:  # noqa: BLE001

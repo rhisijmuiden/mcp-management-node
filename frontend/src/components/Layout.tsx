@@ -48,6 +48,7 @@ import {
   ShieldHalf,
   Wrench,
   Sunrise,
+  BookOpenCheck,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -182,6 +183,12 @@ export function Layout() {
     refetchInterval: 60_000,
   });
 
+  const runbookInput = useQuery({
+    queryKey: ["runbook-runs-count"],
+    queryFn: () => get<{ waiting_input: number }>("api/runbooks/runs/count"),
+    refetchInterval: 60_000,
+  });
+
   const sections: { title?: string; items: Item[] }[] = [
     {
       items: [
@@ -239,6 +246,7 @@ export function Layout() {
         { to: "/backups", icon: <Archive />, label: t("nav.protection") },
         { to: "/proxmox/updates", icon: <ArrowUpCircle />, label: t("nav.updates") },
         { to: "/servers/software", icon: <ShieldCheck />, label: t("nav.srv_software"), admin: true },
+        { to: "/runbooks", icon: <BookOpenCheck />, label: t("nav.runbooks"), badge: runbookInput.data?.waiting_input },
         { to: "/tasks", icon: <CalendarClock />, label: t("nav.tasks") },
         { to: "/deployments", icon: <Rocket />, label: t("nav.deployments") },
       ],
