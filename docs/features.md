@@ -367,6 +367,28 @@ offline devices raise monitoring alerts.
 Failed or too old backups open an alert in Monitoring and are mailed. The monthly report and the optimisation scan
 include the coverage. The cluster's own vzdump jobs stay under Cluster & HA.
 
+### Runbooks
+
+Operations → **Runbooks**: fixed procedures that Stackpilot runs step by step with its own tools, for one customer or
+for every customer. Start from a template (patch a server, new employee, new project via GitHub, restart a failed
+service) or build your own. A runbook has parameters (asked when it starts) and steps:
+
+- **Tool**: calls a Stackpilot tool or an MCP hub tool (`github__create_repository`). Arguments can use placeholders:
+  `{{params.server}}`, `{{customer.name}}`, `{{customer.id}}`, `{{run.id}}` and `{{steps.<id>.result.<field>}}` for a
+  result of an earlier step. *Approval*: follow the policy, or always ask. *Optional*: rejecting it skips the step.
+  *Wait for the job*: for tools that start a job (updates), the step ends when the job is done.
+- **Manual**: instructions for a person (confirmed on the run page) or for the AI (confirmed with
+  `complete_runbook_step`).
+- **Wait**: a number of minutes, for example for a server to come back after a reboot.
+
+Every tool step goes through the AI gateway like an AI call: the customer's policy decides allow, approve or block, and
+a step that needs approval appears in the Approvals inbox (app and mail). With *Wait for the maintenance window* on,
+an approved step outside the window runs when the window opens. When a step fails the run stops (or goes on, if the
+step says so); on the run page you can retry or skip the step, or cancel the run, which withdraws its open approvals.
+A run keeps a copy of the runbook, so editing a runbook never changes a run in progress. Runs started in the app use the
+rights of the admin who started them; runs started by the AI (`run_runbook`) use the token's rights and need the scopes
+of every step. Every step is in the audit log with the run's id. The menu shows how many runs wait for you.
+
 ### Monitoring
 
 One sample per node per minute, kept for 30 days: CPU, memory and disk with trends from 1 hour to 30 days, storage

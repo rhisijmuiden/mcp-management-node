@@ -170,7 +170,7 @@ function ReasonLine({ r }: { r: Reason }) {
     action: p.action ? t(`gw.action.${p.action}`) : "",
     where: p.customer ? t("gw.reason.where_customer", { customer: p.customer }) : p.layer === "token" ? t("gw.reason.where_token") : t("gw.reason.where_default"),
   };
-  const key = ["risk", "tool", "outside_window", "paused", "paused_customer", "paused_token"].includes(r.code) ? r.code : "other";
+  const key = ["risk", "tool", "outside_window", "paused", "paused_customer", "paused_token", "nightly", "runbook"].includes(r.code) ? r.code : "other";
   return <span>{t(`gw.reason.${key}`, vars)}</span>;
 }
 

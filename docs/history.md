@@ -20,6 +20,7 @@ Stackpilot is built in phases. Each phase is one pull request and one minor rele
 | 10 | v0.10.0 | Workstations (inventory, security status, actions) and monthly customer reports |
 | 11 | v0.11.0 | Backup management per customer |
 | 12 | v0.12.0 | Nightly checks and the morning summary |
+| 13 | v0.13.0 | Runbooks |
 
 ## What each phase added
 
@@ -116,5 +117,17 @@ admin who approved them. In the morning one summary goes out in the app and by m
 summary with settings per customer and the history of earlier nights; approved requests can now be scheduled for the
 maintenance window. New MCP tools: `get_morning_summary`, `run_nightly_checks`. The optimisation scan now counts
 security updates from a security suite.
+
+**Phase 13** adds **runbooks**: fixed procedures (patch a server, new employee, new project via GitHub, restart a
+service) that Stackpilot runs step by step. A step calls a Stackpilot or MCP hub tool, asks a person or the AI to do
+something, or waits. Arguments take placeholders for parameters, the customer and results of earlier steps. Every tool
+step goes through the AI gateway: the customer's policy decides allow, approve or block, a step can always ask approval,
+and approved steps outside the maintenance window wait for it. Runs started in the app use the rights of the admin
+(approvals: of the approving admin); runs started by the AI use the token's rights. Failed runs can retry or skip a
+step, runs can be cancelled (open approvals are withdrawn), and every step is in the audit log with the run's id. New
+page Operations → Runbooks with an editor, templates and run history; new scope `runbooks`; new MCP tools
+`list_runbooks`, `get_runbook`, `run_runbook`, `get_runbook_run`, `list_runbook_runs`, `complete_runbook_step`,
+`cancel_runbook_run`, `save_runbook`, `delete_runbook`. Runbooks with category "repair action" are the building blocks
+for automatic recovery (phase 14).
 
 Bug fix releases in between (v0.2.1, v0.6.1, v0.6.2, v0.7.1) are listed on the releases page.

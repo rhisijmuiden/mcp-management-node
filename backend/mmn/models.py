@@ -791,3 +791,70 @@ class NightlyFinding(Base):
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     proposal: Mapped[dict | None] = mapped_column(JsonType, nullable=True)
     approval_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+
+
+class Runbook(Base):
+    """A fixed procedure ("patch a server", "new employee", "new project via GitHub") that Stackpilot
+    runs step by step with its own tools. Global (customer_id None) or for one customer.
+
+    ``steps``: [{"id", "title", "kind": "tool"|"manual", "tool", "args", "approval": "policy"|"always",
+    "on_failure": "stop"|"continue", "instructions", "assignee": "human"|"ai"}]; arguments may hold
+    placeholders ({{params.x}}, {{customer.name}}, {{steps.<id>.result.<path>}}).
+    ``params``: [{"name", "label", "required", "default", "description"}].
+    ``category``: maintenance | onboarding | project | remediation | other. Runbooks with category
+    "remediation" are meant as repair actions; ``triggers`` (reserved for automatic recovery,
+    phase 14) lists the alerts or findings they fix."""
+
+    __tablename__ = "runbooks"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    name: Mapped[str] = mapped_column(String(120))
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    category: Mapped[str] = mapped_column(String(32), default="other")
+    customer_id: Mapped[str | None] = mapped_column(ForeignKey("environments.id", ondelete="CASCADE"), nullable=True,
+                                                    index=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    params: Mapped[list] = mapped_column(JsonType, default=list)
+    steps: Mapped[list] = mapped_column(JsonType, default=list)
+    use_window: Mapped[bool] = mapped_column(Boolean, default=True)
+    triggers: Mapped[list] = mapped_column(JsonType, default=list)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    template: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+
+class RunbookRun(Base):
+    """One run of a runbook. ``definition`` is a copy of the runbook (steps and params) when it
+    started, so editing the runbook does not change a running procedure. ``state`` holds per step
+    its status, approval request, result and error."""
+
+    __tablename__ = "runbook_runs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    runbook_id: Mapped[str | None] = mapped_column(ForeignKey("runbooks.id", ondelete="SET NULL"), nullable=True,
+                                                   index=True)
+    runbook_name: Mapped[str] = mapped_column(String(120))
+    runbook_version: Mapped[int] = mapped_column(Integer, default=1)
+    definition: Mapped[dict] = mapped_column(JsonType, default=dict)
+    customer_id: Mapped[str | None] = mapped_column(ForeignKey("environments.id", ondelete="SET NULL"), nullable=True,
+                                                    index=True)
+    customer_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    params: Mapped[dict] = mapped_column(JsonType, default=dict)
+    # running | waiting_approval | waiting_input | succeeded | failed | cancelled
+    status: Mapped[str] = mapped_column(String(20), default="running", index=True)
+    current_step: Mapped[int] = mapped_column(Integer, default=0)
+    state: Mapped[list] = mapped_column(JsonType, default=list)
+    trigger: Mapped[str] = mapped_column(String(16), default="ui")  # ui | mcp | remediation | schedule
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    context: Mapped[dict] = mapped_column(JsonType, default=dict)  # e.g. the alert a repair run answers
+    user_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    username: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    token_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    token_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)

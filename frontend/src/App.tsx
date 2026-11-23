@@ -9,6 +9,7 @@ import { ConsentPage, ForgotPage, LoginPage, ResetPage, SetupPage } from "@/page
 import { BackupsPage } from "@/pages/Backups";
 import { ProtectionPage } from "@/pages/Protection";
 import { NightlyPage } from "@/pages/Nightly";
+import { RunbookEditorPage, RunbookRunPage, RunbooksPage } from "@/pages/Runbooks";
 import { ApprovalsPage, CommandCenterPage, PoliciesPage, SessionsPage } from "@/pages/Gateway";
 import { HubPage, ToolCatalogPage } from "@/pages/Hub";
 import { HelpPage, McpCapabilitiesPage, McpHelpPage, NodesHelpPage } from "@/pages/Help";
@@ -72,6 +73,10 @@ export default function App() {
         <Route path="ai/activity" element={<RequireAuth admin><AiActivityPage /></RequireAuth>} />
         <Route path="ai/approvals" element={<RequireAuth admin><ApprovalsPage /></RequireAuth>} />
         <Route path="ai/nightly" element={<NightlyPage />} />
+        <Route path="runbooks" element={<RunbooksPage />} />
+        <Route path="runbooks/new" element={<RequireAuth admin><RunbookEditorPage /></RequireAuth>} />
+        <Route path="runbooks/runs/:id" element={<RunbookRunPage />} />
+        <Route path="runbooks/:id" element={<RequireAuth admin><RunbookEditorPage /></RequireAuth>} />
         <Route path="ai/policies" element={<RequireAuth admin><PoliciesPage /></RequireAuth>} />
         <Route path="ai/sessions" element={<RequireAuth admin><SessionsPage /></RequireAuth>} />
         <Route path="ai/hub" element={<RequireAuth admin><HubPage /></RequireAuth>} />

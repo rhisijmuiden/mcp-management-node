@@ -80,6 +80,10 @@ export function useLiveEvents() {
             for (const k of ["nightly", "nightly-runs", "nightly-run"]) qc.invalidateQueries({ queryKey: [k] });
             if (msg.event === "nightly.summary") window.dispatchEvent(new CustomEvent("mmn:nightly", { detail: msg.data }));
           }
+          if (msg.event === "runbook.changed") {
+            for (const k of ["runbooks", "runbook-runs", "runbook-runs-count"]) qc.invalidateQueries({ queryKey: [k] });
+            qc.invalidateQueries({ queryKey: ["runbook-run", String(msg.data.id ?? "")] });
+          }
           if (msg.event === "gateway.paused" || msg.event === "gateway.policy") {
             for (const k of ["gateway-status", "gateway-overview", "gateway-policies"]) qc.invalidateQueries({ queryKey: [k] });
           }

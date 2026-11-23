@@ -14,7 +14,7 @@
   <a href="https://github.com/rhisijmuiden/stackpilot/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/rhisijmuiden/stackpilot?label=release&color=14213D"></a>
   <a href="https://github.com/rhisijmuiden/stackpilot/actions/workflows/release.yml"><img alt="Release build" src="https://img.shields.io/github/actions/workflow/status/rhisijmuiden/stackpilot/release.yml?label=build"></a>
   <img alt="Debian 13" src="https://img.shields.io/badge/runs%20on-Debian%2013-FF6B57">
-  <img alt="MCP tools" src="https://img.shields.io/badge/MCP%20tools-159-9CC3FF">
+  <img alt="MCP tools" src="https://img.shields.io/badge/MCP%20tools-168-9CC3FF">
   <img alt="English and Dutch" src="https://img.shields.io/badge/languages-EN%20%7C%20NL-F6F7FB">
 </p>
 
@@ -50,10 +50,11 @@ pauses all AI actions.
 | | |
 | --- | --- |
 | 🤖 **AI gateway** | Command center, approvals inbox (app + mail), policies per risk level, customer and token, maintenance windows, kill switch, AI sessions and activity log. |
-| 🧰 **159 MCP tools** | Read logs, restart services, run commands, patch, manage VMs, network, HA, deployments and UniFi, all through one endpoint with OAuth 2.1 or API tokens. [Full list](docs/mcp-tools.md). |
+| 🧰 **168 MCP tools** | Read logs, restart services, run commands, patch, manage VMs, network, HA, deployments and UniFi, all through one endpoint with OAuth 2.1 or API tokens. [Full list](docs/mcp-tools.md). |
 | 🏢 **Customers** | Customer switcher, customer page with Proxmox, servers, workstations, network and AI access, contacts, notes for the AI, maintenance window, SLA and an optimisation scan. |
 | 💻 **Workstations** | PCs and laptops per customer: hardware, OS, logged-in user, installed software, disks and SSD wear, Windows Update history, Defender, BitLocker/LUKS, firewall, TPM, a security status, and remote actions (Defender scan, signature update, Group Policy refresh, message, log off). |
 | 🌅 **Nightly checks & morning summary** | Every night every customer is checked: updates, security updates with the CVEs they fix, full disks, certificates that expire, failed or missing backups and the optimisation scan. In the morning one summary in the app and by mail, with what is new and resolved, and proposals you approve with one click; changes wait for the customer's maintenance window. |
+| 📒 **Runbooks** | Fixed procedures per customer or for everyone (patch a server, new employee, new project via GitHub, restart a service) that Stackpilot runs step by step with its own tools: approval per step where the policy or the runbook says so, waiting for the maintenance window, manual steps for a person or the AI, and every step in the audit log. Edit them in the app or let the AI start them over MCP. |
 | 🛟 **Customer backups** | Coverage per customer: which VMs, containers, servers and workstations have a backup, when the last good one ran, size, failures, verify and offsite copy. Alerts when a backup fails or is older than the customer's SLA, restore of a whole guest or single files (Proxmox Backup Server) with approval, Windows Server Backup status, and managing Proxmox Backup Server datastores, verify, sync and prune jobs. |
 | 📄 **Monthly reports** | One report per customer per month (PDF and HTML): availability, incidents, updates, Proxmox backups, workstation security, AI actions and recommendations, mailed to the customer on a set day or made on demand. |
 | 🖥️ **Proxmox VE** | Nodes, VMs and containers, browser console (noVNC / xterm.js), snapshots, migration, create from templates, community scripts, ISO or cloud image, CT template library synced to all nodes. |
@@ -161,7 +162,7 @@ see **[installation](docs/install.md)**.
 | Document | What's in it |
 | --- | --- |
 | [Feature guide](docs/features.md) | Every part of the app, page by page |
-| [MCP tool reference](docs/mcp-tools.md) | All 159 tools with risk level, scope and parameters (generated from the code) |
+| [MCP tool reference](docs/mcp-tools.md) | All 168 tools with risk level, scope and parameters (generated from the code) |
 | [Installation](docs/install.md) | Install, upgrade, reverse proxy (Zoraxy), agents, file locations, development |
 | [Architecture](docs/architecture.md) | Components, agent protocol, security model |
 | [Release history](docs/history.md) | What each phase and release added |
@@ -178,6 +179,7 @@ see **[installation](docs/install.md)**.
 | 10 | **Workstations and monthly report**: inventory and security status per PC (Defender, BitLocker, patches, disks, software), remote actions, monthly PDF report per customer mailed to the contacts | ✅ Done (v0.10.0) |
 | 11 | **Backup management per customer**: coverage, alerts per SLA, restores with approval, Proxmox Backup Server, Windows Server Backup, backups in the monthly report and the optimisation scan | ✅ Done (v0.11.0) |
 | 12 | **Nightly checks and morning summary**: updates, CVEs, disks, certificates and backups of every customer each night, one summary in the morning with proposals approved in one click and run in the maintenance window | ✅ Done (v0.12.0) |
+| 13 | **Runbooks**: fixed procedures run step by step through Stackpilot's tools, with approval per step, the maintenance window and the audit log, editable in the app and available as MCP tools | ✅ Done (v0.13.0) |
 
 ## Releases and channels
 
