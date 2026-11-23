@@ -37,6 +37,7 @@ import { del, errorMessage, get, post, put } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { CustomerSummary, SystemInfo } from "@/lib/types";
 import { appUrl, cn, formatDate, timeAgo } from "@/lib/utils";
+import { HubCommandCenterCard } from "@/pages/Hub";
 
 /* ------------------------------------------------------------------ types */
 export type Risk = "read" | "operate" | "change" | "destructive";
@@ -432,6 +433,7 @@ export function CommandCenterPage() {
             </div>
 
             <div className="min-w-0 space-y-6">
+              {admin && <HubCommandCenterCard />}
               <Card className="bg-nacht text-white">
                 <CardBody className="py-5">
                   <div className="flex items-center gap-2 text-lucht"><Bot className="size-5" /><span className="text-sm font-bold uppercase tracking-wider">{t("gw.cc.endpoint")}</span></div>

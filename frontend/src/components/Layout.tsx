@@ -45,6 +45,7 @@ import {
   Hand,
   History,
   ShieldHalf,
+  Wrench,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -180,6 +181,8 @@ export function Layout() {
         { to: "/", icon: <LayoutDashboard />, label: t("nav.command_center") },
         { to: "/ai/approvals", icon: <Hand />, label: t("nav.approvals"), admin: true, badge: pending.data?.pending },
         { to: "/ai/policies", icon: <ShieldHalf />, label: t("nav.ai_policies"), admin: true },
+        { to: "/ai/hub", icon: <Network />, label: t("nav.mcp_hub"), admin: true },
+        { to: "/ai/tools", icon: <Wrench />, label: t("nav.tool_catalog"), admin: true },
         { to: "/ai/connections", icon: <Bot />, label: t("nav.ai_connections") },
         { to: "/ai/sessions", icon: <History />, label: t("nav.ai_sessions"), admin: true },
         { to: "/ai/tokens", icon: <KeyRound />, label: t("nav.api_tokens") },

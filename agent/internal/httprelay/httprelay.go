@@ -137,7 +137,7 @@ func Do(ctx context.Context, q Request) (*Response, error) {
 	}
 	out := &Response{Status: resp.StatusCode, Headers: map[string]string{}, Body: base64.StdEncoding.EncodeToString(data),
 		BodyB64: true, PeerCertificate: peer}
-	for _, h := range []string{"Content-Type", "Retry-After", "Location"} {
+	for _, h := range []string{"Content-Type", "Retry-After", "Location", "Mcp-Session-Id", "Www-Authenticate"} {
 		if v := resp.Header.Get(h); v != "" {
 			out.Headers[h] = v
 		}

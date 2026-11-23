@@ -653,3 +653,47 @@ class AiApproval(Base):
     executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     result: Mapped[dict | list | None] = mapped_column(JsonType, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class McpUpstream(Base):
+    """Another MCP server registered in the MCP hub (Keystone, GitHub, Home Assistant...). Its tools are
+    offered through Stackpilot's own MCP endpoint as ``<namespace>__<tool>``, with the same tokens, scopes,
+    guardrails, approvals and audit log as the built-in tools."""
+
+    __tablename__ = "mcp_upstreams"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    name: Mapped[str] = mapped_column(String(100))
+    namespace: Mapped[str] = mapped_column(String(32), unique=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The customer this server belongs to; None = shared (only tokens for all customers see it).
+    environment_id: Mapped[str | None] = mapped_column(ForeignKey("environments.id", ondelete="CASCADE"),
+                                                       nullable=True, index=True)
+    transport: Mapped[str] = mapped_column(String(16), default="http")  # http | sse | stdio
+    url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # http through an agent in the customer's network (no open ports)
+    agent_node_id: Mapped[str | None] = mapped_column(ForeignKey("nodes.id", ondelete="SET NULL"), nullable=True)
+    tls_mode: Mapped[str] = mapped_column(String(16), default="verify")  # verify | pin | insecure
+    fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    command: Mapped[str | None] = mapped_column(Text, nullable=True)  # stdio
+    args: Mapped[list] = mapped_column(JsonType, default=list)
+    auth_kind: Mapped[str] = mapped_column(String(16), default="none")  # none | bearer | headers | oauth
+    # Encrypted JSON: {"token": ..., "headers": {...}, "env": {...}, "oauth": {...}}
+    secret_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Not secret: preset, oauth client id/scopes, names of the secret headers and env vars, timeouts.
+    config: Mapped[dict] = mapped_column(JsonType, default=dict)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # unknown | online | error | auth_required | disabled
+    status: Mapped[str] = mapped_column(String(16), default="unknown")
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    server_info: Mapped[dict] = mapped_column(JsonType, default=dict)
+    instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # What the server offers now: [{name, exposed, title, description, input_schema, annotations, hash}]
+    tools: Mapped[list] = mapped_column(JsonType, default=list)
+    # Per tool: {"approved_hash": ..., "enabled": true, "risk": "change"|None}
+    tool_settings: Mapped[dict] = mapped_column(JsonType, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)

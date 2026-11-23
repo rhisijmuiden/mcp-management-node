@@ -16,7 +16,7 @@ Stackpilot is built in phases. Each phase is one pull request and one minor rele
 | – | v0.6.3–0.6.4 | Renamed to Stackpilot, repository moved to `rhisijmuiden/stackpilot` |
 | 7 | v0.7.0 | Customers central |
 | 8 | v0.8.0 | AI gateway: command center, approvals, policies, kill switch |
-| 9 | – | MCP hub (in progress) |
+| 9 | v0.9.0 | MCP hub and tool catalog |
 | 10 | – | Workstations and monthly report (planned) |
 
 ## What each phase added
@@ -69,6 +69,14 @@ plus "outside the customer's maintenance window needs approval". A call that nee
 **Approvals** and answers `pending_approval`; you get a mail and an in-app notification, and after you approve the
 app runs the call with the token's own rights (the AI reads the outcome with `get_approval`). **Pause all AI
 actions** is the kill switch (also per customer or token). New MCP tools: `get_approval`, `get_guardrails`.
+
+**Phase 9** adds the **MCP hub**: register other MCP servers (Streamable HTTP directly or through an agent on the
+customer's LAN, HTTP + SSE, or a command over stdio) with a bearer token, headers or OAuth, all stored encrypted.
+Their tools appear on Stackpilot's endpoint as `<prefix>__<tool>`, only after an admin accepted them (a changed tool
+is withdrawn until accepted again), and go through the same scopes (`hub`), risk levels, policies, approvals and
+audit log, per customer. Ready-made setups for GitHub (projects from A to Z) and Keystone VoIP. The **Tool catalog**
+switches tools or whole servers on or off for all tokens or one token. New MCP tools: `list_mcp_servers`,
+`refresh_mcp_server`.
 Default policy after the update: read, operate and change run, destructive tools (commands, updates, reboots,
 deletes, doors) ask for approval first; change it under AI Gateway → Policies & guardrails.
 

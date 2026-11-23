@@ -43,10 +43,11 @@ SCOPES: dict[str, str] = {
     "unifi": "Read UniFi Network and Access: devices, clients, WiFi, firewall zones, events, doors and the access log",
     "unifi_admin": "UniFi Network actions: restart devices, power-cycle switch ports, authorize guests, switch WiFi on or off",
     "doors": "UniFi Access: unlock doors and change door lock rules (every action is logged)",
+    "hub": "Use the tools of other MCP servers registered in the MCP hub (Keystone, GitHub, ...), within the guardrails",
 }
 ADMIN_ONLY_SCOPES = {"restore", "updates", "settings", "backups", "nodes", "node_updates", "logs", "services", "exec", "copy",
                      "guests", "guests_admin", "templates", "tasks", "network", "cluster", "deploy",
-                     "unifi", "unifi_admin", "doors"}
+                     "unifi", "unifi_admin", "doors", "hub"}
 
 
 async def clean_customer_ids(db: AsyncSession, ids: list[str] | None) -> list[str] | None:
@@ -173,6 +174,48 @@ async def set_token_customers(token_id: str, body: CustomersIn, request: Request
                 customers=tok.customer_ids or "all")
     await db.commit()
     return tok
+
+
+class ScopesIn(BaseModel):
+    add: list[str] = Field(default_factory=list)
+    remove: list[str] = Field(default_factory=list)
+
+
+def _change_scopes(current: list[str], body: ScopesIn, user: User) -> list[str]:
+    unknown = (set(body.add) | set(body.remove)) - set(SCOPES)
+    if unknown:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="unknown_scope")
+    if user.role != Role.admin and set(body.add) & ADMIN_ONLY_SCOPES:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="scope_not_allowed")
+    return sorted((set(current or []) | set(body.add) | {"read"}) - (set(body.remove) - {"read"}))
+
+
+@router.post("/{token_id}/scopes", response_model=TokenOut)
+async def change_token_scopes(token_id: str, body: ScopesIn, request: Request, db: AsyncSession = Depends(get_db),
+                              user: User = Depends(current_user)):
+    """Add or remove scopes of an existing token (for example ``hub`` for the MCP hub)."""
+    tok = await db.get(ApiToken, token_id)
+    if tok is None or tok.revoked or tok.user_id != user.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    tok.scopes = _change_scopes(tok.scopes, body, user)
+    await audit(db, "token.scopes", user=user, target=tok.name, ip=client_ip(request), scopes=tok.scopes)
+    await db.commit()
+    return tok
+
+
+@router.post("/connections/{client_id}/scopes")
+async def change_connection_scopes(client_id: str, body: ScopesIn, request: Request,
+                                   db: AsyncSession = Depends(get_db), user: User = Depends(current_user)):
+    """Add or remove scopes of an AI app connected through OAuth (also kept on its next refresh)."""
+    toks = (await db.execute(select(ApiToken).where(ApiToken.user_id == user.id, ApiToken.oauth_client_id == client_id,
+                                                    ApiToken.revoked.is_(False)))).scalars().all()
+    if not toks:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    for t in toks:
+        t.scopes = _change_scopes(t.scopes, body, user)
+    await audit(db, "oauth.scopes", user=user, target=toks[0].name, ip=client_ip(request), scopes=toks[0].scopes)
+    await db.commit()
+    return {"scopes": toks[0].scopes}
 
 
 @router.post("", response_model=TokenCreated, status_code=201)
