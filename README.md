@@ -28,7 +28,7 @@ carry out tasks, with every action logged.
 > "why can't this laptop get on WiFi?", "which APs need firmware?", "is guest isolated from the LAN?" and "who opened
 > the server room last night?".
 
-> Phase 7 (this release) makes **customers** the top layer. The former environments are now customers ("Home" is
+> Phase 7 made **customers** the top layer. The former environments are now customers ("Home" is
 > one too) with contact details, contacts, notes, a maintenance window and an SLA. A customer switcher at the top of
 > the menu limits the whole interface to one customer; every customer has a page with Overview, Proxmox, Servers,
 > Workstations, Network, AI access, Contacts & notes and Reports. Linux and Windows machines can be marked as
@@ -38,6 +38,18 @@ carry out tasks, with every action logged.
 > customer X"), `get_customer_context`, `create_customer` and `update_customer`; most tools take `customer` instead of
 > `environment`; the customer notes are the MCP resources `stackpilot://customers` and `stackpilot://customers/<id>`.
 > Existing installs migrate automatically: every node, server, UniFi connection and agent stays where it was.
+
+> Phase 8 (this release) turns Stackpilot into an **AI gateway**. The app opens on the **Command center** (pending
+> approvals, live AI activity, AI sessions, connected AI tools, guardrails and the health of every customer), and the
+> menu is now AI Gateway / Infrastructure / Operations / Administration. Every MCP tool has a risk level (read,
+> operate, change, destructive); **Policies & guardrails** decide per risk level and per tool whether the AI may run
+> it, must ask first or may never do it, as defaults, per customer (looser or stricter) and per token (only stricter),
+> plus "outside the customer's maintenance window needs approval". A call that needs approval is stored in
+> **Approvals** and answers `pending_approval`; you get a mail and an in-app notification, and after you approve the
+> app runs the call with the token's own rights (the AI reads the outcome with `get_approval`). **Pause all AI
+> actions** is the kill switch (also per customer or token). New MCP tools: `get_approval`, `get_guardrails`.
+> Default policy after the update: read, operate and change run, destructive tools (commands, updates, reboots,
+> deletes, doors) ask for approval first; change it under AI Gateway → Policies & guardrails.
 
 > **Name.** The product was called *MCP Management Node* (and before that *Proxmox Management*) up to 0.6.2 and is
 > now **Stackpilot**; the repository moved to `rhisijmuiden/stackpilot` in 0.6.4 (GitHub redirects the old URLs).
@@ -222,7 +234,8 @@ OAuth 2.1 (dynamic client registration + PKCE); scripts can use a personal API t
 permissions you tick (read, backups, restore, updates, settings, nodes, node updates, logs, services, exec, guests,
 create and remove guests, templates, scheduled tasks, network, cluster, deployments, UniFi read, UniFi actions, doors),
 destructive tools require confirmation of the exact target, commands and service actions need a stated reason, and
-every call is recorded in the **AI activity log**. Through the agents an assistant can read logs and the journal,
+every call is checked against your guardrails (see Policies & guardrails and Approvals above) and recorded in the
+**AI activity log** and **Sessions & audit**. Through the agents an assistant can read logs and the journal,
 check and restart services, find which servers have a package (e.g. nginx for a CVE), read files, run commands,
 install updates and reboot nodes, and manage VMs, containers, snapshots, templates and scheduled tasks, read the network and change it with a dry run first, design and roll out SDN, manage HA, replication, backup jobs and storage, read monitoring and SMART data, start deployments, and look into UniFi networks and doors (devices, clients, WiFi problems, firmware, guest isolation, events, access log) and act on them when allowed. **Help → What the MCP can do** lists everything. Step-by-step instructions are in the app under
 **Help → Connect Claude, ChatGPT or Copilot**.

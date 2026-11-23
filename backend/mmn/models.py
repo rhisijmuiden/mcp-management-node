@@ -4,7 +4,18 @@ import enum
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    Boolean,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -584,3 +595,61 @@ class UnifiEvent(Base):
     subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
     message: Mapped[str] = mapped_column(String(500))
     detail: Mapped[dict] = mapped_column(JsonType, default=dict)
+
+
+class AiPolicy(Base):
+    """Guardrails for AI (MCP) tool calls. One row for the defaults (scope "global"), and optional rows
+    per customer and per token. Each risk level and each tool maps to allow, approve or block;
+    "inherit" (or a missing key) falls through to the layer above."""
+
+    __tablename__ = "ai_policies"
+    __table_args__ = (UniqueConstraint("scope", "scope_id", name="uq_ai_policies_scope"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    scope: Mapped[str] = mapped_column(String(16))  # global | customer | token
+    scope_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # {"read": "allow", "operate": "allow", "change": "allow", "destructive": "approve"}
+    risks: Mapped[dict] = mapped_column(JsonType, default=dict)
+    # {"run_command": "approve", "unlock_door": "block"}
+    tools: Mapped[dict] = mapped_column(JsonType, default=dict)
+    # What happens to change and destructive calls outside the customer's maintenance window:
+    # inherit | ignore | approve | block
+    outside_window: Mapped[str] = mapped_column(String(16), default="inherit")
+    # Pause all AI actions for this customer or token (the global pause lives in the settings).
+    paused: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    updated_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class AiApproval(Base):
+    """An AI tool call that waits for a person: created when a policy says "approve", executed by the
+    app (with the token's own rights) once an admin approves it."""
+
+    __tablename__ = "ai_approvals"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # pending | approved | running | executed | failed | rejected | expired
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    tool: Mapped[str] = mapped_column(String(100))
+    risk: Mapped[str] = mapped_column(String(16))
+    args_enc: Mapped[str | None] = mapped_column(Text, nullable=True)  # the full arguments, encrypted
+    args_view: Mapped[dict] = mapped_column(JsonType, default=dict)  # without secrets, for the interface
+    fingerprint: Mapped[str] = mapped_column(String(64), index=True)
+    target: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    customer_ids: Mapped[list] = mapped_column(JsonType, default=list)
+    customer_names: Mapped[list] = mapped_column(JsonType, default=list)
+    reasons: Mapped[list] = mapped_column(JsonType, default=list)  # why it needs approval
+    ai_reason: Mapped[str | None] = mapped_column(Text, nullable=True)  # the AI's own `reason` argument
+    token_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    token_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    user_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    username: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    client: Mapped[dict] = mapped_column(JsonType, default=dict)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decided_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    decision_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    result: Mapped[dict | list | None] = mapped_column(JsonType, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)

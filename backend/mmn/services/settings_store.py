@@ -67,6 +67,21 @@ DEFAULTS: dict[str, dict[str, Any]] = {
     "schedules": {
         "timezone": "Europe/Amsterdam",  # time zone of scheduled tasks
     },
+    "ai_gateway": {
+        # Kill switch: refuse every AI (MCP) call that is not read-only.
+        "paused": False,
+        "pause_reads": False,
+        "pause_note": "",
+        "paused_by": None,
+        "paused_at": None,
+        # How long an MCP call that needs approval waits for a decision before it answers "pending".
+        "approval_wait_seconds": 25,
+        "approval_expiry_hours": 24,
+        # Notification channels for new approval requests (see services/ai_notify.py).
+        "notify_app": True,
+        "notify_mail": True,
+        "notify_mail_to": "",  # empty: every admin with an email address
+    },
     "proxy": {
         "mode": "direct",  # direct | proxy
         "trusted_proxies": [],
