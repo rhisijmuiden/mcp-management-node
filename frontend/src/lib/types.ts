@@ -285,7 +285,7 @@ export interface CustomerOverview {
   ai_access: CustomerAiAccess[];
 }
 
-export interface ScanFinding { severity: "high" | "medium" | "low" | "info"; area: string; target: string | null; finding: string; suggestion: string; next_tool?: string }
+export interface ScanFinding { severity: "high" | "medium" | "low" | "info"; area: string; target: string | null; finding: string; suggestion: string; next_tool?: string; code?: string; params?: Record<string, string | number> }
 
 export interface ScanResult {
   customer: string;

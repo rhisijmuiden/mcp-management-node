@@ -124,6 +124,66 @@ CHECK_NL = {
     "disk_full": "Schijf {mount} heeft nog maar {free_pct}% vrij.",
 }
 
+# Optimisation-scan finding codes (customers._finding) in the report language: (finding, suggestion).
+FINDING_NL = {
+    "node_offline": ("De node is offline (geen agentverbinding).",
+                     "Controleer stroom en netwerk, of de mmn-agent-service op de node."),
+    "node_mem_high": ("Het geheugengebruik is {pct}%.",
+                      "Verplaats een guest naar een rustigere node, verlaag het guestgeheugen of voeg RAM toe."),
+    "storage_full": ("Opslag {storage} is {pct}% vol.",
+                     "Verwijder oude back-ups, ISO's, snapshots of ongebruikte schijven, of vergroot de opslag."),
+    "smart_bad": ("De SMART-status van {disk} ({model}) is {health}.",
+                  "Vervang de schijf binnenkort en controleer of de back-ups recent zijn."),
+    "cluster_imbalance": ("{busy} gebruikt {busy_pct}% geheugen terwijl {quiet} {quiet_pct}% gebruikt.",
+                          "Verplaats {guest} naar {quiet} om het cluster te balanceren."),
+    "cluster_imbalance_any": ("{busy} gebruikt {busy_pct}% geheugen terwijl {quiet} {quiet_pct}% gebruikt.",
+                              "Verplaats een guest naar {quiet} om het cluster te balanceren."),
+    "guest_disk_full": ("De rootschijf is {pct}% vol.",
+                        "Ruim logs en caches in de container op of vergroot de schijf."),
+    "guest_mem_high": ("Gebruikt {pct}% van het geheugen.", "Geef meer geheugen als hij traag is of swapt."),
+    "guests_stopped": ("Gestopt: {names}.",
+                       "Verwijder guests die niet meer nodig zijn (na een back-up) om schijfruimte vrij te maken."),
+    "machine_offline": ("Offline (geen agentverbinding).", "Controleer de machine en de agent-service."),
+    "workstation_offline": ("Offline of in slaapstand.", "Werkplekken worden opnieuw gecontroleerd zodra ze online komen."),
+    "updates_pending": ("{count} update(s) wachten.", "Installeer ze in het onderhoudsvenster."),
+    "updates_pending_sec": ("{count} update(s) wachten, waarvan {security} beveiligingsupdate(s).",
+                            "Installeer ze in het onderhoudsvenster."),
+    "reboot_pending": ("Na updates is een herstart nodig.", "Herstart in het onderhoudsvenster."),
+    "agent_old": ("Agent {version} is ouder dan {bundled}.", "Werk de agent bij (zonder downtime)."),
+    "services_failed": ("{count} mislukte service(s).",
+                        "Bekijk de mislukte services en herstart of schakel ze uit."),
+    "disk_full": ("Schijf {disk} is {pct}% vol.",
+                  "Verwijder oude logs, tijdelijke bestanden en oude back-ups, of vergroot de schijf."),
+    "machine_mem_high": ("Het geheugengebruik is {pct}%.",
+                         "Zoek het proces dat het geheugen gebruikt, of voeg geheugen toe."),
+    "unifi_error": ("De UniFi-verbinding faalt: {error}.", "Controleer de API-sleutel en het adres van de console."),
+    "unifi_offline": ("{count} UniFi-apparaat/apparaten offline.",
+                      "Controleer stroom, PoE en uplinks van die apparaten."),
+    "firmware": ("Firmware-update beschikbaar voor {device} (nu {firmware}).",
+                 "Werk de firmware bij op een rustig moment."),
+    "guest_isolation_open": ("Het gastnetwerk ({networks}) kan het LAN bereiken.",
+                             "Isoleer het gastnetwerk van het LAN met een firewall-zonebeleid."),
+    "guest_isolation_partial": ("Het gastnetwerk ({networks}) kan het LAN deels bereiken.",
+                                "Isoleer het gastnetwerk van het LAN met een firewall-zonebeleid."),
+    "open_alerts": ("{count} openstaande monitoringmelding(en).", "Bekijk de openstaande meldingen."),
+    "no_window": ("Voor deze klant is geen onderhoudsvenster ingesteld.",
+                  "Spreek een onderhoudsvenster af en stel het in op de klantpagina, zodat updates gepland kunnen worden."),
+}
+FINDING_TARGET_NL = {"guests_stopped": "{count} gestopte guest(s)"}
+
+
+def finding_texts(f: dict[str, Any], lang: str) -> tuple[str | None, str, str]:
+    """(target, finding, suggestion) of an optimisation-scan finding in the report language."""
+    code, params = f.get("code"), f.get("params") or {}
+    if lang == "nl" and code in FINDING_NL:
+        try:
+            fin, sug = (x.format(**params) for x in FINDING_NL[code])
+            target = FINDING_TARGET_NL[code].format(**params) if code in FINDING_TARGET_NL else f.get("target")
+            return target, fin, sug
+        except (KeyError, IndexError, ValueError):
+            pass
+    return f.get("target"), f.get("finding") or "", f.get("suggestion") or ""
+
 
 def texts(lang: str) -> dict[str, str]:
     return TEXT.get(lang) or TEXT["en"]
@@ -365,7 +425,8 @@ async def build(db: AsyncSession, e: Environment, period: str, lang: str = "en",
     recs = [f for f in scan["findings"] if f["severity"] in ("high", "medium", "low")][:15]
     for f in scan["findings"]:
         if f["area"] in ("network", "hardware", "disk") and f["severity"] == "high":
-            sec.append({"severity": "high", "machine": f["target"], "text": f["finding"]})
+            target, text, _sug = finding_texts(f, lang)
+            sec.append({"severity": "high", "machine": target, "text": text})
 
     # AI actions (MCP) on this customer's machines or the customer itself.
     targets = {n.name for n in ns} | {e.name, e.id}
@@ -420,8 +481,8 @@ async def build(db: AsyncSession, e: Environment, period: str, lang: str = "en",
         "workstations": ws,
         "security": sec[:40],
         "ai": {"calls": total_calls, "by_risk": by_risk, "changes": ai_rows[-40:], "approvals": approvals},
-        "recommendations": [{"severity": f["severity"], "target": f["target"], "finding": f["finding"],
-                             "suggestion": f["suggestion"]} for f in recs],
+        "recommendations": [dict(zip(("severity", "target", "finding", "suggestion"),
+                                     (f["severity"], *finding_texts(f, lang)), strict=True)) for f in recs],
     }
 
 
