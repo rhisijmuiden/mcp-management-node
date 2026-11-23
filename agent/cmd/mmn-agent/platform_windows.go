@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"github.com/rhisijmuiden/stackpilot/agent/internal/client"
 	"github.com/rhisijmuiden/stackpilot/agent/internal/config"
@@ -20,11 +21,17 @@ func runPlatform(fn func(ctx context.Context)) bool {
 	if !winsvc.IsService() {
 		return false
 	}
-	// After a self-update the service stops cleanly and a helper starts the new version. Only
-	// if that helper cannot be started does the agent exit with an error, so the service
-	// recovery restarts it (Windows then logs event 7031).
-	client.RestartHook = winsvc.Restart
+	// After a self-update the agent exits with an error: the service recovery actions (set on
+	// every start) restart it with the new version within seconds. Windows logs that as event
+	// 7031; it is expected. A scheduled task armed just before is the safety net in case the
+	// recovery does not start it.
 	client.RestartExitCode = 1
+	client.BeforeRestart = func() {
+		if err := winsvc.ArmRestartTask(); err != nil {
+			log.Printf("restart safety task: %v", err)
+		}
+	}
+	go func() { time.Sleep(3 * time.Minute); winsvc.DisarmRestartTask() }()
 	if err := winsvc.Run(config.StateDir, fn); err != nil {
 		log.Printf("service: %v", err)
 	}

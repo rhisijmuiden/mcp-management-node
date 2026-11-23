@@ -46,11 +46,9 @@ import (
 // version (systemd: Restart=always; Windows: recovery on non-zero exit).
 var RestartExitCode = 0
 
-// RestartHook, when set, restarts the agent after a self-update instead of exiting with
-// RestartExitCode. The Windows service sets it so the service stops cleanly and starts the
-// new version, instead of Windows logging a crash (event 7031) and its recovery restarting it.
-// It returns false when it could not arrange the restart; the agent then exits as before.
-var RestartHook func() bool
+// BeforeRestart, when set, runs just before the agent exits to restart after a self-update.
+// On Windows it arms a scheduled task that starts the service should the service recovery not.
+var BeforeRestart func()
 
 // DrainTimeout is how long a self-update waits for running requests (commands, scripts,
 // file transfers) to finish before the agent restarts.
@@ -461,8 +459,8 @@ func (a *Agent) restartAfterUpdate(version string) {
 		log.Printf("update to %s: %d request(s) still running after %s, restarting anyway", version, a.inflight.Load()-1, DrainTimeout)
 	}
 	log.Printf("restarting to run version %s", version)
-	if RestartHook != nil && RestartHook() {
-		return
+	if BeforeRestart != nil {
+		BeforeRestart()
 	}
 	a.exit(RestartExitCode)
 }
