@@ -322,7 +322,7 @@ function ReplicationDialog({ nodeId, clusterNodes, onClose }: { nodeId: string; 
 /* ------------------------------------------------------------------ backup jobs */
 function BackupJobsTab({ nodeId, admin, clusterNodes }: Ctx) {
   const { t, i18n } = useTranslation();
-  const q = useQuery({ queryKey: ["backup-jobs", nodeId], queryFn: () => get<BackupJobPve[]>(`api/cluster/${nodeId}/backup-jobs`) });
+  const q = useQuery({ queryKey: ["backup-jobs", nodeId], queryFn: () => get<{ jobs: BackupJobPve[] }>(`api/cluster/${nodeId}/backup-jobs`).then((r) => r.jobs ?? []) });
   const [edit, setEdit] = useState<BackupJobPve | "new" | null>(null);
   const [jobs, setJobs] = useState<NodeJob[]>([]);
   const key = [["backup-jobs", nodeId]];
@@ -398,7 +398,7 @@ function BackupJobDialog({ nodeId, job, clusterNodes, onClose }: { nodeId: strin
   const { t } = useTranslation();
   const [f, setF] = useState(() => jobToForm(job));
   const set = (p: Partial<typeof f>) => setF({ ...f, ...p });
-  const st = useQuery({ queryKey: ["storage", nodeId], queryFn: () => get<StorageRow[]>(`api/cluster/${nodeId}/storage`) });
+  const st = useQuery({ queryKey: ["storage", nodeId], queryFn: () => get<{ storages: StorageRow[] }>(`api/cluster/${nodeId}/storage`).then((r) => r.storages ?? []) });
   const backupStores = (st.data ?? []).filter((s) => s.content.split(",").includes("backup"));
   const save = useAct(() => (job ? put(`api/cluster/${nodeId}/backup-jobs/${job.id}`, f) : post(`api/cluster/${nodeId}/backup-jobs`, f)), [["backup-jobs", nodeId]], t("cl.saved"));
   const num = (v: string) => (v === "" ? null : Number(v));
@@ -441,7 +441,7 @@ function BackupJobDialog({ nodeId, job, clusterNodes, onClose }: { nodeId: strin
 /* ------------------------------------------------------------------ storage */
 function StorageTab({ nodeId, admin, clusterNodes }: Ctx) {
   const { t } = useTranslation();
-  const q = useQuery({ queryKey: ["storage", nodeId], queryFn: () => get<StorageRow[]>(`api/cluster/${nodeId}/storage`), refetchInterval: 60_000 });
+  const q = useQuery({ queryKey: ["storage", nodeId], queryFn: () => get<{ storages: StorageRow[] }>(`api/cluster/${nodeId}/storage`).then((r) => r.storages ?? []), refetchInterval: 60_000 });
   const [add, setAdd] = useState(false);
   const key = [["storage", nodeId]];
   const enable = useAct((v: { s: string; on: boolean }) => put(`api/cluster/${nodeId}/storage/${v.s}`, { enabled: v.on }), key, t("cl.saved"));

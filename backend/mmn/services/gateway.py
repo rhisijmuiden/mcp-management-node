@@ -49,7 +49,7 @@ WINDOW_RISKS = ("change", "destructive")
 # Tools that change something but are routine and easy to undo: they count as "operate"
 # instead of the "change" their MCP annotation would give.
 OPERATE_TOOLS = {
-    "refresh_node_updates", "refresh_unifi", "create_snapshot", "guest_power", "run_backup", "run_backup_job",
+    "refresh_node_updates", "refresh_unifi", "create_snapshot", "guest_power", "run_backup", "run_backup_job", "backup_guest_now", "run_pbs_job",
     "send_test_mail", "send_node_test_notification", "create_pairing_code", "sync_templates",
     "run_scheduled_task", "run_deployment", "update_node_agent", "set_cpu_governor", "manage_service",
     "restart_unifi_device", "refresh_mcp_server", "workstation_action", "send_customer_report",

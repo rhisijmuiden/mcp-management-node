@@ -64,6 +64,7 @@ def is_allowed(customer_id: str | None) -> bool:
 def _criteria(ids: list[str]):
     from mmn.models import (
         Alert,
+        BackupCoverage,
         ConfigBackup,
         CustomerReport,
         Deployment,
@@ -86,6 +87,7 @@ def _criteria(ids: list[str]):
     return [
         with_loader_criteria(Environment, Environment.id.in_(ids), include_aliases=True),
         with_loader_criteria(Node, Node.environment_id.in_(ids), include_aliases=True),
+        with_loader_criteria(BackupCoverage, BackupCoverage.environment_id.in_(ids), include_aliases=True),
         with_loader_criteria(CustomerReport, CustomerReport.environment_id.in_(ids), include_aliases=True),
         with_loader_criteria(PairingCode, PairingCode.environment_id.in_(ids), include_aliases=True),
         with_loader_criteria(UnifiConnection, UnifiConnection.environment_id.in_(ids), include_aliases=True),

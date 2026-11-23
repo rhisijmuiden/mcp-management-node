@@ -390,6 +390,14 @@ async def optimisation_scan(db: AsyncSession, e: Environment, *, live: bool = Tr
     _scan_proxmox(ns, findings)
     _scan_machines(ns, bundled, findings)
     await _scan_unifi(db, conns, live, findings)
+    cov_at = None
+    if ns:
+        from mmn.services import protection
+
+        row = await protection.stored(db, e)
+        cov = protection.view(e, row) if row else None
+        cov_at = cov["collected_at"] if cov else None
+        findings += protection.scan_findings(cov, _finding)
     n_alerts = 0
     if ns:
         n_alerts = (await db.execute(select(func.count(Alert.id)).where(
@@ -411,7 +419,8 @@ async def optimisation_scan(db: AsyncSession, e: Environment, *, live: bool = Tr
             "checked": {"proxmox_nodes": sum(1 for n in ns if n.kind == "proxmox"),
                         "servers": sum(1 for n in ns if machine_type(n) == "server"),
                         "workstations": sum(1 for n in ns if machine_type(n) == "workstation"),
-                        "unifi_connections": len(conns), "live_network_checks": live},
+                        "unifi_connections": len(conns), "live_network_checks": live,
+                        "backup_coverage_at": cov_at},
             "summary": by_sev, "findings": findings,
             "note": "Findings come from the latest data the agents and UniFi consoles reported. Respect the "
                     "customer's notes and maintenance window; ask the user before changing anything."}

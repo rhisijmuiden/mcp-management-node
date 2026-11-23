@@ -48,6 +48,7 @@ class MonitoringSettings(BaseModel):
     smart: bool = True
     wearout_pct: int = Field(default=10, ge=0, le=100)  # alert when an SSD has this much life left or less
     unifi: bool = True  # alert on offline UniFi devices and unreachable UniFi connections
+    backups: bool = True  # alert on failed and missing backups (per customer policy, see protection)
 
 
 async def get_settings(db: AsyncSession) -> MonitoringSettings:
@@ -325,6 +326,10 @@ async def _conditions(db: AsyncSession, cfg: MonitoringSettings) -> dict[str, di
                         "message": f"SSD {d['devpath']} ({d['model']}) has {d['wearout']}% life left"}
     if cfg.unifi:
         want.update(await _unifi_conditions(db, cfg, now))
+    if cfg.backups:
+        from mmn.services import protection
+
+        want.update(await protection.alert_conditions(db, now))
     return want
 
 
@@ -386,9 +391,30 @@ async def evaluate() -> dict[str, int]:
                 for a in opened:
                     a.notified_at = now
                 await db.commit()
+        await _mail_backup_contacts(db, cfg.mail_to, opened, resolved, names)
     if opened or resolved:
         events.publish("monitoring.alerts", {"opened": len(opened), "resolved": len(resolved)})
     return {"opened": len(opened), "resolved": len(resolved)}
+
+
+async def _mail_backup_contacts(db: AsyncSession, already: list[str], opened: list[Alert], resolved: list[Alert],
+                                names: dict[str, str]) -> None:
+    """Backup alerts also go to the extra recipients of the customer's backup policy."""
+    from mmn.services import protection
+
+    by_customer: dict[str, tuple[list[Alert], list[Alert]]] = {}
+    for lst, idx in ((opened, 0), (resolved, 1)):
+        for a in lst:
+            cid = (a.detail or {}).get("customer_id") if a.kind == "backup" else None
+            if cid:
+                by_customer.setdefault(cid, ([], []))[idx].append(a)
+    if not by_customer:
+        return
+    extra = await protection.extra_recipients(db, set(by_customer))
+    for cid, (op, res) in by_customer.items():
+        to = [x for x in extra.get(cid, []) if x.lower() not in {y.lower() for y in already}]
+        if to:
+            await _mail(db, to, op, res, names)
 
 
 async def _mail(db: AsyncSession, to: list[str], opened: list[Alert], resolved: list[Alert],
