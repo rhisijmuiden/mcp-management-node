@@ -162,6 +162,20 @@
   </table></div>
   {% else %}<p class="empty">{{ T.none_ai }}</p>{% endif %}
 
+  {% if d.recovery is defined %}
+  <h2>{{ T.recovery }}</h2>
+  {% if d.recovery["items"] %}
+  <p class="muted">{{ T.recovery_line.format(fixed=d.recovery.fixed, failed=d.recovery.failed) }}</p>
+  <div class="card scroll"><table>
+    <tr><th>{{ T.when }}</th><th>{{ T.target }}</th><th>{{ T.problem }}</th><th>{{ T.result }}</th></tr>
+    {% for x in d.recovery["items"] %}
+    <tr><td class="muted">{{ dt(x.at) }}</td><td>{{ x.target or '–' }}</td><td>{{ x.problem or '–' }}</td>
+      <td><span class="b {{ 'ok' if x.status == 'succeeded' else ('critical' if x.status == 'failed' else 'warning') }}">{{ T['rec_' ~ x.status] }}</span></td></tr>
+    {% endfor %}
+  </table></div>
+  {% else %}<p class="empty">{{ T.none_recovery }}</p>{% endif %}
+  {% endif %}
+
   <h2>{{ T.recommendations }}</h2>
   {% if d.recommendations %}
   <div class="card scroll"><table>

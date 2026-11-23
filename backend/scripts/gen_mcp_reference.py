@@ -40,6 +40,7 @@ SECTION_TITLES = {
     "UniFi (phase 6)": "UniFi Network and Access",
     "AI gateway: approvals and guardrails": "AI gateway: approvals and guardrails",
     "runbooks (phase 13)": "Runbooks",
+    "automatic recovery (phase 14)": "Automatic recovery",
     "MCP hub": "MCP hub (tools of other MCP servers appear as `<prefix>__<tool>`)",
 }
 SKIP_SECTIONS = {"ASGI wiring", "resources: customer context"}

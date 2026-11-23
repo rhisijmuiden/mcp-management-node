@@ -84,6 +84,10 @@ export function useLiveEvents() {
             for (const k of ["runbooks", "runbook-runs", "runbook-runs-count"]) qc.invalidateQueries({ queryKey: [k] });
             qc.invalidateQueries({ queryKey: ["runbook-run", String(msg.data.id ?? "")] });
           }
+          if (msg.event === "remediation.changed" || msg.event === "remediation.notice") {
+            for (const k of ["remediation-status", "remediation-attempts", "remediation-rules"]) qc.invalidateQueries({ queryKey: [k] });
+            if (msg.event === "remediation.notice") window.dispatchEvent(new CustomEvent("mmn:remediation", { detail: msg.data }));
+          }
           if (msg.event === "gateway.paused" || msg.event === "gateway.policy") {
             for (const k of ["gateway-status", "gateway-overview", "gateway-policies"]) qc.invalidateQueries({ queryKey: [k] });
           }

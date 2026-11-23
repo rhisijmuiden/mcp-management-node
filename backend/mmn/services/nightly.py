@@ -534,6 +534,10 @@ async def check_customer(run_id: str, env_id: str, cfg: dict[str, Any], cache: d
             found += await endpoint_findings(list((e.nightly or {}).get("cert_endpoints") or []), warn, now, finding)
         found = [f for f in found if checks.get(category_of(f), True)]
 
+        from mmn.services import remediation
+
+        recovery_rules = await remediation.finding_rules(db, e.id)
+        recovered = 0
         prev_run, prev = await _previous(db, run_id, e.id)
         prev_by_key = {p.key: p for p in prev}
         by_name = {n.name: n for n in ns}
@@ -554,7 +558,11 @@ async def check_customer(run_id: str, env_id: str, cfg: dict[str, Any], cache: d
                                  first_seen_at=old.first_seen_at if old else now)
             if row.target and len(row.target) > 255:
                 row.target = row.target[:255]
-            prop = proposal_for(f, node_of(f, by_name)) if cfg.get("proposals") else None
+            # A finding that an automatic recovery rule answers is fixed by that rule (after the
+            # commit below), not proposed.
+            fixer = remediation.rule_for_finding(recovery_rules, f, node_of(f, by_name), e.id) if recovery_rules else None
+            recovered += 1 if fixer else 0
+            prop = proposal_for(f, node_of(f, by_name)) if cfg.get("proposals") and not fixer else None
             if prop and prop["tool"] in gateway.REGISTRY:
                 spec = gateway.REGISTRY[prop["tool"]]
                 run_after = await run_after_for(db, e, spec.risk, cfg)
@@ -587,8 +595,14 @@ async def check_customer(run_id: str, env_id: str, cfg: dict[str, Any], cache: d
         summary = {"id": e.id, "name": e.name, "kind": e.kind, "counts": counts, "by_category": by_cat,
                    "total": len(rows), "new": sum(1 for r in rows if r.is_new), "resolved": resolved[:100],
                    "proposals": len(approval_ids), "errors": errors[:20], "checked": scan.get("checked") or {},
-                   "maintenance_window": e.maintenance_window, "first_run": prev_run is None}
+                   "maintenance_window": e.maintenance_window, "first_run": prev_run is None,
+                   "recovery": recovered}
         await db.commit()
+    if recovered:
+        try:
+            await remediation.on_findings(run_id, env_id)
+        except Exception:  # noqa: BLE001 - the checks themselves are done
+            log.exception("automatic recovery after the nightly checks of %s", env_id)
     return summary
 
 
@@ -700,7 +714,18 @@ async def detail(db: AsyncSession, r: NightlyRun) -> dict[str, Any]:
     rows.sort(key=lambda f: (_SEV_ORDER.get(f.severity, 9), not f.is_new, f.category, str(f.target)))
     out["findings"] = [finding_out(f, approvals.get(f.approval_id)) for f in rows]
     out["pending_proposals"] = sum(1 for f in out["findings"] if (f["proposal"] or {}).get("status") == "pending")
+    out["remediation"] = await remediation_summary(db, r)
     return out
+
+
+async def remediation_summary(db: AsyncSession, r: NightlyRun) -> dict[str, Any]:
+    """What automatic recovery did in the 24 hours before the summary (phase 14)."""
+    from mmn.services import remediation, tenancy
+
+    allowed = tenancy.allowed()
+    end = r.finished_at or datetime.now(UTC)
+    return await remediation.summary(db, end - timedelta(hours=24), None,
+                                     set(allowed) if allowed is not None else None)
 
 
 async def latest(db: AsyncSession, *, finished: bool = False) -> NightlyRun | None:
@@ -753,6 +778,14 @@ async def mail_content(db: AsyncSession, r: NightlyRun, lang: str, url: str | No
             new = f" ({t(lang, 'nightly.new')})" if f.is_new else ""
             paras.append(f"• {t(lang, 'nightly.sev_name_' + f.severity)}{new} · {names.get(f.environment_id) or ''} · "
                          f"{target or ''}: {text}")
+    rem = await remediation_summary(db, r)
+    if rem["total"]:
+        c = rem["counts"]
+        paras.append(t(lang, "nightly.mail_recovery", fixed=c.get("succeeded", 0), failed=c.get("failed", 0),
+                       waiting=c.get("waiting", 0), skipped=c.get("skipped", 0)))
+        for a in [x for x in rem["items"] if x["status"] in ("succeeded", "failed", "waiting_approval", "skipped")][:8]:
+            paras.append(f"• {t(lang, 'remediation.status_' + a['status'])} · {a.get('customer_name') or ''} · "
+                         f"{a.get('target') or ''}: {a.get('problem') or ''} ({a.get('rule_name')})")
     pending = len(await pending_approvals(db, r.id))
     if pending:
         paras.append(t(lang, "nightly.mail_proposals", count=pending))

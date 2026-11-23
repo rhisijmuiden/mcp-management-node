@@ -54,6 +54,8 @@ OPERATE_TOOLS = {
     "run_scheduled_task", "run_deployment", "update_node_agent", "set_cpu_governor", "manage_service",
     "restart_unifi_device", "refresh_mcp_server", "workstation_action", "send_customer_report",
     "run_nightly_checks", "run_runbook", "complete_runbook_step", "cancel_runbook_run",
+    # Phase 14: safe repair actions that automatic recovery uses, and its emergency stop.
+    "cleanup_disk", "recover_agent", "pause_remediation",
 }
 
 FINAL = {"executed", "failed", "rejected", "expired"}
@@ -404,7 +406,8 @@ def reason_text(r: dict[str, Any]) -> str:
     if c == "nightly":
         return "proposed by the nightly checks"
     if c == "runbook":
-        return f"step {p.get('step')} of runbook {p.get('runbook')}" + (
+        return (f"automatic recovery ({p['recovery']}): " if p.get("recovery") else "") + \
+            f"step {p.get('step')} of runbook {p.get('runbook')}" + (
             " (the runbook asks approval for this step)" if p.get("always") else "")
     if c == "outside_window":
         return f"outside the maintenance window of {p.get('customer')} ({p.get('window')})"

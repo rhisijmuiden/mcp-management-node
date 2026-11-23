@@ -15,7 +15,7 @@
   <a href="https://github.com/rhisijmuiden/stackpilot/releases/latest"><img alt="Laatste release" src="https://img.shields.io/github/v/release/rhisijmuiden/stackpilot?label=release&color=14213D"></a>
   <a href="https://github.com/rhisijmuiden/stackpilot/actions/workflows/release.yml"><img alt="Release build" src="https://img.shields.io/github/actions/workflow/status/rhisijmuiden/stackpilot/release.yml?label=build"></a>
   <img alt="Debian 13" src="https://img.shields.io/badge/draait%20op-Debian%2013-FF6B57">
-  <img alt="MCP-tools" src="https://img.shields.io/badge/MCP--tools-168-9CC3FF">
+  <img alt="MCP-tools" src="https://img.shields.io/badge/MCP--tools-174-9CC3FF">
   <img alt="Engels en Nederlands" src="https://img.shields.io/badge/talen-EN%20%7C%20NL-F6F7FB">
 </p>
 
@@ -51,7 +51,7 @@ AI-acties.
 | | |
 | --- | --- |
 | 🤖 **AI-gateway** | Commandocentrum, goedkeuringen-inbox (app + mail), beleid per risiconiveau, klant en token, onderhoudsvensters, noodknop, AI-sessies en activiteitenlog. |
-| 🧰 **168 MCP-tools** | Logs lezen, services herstarten, commando's uitvoeren, patchen, VM's, netwerk, HA, deploys en UniFi beheren, alles via één endpoint met OAuth 2.1 of API-tokens. [Volledige lijst](docs/mcp-tools.md). |
+| 🧰 **174 MCP-tools** | Logs lezen, services herstarten, commando's uitvoeren, patchen, VM's, netwerk, HA, deploys en UniFi beheren, alles via één endpoint met OAuth 2.1 of API-tokens. [Volledige lijst](docs/mcp-tools.md). |
 | 💻 **Werkplekken** | Pc's en laptops per klant: hardware, OS, aangemelde gebruiker, geïnstalleerde software, schijven en SSD-slijtage, Windows Update-geschiedenis, Defender, BitLocker/LUKS, firewall, TPM, een beveiligingsstatus, en acties op afstand (Defender-scan, definities bijwerken, groepsbeleid vernieuwen, bericht, afmelden). |
 | 📄 **Maandrapporten** | Eén rapport per klant per maand (PDF en HTML): beschikbaarheid, incidenten, updates, Proxmox-back-ups, beveiliging van werkplekken, AI-acties en aanbevelingen, op een vaste dag gemaild naar de klant of op verzoek gemaakt. |
 | 🏢 **Klanten** | Klantkiezer, klantpagina met Proxmox, servers, werkplekken, netwerk en AI-toegang, contactpersonen, notities voor de AI, onderhoudsvenster, SLA en een optimalisatiescan. |
@@ -65,6 +65,7 @@ AI-acties.
 | 🚀 **Deploys vanuit GitHub** | Een repo uitrollen in een container (prod/test-branch), bij elke push via webhook of door te pollen, met snapshot vooraf en herstel bij fouten. |
 | 🌅 **Nachtelijke controle & ochtendsamenvatting** | Elke nacht wordt elke klant gecontroleerd: updates, beveiligingsupdates met de CVE's die ze verhelpen, volle schijven, verlopende certificaten, mislukte of ontbrekende back-ups en de optimalisatiescan. 's Ochtends één samenvatting in de app en per mail, met wat nieuw en opgelost is, en voorstellen die je met één klik goedkeurt; wijzigingen wachten op het onderhoudsvenster van de klant. |
 | 📒 **Runbooks** | Vaste procedures per klant of voor iedereen (server patchen, nieuwe medewerker, nieuw project via GitHub, service herstarten) die Stackpilot stap voor stap uitvoert met zijn eigen tools: goedkeuring per stap waar het beleid of het runbook dat zegt, wachten op het onderhoudsvenster, handmatige stappen voor een persoon of de AI, en elke stap in het auditlog. Bewerken in de app, of de AI start ze via MCP. |
+| 💓 **Automatisch herstel** | Bekende problemen lossen zichzelf op binnen het beleid: een gestopte service wordt herstart, een volle schijf opgeruimd, een offline agent in een VM of container teruggebracht. Regels per klant koppelen een alert of een nachtelijke bevinding aan een runbook; het probleem moet echt weg zijn voordat het als opgelost telt. Afkoeltijd, een maximum aantal pogingen, een limiet per uur, een stroomonderbreker en één noodknop; een Proxmox VE-node wordt nooit herstart. Resultaten in de app, per mail, in de ochtendsamenvatting en in het maandrapport. |
 | 🛟 **Back-ups van klanten** | Dekking per klant: welke VM's, containers, servers en werkplekken een back-up hebben, wanneer de laatste goede liep, grootte, fouten, verify en offsite kopie. Meldingen als een back-up mislukt of ouder is dan de SLA van de klant, terugzetten van een hele guest of losse bestanden (Proxmox Backup Server) met goedkeuring, status van Windows Server Backup, en beheer van datastores, verify-, sync- en prune-jobs op Proxmox Backup Server. |
 | 💾 **App-back-ups** | Full en incremental, versleuteld (AES-256-GCM), naar FTP, FTPS, SFTP of SCP, ingepland, met restore vanaf de remote locatie. |
 | ✉️ **Mailserver** | Je eigen SMTP-server met STARTTLS of TLS, minimaal TLS 1.2/1.3 en DKIM-ondertekening, voor alerts, goedkeuringen en rapporten. |
@@ -156,7 +157,7 @@ zie **[installatie](docs/install.md)** (Engels).
 | Document | Inhoud |
 | --- | --- |
 | [Functiegids](docs/features.md) | Elk onderdeel van de app, pagina voor pagina |
-| [MCP-toolreferentie](docs/mcp-tools.md) | Alle 168 tools met risiconiveau, scope en parameters (gegenereerd uit de code) |
+| [MCP-toolreferentie](docs/mcp-tools.md) | Alle 174 tools met risiconiveau, scope en parameters (gegenereerd uit de code) |
 | [Installatie](docs/install.md) | Installeren, upgraden, reverse proxy (Zoraxy), agents, bestandslocaties, ontwikkelen |
 | [Architectuur](docs/architecture.md) | Onderdelen, agentprotocol, beveiligingsmodel |
 | [Releasegeschiedenis](docs/history.md) | Wat elke fase en release toevoegde |
@@ -174,6 +175,7 @@ zie **[installatie](docs/install.md)** (Engels).
 | 11 | **Back-upbeheer per klant**: dekking, meldingen per SLA, terugzetten met goedkeuring, Proxmox Backup Server, Windows Server Backup, back-ups in het maandrapport en de optimalisatiescan | ✅ Klaar (v0.11.0) |
 | 12 | **Nachtelijke controle en ochtendsamenvatting**: elke nacht updates, CVE's, schijven, certificaten en back-ups van elke klant, 's ochtends één samenvatting met voorstellen die je met één klik goedkeurt en die in het onderhoudsvenster draaien | ✅ Klaar (v0.12.0) |
 | 13 | **Runbooks**: vaste procedures stap voor stap uitgevoerd via de tools van Stackpilot, met goedkeuring per stap, het onderhoudsvenster en het auditlog, bewerkbaar in de app en beschikbaar als MCP-tools | ✅ Klaar (v0.13.0) |
+| 14 | **Automatisch herstel**: regels die alerts en nachtelijke bevindingen koppelen aan herstel-runbooks, uitgevoerd binnen het beleid met controle achteraf, lusbeveiliging, een stroomonderbreker en een noodknop | ✅ Klaar (v0.14.0) |
 
 ## Releases en kanalen
 

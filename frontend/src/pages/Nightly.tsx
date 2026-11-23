@@ -1,7 +1,7 @@
 import * as Tabs from "@radix-ui/react-tabs";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Archive, ArrowUpCircle, Award, CalendarClock, CheckCheck, CheckCircle2, ChevronDown, Clock, HardDrive, Hand,
+  Archive, ArrowUpCircle, Award, CalendarClock, CheckCheck, CheckCircle2, ChevronDown, Clock, HardDrive, Hand, HeartPulse,
   Info as InfoIcon, Mail, Play, Save, Settings2, ShieldAlert, Sparkles, Sunrise, XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
@@ -88,6 +88,7 @@ interface Run {
   totals: Totals;
   findings?: Finding[];
   pending_proposals?: number;
+  remediation?: { total: number; counts: Record<string, number>; items: { id: string; target: string | null; customer_name: string | null; problem: string; rule_name: string; status: string; run_id: string | null; created_at: string }[] };
 }
 
 interface Latest { run: Run | null; running: boolean; running_id: string | null; next: { run: string | null; summary: string | null } }
@@ -271,6 +272,25 @@ function Summary({ run, admin, next, isOld, onLatest }: { run: Run; admin: boole
           onApproveAll={() => approveAll.mutate(c.id)} approving={approveAll.isPending && approveAll.variables === c.id}
           pending={new Set(pending.filter((f) => f.customer_id === c.id).map((f) => f.proposal!.approval_id)).size} />
       ))}
+
+      {!!run.remediation?.total && (
+        <Card>
+          <CardHeader icon={<HeartPulse />} title={t("nightly.recovery_title")}
+            description={t("rem.stats_line", { attempts: run.remediation.total, ok: run.remediation.counts.succeeded ?? 0, failed: run.remediation.counts.failed ?? 0 })}
+            action={<Link to="/remediation" className="text-sm font-semibold text-accent-text hover:underline">{t("rem.toast.open")}</Link>} />
+          <CardBody className="space-y-2">
+            {run.remediation.items.slice(0, 8).map((a) => (
+              <div key={a.id} className="flex flex-wrap items-center gap-2 text-sm">
+                <Badge tone={a.status === "succeeded" ? "online" : a.status === "failed" ? "offline" : a.status === "skipped" ? "warning" : "info"}>{t(`rem.status.${a.status}`, { defaultValue: a.status })}</Badge>
+                <span className="font-semibold">{a.target || "–"}</span>
+                <span className="text-muted">{a.customer_name || ""}</span>
+                <span className="min-w-0 flex-1">{a.problem}</span>
+                <span className="text-xs text-muted">{a.rule_name}</span>
+              </div>
+            ))}
+          </CardBody>
+        </Card>
+      )}
 
       {clean.length > 0 && (
         <Card>

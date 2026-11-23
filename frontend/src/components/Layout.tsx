@@ -48,7 +48,7 @@ import {
   ShieldHalf,
   Wrench,
   Sunrise,
-  BookOpenCheck,
+  BookOpenCheck, HeartPulse,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -168,11 +168,21 @@ export function Layout() {
         action: { label: t("nightly.toast_open"), onClick: () => navigate("/ai/nightly") },
       });
     };
+    const onRemediation = (e: Event) => {
+      const d = (e as CustomEvent).detail as { status?: string; target?: string; rule?: string; note?: string };
+      const text = d.status === "paused" ? t("rem.toast.paused", { note: d.note || "–" })
+        : t(`rem.toast.${d.status}`, { target: d.target ?? "–", rule: d.rule ?? "", defaultValue: "" });
+      if (!text) return;
+      const show = d.status === "succeeded" ? toast.success : d.status === "failed" || d.status === "paused" || d.status === "skipped" ? toast.error : toast;
+      show(text, { duration: 15_000, action: { label: t("rem.toast.open"), onClick: () => navigate("/remediation") } });
+    };
     window.addEventListener("mmn:approval", onApproval);
     window.addEventListener("mmn:nightly", onNightly);
+    window.addEventListener("mmn:remediation", onRemediation);
     return () => {
       window.removeEventListener("mmn:approval", onApproval);
       window.removeEventListener("mmn:nightly", onNightly);
+      window.removeEventListener("mmn:remediation", onRemediation);
     };
   }, [isAdmin, navigate, t]);
 
@@ -247,6 +257,7 @@ export function Layout() {
         { to: "/proxmox/updates", icon: <ArrowUpCircle />, label: t("nav.updates") },
         { to: "/servers/software", icon: <ShieldCheck />, label: t("nav.srv_software"), admin: true },
         { to: "/runbooks", icon: <BookOpenCheck />, label: t("nav.runbooks"), badge: runbookInput.data?.waiting_input },
+        { to: "/remediation", icon: <HeartPulse />, label: t("nav.remediation") },
         { to: "/tasks", icon: <CalendarClock />, label: t("nav.tasks") },
         { to: "/deployments", icon: <Rocket />, label: t("nav.deployments") },
       ],

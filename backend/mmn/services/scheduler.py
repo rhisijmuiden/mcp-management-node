@@ -189,6 +189,28 @@ async def _runbooks_prune_job() -> None:
         log.exception("pruning runbook runs failed")
 
 
+async def _remediation_job() -> None:
+    from mmn.services import remediation
+
+    try:
+        await remediation.probe_services()
+    except Exception:  # noqa: BLE001
+        log.exception("service checks of automatic recovery failed")
+    try:
+        await remediation.tick()
+    except Exception:  # noqa: BLE001
+        log.exception("automatic recovery tick failed")
+
+
+async def _remediation_prune_job() -> None:
+    from mmn.services import remediation
+
+    try:
+        await remediation.prune()
+    except Exception:  # noqa: BLE001
+        log.exception("pruning recovery attempts failed")
+
+
 async def _nightly_job() -> None:
     from mmn.services import nightly
 
@@ -312,6 +334,10 @@ async def start() -> None:
                       coalesce=True, max_instances=1)
     scheduler.add_job(_runbooks_job, "interval", seconds=30, id="runbooks-tick", replace_existing=True,
                       coalesce=True, max_instances=1)
+    scheduler.add_job(_remediation_job, "interval", minutes=1, id="remediation-tick", replace_existing=True,
+                      coalesce=True, max_instances=1, next_run_time=datetime.now(UTC) + timedelta(seconds=40))
+    scheduler.add_job(_remediation_prune_job, CronTrigger(hour=4, minute=59, timezone="UTC"), id="remediation-prune",
+                      replace_existing=True, coalesce=True)
     scheduler.add_job(_runbooks_prune_job, CronTrigger(hour=4, minute=53, timezone="UTC"), id="runbooks-prune",
                       replace_existing=True, coalesce=True)
     scheduler.add_job(_nightly_prune_job, CronTrigger(hour=4, minute=47, timezone="UTC"), id="nightly-prune",

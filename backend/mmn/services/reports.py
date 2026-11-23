@@ -54,6 +54,11 @@ TEXT: dict[str, dict[str, str]] = {
         "none_backups": "No Proxmox VE backups in this customer's environment.",
         "none_ws": "No workstations with an agent.", "none_security": "No security points of attention.",
         "none_ai": "The AI did not change anything in this period.", "none_rec": "No recommendations.",
+        "recovery": "Automatic recovery", "recovery_line": "Stackpilot fixed {fixed} problem(s) by itself; {failed} attempt(s) failed and needed a person.",
+        "none_recovery": "Automatic recovery did not have to act in this period.", "problem": "Problem",
+        "rec_succeeded": "Fixed", "rec_failed": "Failed", "rec_skipped": "Gave up", "rec_cancelled": "Cancelled",
+        "rec_notified": "Reported only", "rec_waiting_approval": "Waiting for approval", "rec_running": "Busy",
+        "rec_verifying": "Checking",
         "not_backed_up": "Guests without a backup job", "backups_error": "Could not read the backup tasks of",
         "coverage": "Backup coverage", "protected": "Protected", "cov_line": "{good} of {total} guests and servers have a recent backup ({pct}%); the SLA is a backup at most {hours} hours old.",
         "cov_none": "Backup coverage has not been collected for this customer.", "item": "Item", "last_backup": "Last backup",
@@ -92,6 +97,11 @@ TEXT: dict[str, dict[str, str]] = {
         "none_backups": "Geen Proxmox VE-back-ups in de omgeving van deze klant.",
         "none_ws": "Geen werkplekken met een agent.", "none_security": "Geen beveiligingspunten.",
         "none_ai": "De AI heeft in deze periode niets veranderd.", "none_rec": "Geen aanbevelingen.",
+        "recovery": "Automatisch herstel", "recovery_line": "Stackpilot heeft {fixed} probleem/problemen zelf opgelost; {failed} poging(en) mislukte(n) en had(den) een mens nodig.",
+        "none_recovery": "Automatisch herstel hoefde in deze periode niet in te grijpen.", "problem": "Probleem",
+        "rec_succeeded": "Opgelost", "rec_failed": "Mislukt", "rec_skipped": "Gestopt", "rec_cancelled": "Geannuleerd",
+        "rec_notified": "Alleen gemeld", "rec_waiting_approval": "Wacht op goedkeuring", "rec_running": "Bezig",
+        "rec_verifying": "Controleren",
         "not_backed_up": "Gasten zonder back-uptaak", "backups_error": "Kon de back-uptaken niet lezen van",
         "coverage": "Back-updekking", "protected": "Beschermd", "cov_line": "{good} van {total} guests en servers hebben een recente back-up ({pct}%); de SLA is een back-up van hooguit {hours} uur oud.",
         "cov_none": "De back-updekking van deze klant is nog niet verzameld.", "item": "Onderdeel", "last_backup": "Laatste back-up",
@@ -524,6 +534,16 @@ async def build(db: AsyncSession, e: Environment, period: str, lang: str = "en",
 
     backups["coverage"] = await _coverage(db, e)
 
+    # Automatic recovery (phase 14).
+    from mmn.services import remediation
+
+    rec = await remediation.summary(db, start, end, {e.id}, limit=40)
+    recovery = {"fixed": rec["counts"].get("succeeded", 0), "failed": rec["counts"].get("failed", 0),
+                "total": rec["total"],
+                "items": [{"at": _aware(a["created_at"]), "target": a["target"], "problem": a["problem"],
+                           "rule": a["rule_name"], "status": a["status"]}
+                          for a in reversed(rec["items"]) if a["status"] not in ("notified",)]}
+
     crit = sum(1 for s in sec if s["severity"] == "high") + backups["failed"]
     status = "critical" if crit else ("warning" if sec or recs or inc else "ok")
     general = await get_setting(db, "general")
@@ -546,6 +566,7 @@ async def build(db: AsyncSession, e: Environment, period: str, lang: str = "en",
         "workstations": ws,
         "security": sec[:40],
         "ai": {"calls": total_calls, "by_risk": by_risk, "changes": ai_rows[-40:], "approvals": approvals},
+        "recovery": recovery,
         "recommendations": [dict(zip(("severity", "target", "finding", "suggestion"),
                                      (f["severity"], *finding_texts(f, lang)), strict=True)) for f in recs],
     }
@@ -794,6 +815,19 @@ def render_pdf(data: dict[str, Any], tz: ZoneInfo) -> bytes:
                for c in ai["changes"]], [30, 46, 46, 40, 24], ["ok" if c["success"] else "critical" for c in ai["changes"]], 4)
     else:
         para(T["none_ai"], muted=True)
+
+    rec = data.get("recovery")
+    if rec is not None:
+        h2(T["recovery"])
+        if rec["items"]:
+            para(T["recovery_line"].format(fixed=rec["fixed"], failed=rec["failed"]), size=9)
+            table([T["when"], T["target"], T["problem"], T["result"]],
+                  [[_fmt_dt(x["at"], tz), x["target"] or "–", x["problem"] or "–", T.get(f"rec_{x['status']}", x["status"])]
+                   for x in rec["items"]], [30, 40, 86, 30],
+                  ["ok" if x["status"] == "succeeded" else "critical" if x["status"] == "failed" else "warning"
+                   for x in rec["items"]], 3)
+        else:
+            para(T["none_recovery"], muted=True)
 
     h2(T["recommendations"])
     if data["recommendations"]:

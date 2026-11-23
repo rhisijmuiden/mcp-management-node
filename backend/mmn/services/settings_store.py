@@ -100,6 +100,22 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "use_window": True,  # approved changes wait for the customer's maintenance window
         "mail_when_clean": True,  # also mail when nothing needs attention
     },
+    "remediation": {
+        # Phase 14: automatic recovery of known problems with runbooks (see services/remediation.py).
+        "enabled": True,
+        "paused": False,  # the emergency stop: no new recoveries, running ones are cancelled
+        "paused_by": None,
+        "paused_at": None,
+        "pause_note": "",
+        "resumed_at": None,
+        "max_runs_per_hour": 20,  # for the whole app
+        "max_failures_per_hour": 5,  # more failed recoveries in an hour pause everything (circuit breaker)
+        "service_check_minutes": 5,  # how often watched services are checked
+        "verify_minutes": 15,  # after a run, the problem must be gone within this time to count as fixed
+        "notify_app": True,
+        "notify_mail": "failure",  # always | failure | never
+        "mail_to": "",  # empty: every admin with an email address
+    },
     "proxy": {
         "mode": "direct",  # direct | proxy
         "trusted_proxies": [],
