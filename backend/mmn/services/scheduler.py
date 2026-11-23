@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -184,6 +185,16 @@ async def _inventory_job() -> None:
         log.exception("workstation inventory refresh failed")
 
 
+async def _backup_coverage_job() -> None:
+    from mmn.services import protection, tenancy
+
+    try:
+        with tenancy.unrestricted():
+            await protection.collect_all()
+    except Exception:  # noqa: BLE001
+        log.exception("collecting backup coverage failed")
+
+
 async def _reports_job() -> None:
     from mmn.services import reports
 
@@ -198,6 +209,8 @@ async def _reports_job() -> None:
 async def start() -> None:
     scheduler.add_job(_inventory_job, "interval", minutes=30, id="workstation-inventory", replace_existing=True,
                       coalesce=True, max_instances=1)
+    scheduler.add_job(_backup_coverage_job, "interval", minutes=30, id="backup-coverage", replace_existing=True,
+                      coalesce=True, max_instances=1, next_run_time=datetime.now(UTC) + timedelta(minutes=2))
     scheduler.add_job(_reports_job, CronTrigger(minute=23, timezone="UTC"), id="customer-reports",
                       replace_existing=True, coalesce=True, max_instances=1)
     scheduler.add_job(_hub_health_job, "interval", minutes=5, id="hub-health", replace_existing=True,

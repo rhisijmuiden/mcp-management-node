@@ -7,6 +7,7 @@ import { AgentsPage } from "@/pages/Agents";
 import { AiActivityPage, AuditPage, ConnectionsPage, TokensPage } from "@/pages/Ai";
 import { ConsentPage, ForgotPage, LoginPage, ResetPage, SetupPage } from "@/pages/AuthPages";
 import { BackupsPage } from "@/pages/Backups";
+import { ProtectionPage } from "@/pages/Protection";
 import { ApprovalsPage, CommandCenterPage, PoliciesPage, SessionsPage } from "@/pages/Gateway";
 import { HubPage, ToolCatalogPage } from "@/pages/Hub";
 import { HelpPage, McpCapabilitiesPage, McpHelpPage, NodesHelpPage } from "@/pages/Help";
@@ -107,6 +108,7 @@ export default function App() {
         <Route path="deployments" element={<L><DeploymentsPage /></L>} />
         <Route path="deployments/:id" element={<L><DeploymentDetailPage /></L>} />
         <Route path="monitoring" element={<L><MonitoringPage /></L>} />
+        <Route path="backups" element={<L><ProtectionPage /></L>} />
         <Route path="tasks" element={<TasksPage />} />
         <Route path="tasks/runs/:id" element={<TaskRunPage />} />
         <Route path="admin/agents" element={<RequireAuth admin><AgentsPage /></RequireAuth>} />

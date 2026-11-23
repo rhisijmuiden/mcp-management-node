@@ -15,7 +15,7 @@
   <a href="https://github.com/rhisijmuiden/stackpilot/releases/latest"><img alt="Laatste release" src="https://img.shields.io/github/v/release/rhisijmuiden/stackpilot?label=release&color=14213D"></a>
   <a href="https://github.com/rhisijmuiden/stackpilot/actions/workflows/release.yml"><img alt="Release build" src="https://img.shields.io/github/actions/workflow/status/rhisijmuiden/stackpilot/release.yml?label=build"></a>
   <img alt="Debian 13" src="https://img.shields.io/badge/draait%20op-Debian%2013-FF6B57">
-  <img alt="MCP-tools" src="https://img.shields.io/badge/MCP--tools-144-9CC3FF">
+  <img alt="MCP-tools" src="https://img.shields.io/badge/MCP--tools-157-9CC3FF">
   <img alt="Engels en Nederlands" src="https://img.shields.io/badge/talen-EN%20%7C%20NL-F6F7FB">
 </p>
 
@@ -51,7 +51,7 @@ AI-acties.
 | | |
 | --- | --- |
 | 🤖 **AI-gateway** | Commandocentrum, goedkeuringen-inbox (app + mail), beleid per risiconiveau, klant en token, onderhoudsvensters, noodknop, AI-sessies en activiteitenlog. |
-| 🧰 **144 MCP-tools** | Logs lezen, services herstarten, commando's uitvoeren, patchen, VM's, netwerk, HA, deploys en UniFi beheren, alles via één endpoint met OAuth 2.1 of API-tokens. [Volledige lijst](docs/mcp-tools.md). |
+| 🧰 **157 MCP-tools** | Logs lezen, services herstarten, commando's uitvoeren, patchen, VM's, netwerk, HA, deploys en UniFi beheren, alles via één endpoint met OAuth 2.1 of API-tokens. [Volledige lijst](docs/mcp-tools.md). |
 | 💻 **Werkplekken** | Pc's en laptops per klant: hardware, OS, aangemelde gebruiker, geïnstalleerde software, schijven en SSD-slijtage, Windows Update-geschiedenis, Defender, BitLocker/LUKS, firewall, TPM, een beveiligingsstatus, en acties op afstand (Defender-scan, definities bijwerken, groepsbeleid vernieuwen, bericht, afmelden). |
 | 📄 **Maandrapporten** | Eén rapport per klant per maand (PDF en HTML): beschikbaarheid, incidenten, updates, Proxmox-back-ups, beveiliging van werkplekken, AI-acties en aanbevelingen, op een vaste dag gemaild naar de klant of op verzoek gemaakt. |
 | 🏢 **Klanten** | Klantkiezer, klantpagina met Proxmox, servers, werkplekken, netwerk en AI-toegang, contactpersonen, notities voor de AI, onderhoudsvenster, SLA en een optimalisatiescan. |
@@ -63,7 +63,8 @@ AI-acties.
 | 📈 **Monitoring** | Eén meting per node per minuut, 30 dagen bewaard, trends, SMART en slijtage, alerts per mail. |
 | ⏱️ **Geplande taken** | Updates van containers en nodes, template-sync of een eigen commando op een cron-schema, met snapshot vooraf, rollback en mailrapport. |
 | 🚀 **Deploys vanuit GitHub** | Een repo uitrollen in een container (prod/test-branch), bij elke push via webhook of door te pollen, met snapshot vooraf en herstel bij fouten. |
-| 💾 **Backups** | Full en incremental, versleuteld (AES-256-GCM), naar FTP, FTPS, SFTP of SCP, ingepland, met restore vanaf de remote locatie. |
+| 🛟 **Back-ups van klanten** | Dekking per klant: welke VM's, containers, servers en werkplekken een back-up hebben, wanneer de laatste goede liep, grootte, fouten, verify en offsite kopie. Meldingen als een back-up mislukt of ouder is dan de SLA van de klant, terugzetten van een hele guest of losse bestanden (Proxmox Backup Server) met goedkeuring, status van Windows Server Backup, en beheer van datastores, verify-, sync- en prune-jobs op Proxmox Backup Server. |
+| 💾 **App-back-ups** | Full en incremental, versleuteld (AES-256-GCM), naar FTP, FTPS, SFTP of SCP, ingepland, met restore vanaf de remote locatie. |
 | ✉️ **Mailserver** | Je eigen SMTP-server met STARTTLS of TLS, minimaal TLS 1.2/1.3 en DKIM-ondertekening, voor alerts, goedkeuringen en rapporten. |
 | 🔄 **Updaten vanuit de app** | Info & updates toont de versie, controleert GitHub, wisselt tussen productie (`main`) en test (`test`) en installeert, met databasebackup en automatische rollback. |
 
@@ -153,7 +154,7 @@ zie **[installatie](docs/install.md)** (Engels).
 | Document | Inhoud |
 | --- | --- |
 | [Functiegids](docs/features.md) | Elk onderdeel van de app, pagina voor pagina |
-| [MCP-toolreferentie](docs/mcp-tools.md) | Alle 144 tools met risiconiveau, scope en parameters (gegenereerd uit de code) |
+| [MCP-toolreferentie](docs/mcp-tools.md) | Alle 157 tools met risiconiveau, scope en parameters (gegenereerd uit de code) |
 | [Installatie](docs/install.md) | Installeren, upgraden, reverse proxy (Zoraxy), agents, bestandslocaties, ontwikkelen |
 | [Architectuur](docs/architecture.md) | Onderdelen, agentprotocol, beveiligingsmodel |
 | [Releasegeschiedenis](docs/history.md) | Wat elke fase en release toevoegde |
@@ -168,6 +169,7 @@ zie **[installatie](docs/install.md)** (Engels).
 | 8 | AI-gateway: commandocentrum, goedkeuringen, beleid, noodknop | ✅ Klaar (v0.8.0) |
 | 9 | **MCP-hub**: andere MCP-servers registreren (Keystone VoIP, GitHub) en hun tools doorgeven met dezelfde authenticatie, beleid en audit; toolcatalogus met aan/uit per tool en token | ✅ Klaar (v0.9.0) |
 | 10 | **Werkplekken en maandrapport**: inventaris en beveiligingsstatus per pc (Defender, BitLocker, patches, schijven, software), acties op afstand, maandrapport per klant als PDF gemaild naar de contactpersonen | ✅ Klaar (v0.10.0) |
+| 11 | **Back-upbeheer per klant**: dekking, meldingen per SLA, terugzetten met goedkeuring, Proxmox Backup Server, Windows Server Backup, back-ups in het maandrapport en de optimalisatiescan | ✅ Klaar (v0.11.0) |
 
 ## Releases en kanalen
 

@@ -15,10 +15,10 @@ through the [MCP tools](mcp-tools.md), within the limits you set.
     [Network, firewall and SDN](#network-firewall-and-sdn) · [Cluster & HA](#cluster--ha) ·
     [Linux and Windows servers](#linux-and-windows-servers) · [Workstations](#workstations) · [UniFi](#unifi)
 - [Operations](#operations)
-  - [Monitoring](#monitoring) · [Updates](#package-updates) · [Software & CVE](#software--cve) ·
+  - [Customer backups](#customer-backups) · [Monitoring](#monitoring) · [Updates](#package-updates) · [Software & CVE](#software--cve) ·
     [Scheduled tasks](#scheduled-tasks) · [Deployments from GitHub](#deployments-from-github)
 - [Administration](#administration)
-  - [Agents & pairing](#agents--pairing) · [Users](#users) · [Backups](#backups) · [Mail server](#mail-server) ·
+  - [Agents & pairing](#agents--pairing) · [Users](#users) · [App backups](#app-backups) · [Mail server](#mail-server) ·
     [Notifications](#notifications) · [Web server & proxy](#web-server--proxy) · [Audit log](#audit-log) ·
     [General](#general)
 - [Info & updates](#info--updates)
@@ -311,6 +311,29 @@ offline devices raise monitoring alerts.
 
 ## Operations
 
+### Customer backups
+
+**Backups** in the Operations menu shows every customer's backup coverage, refreshed every 30 minutes (or with
+*Refresh*):
+
+- **Proxmox guests**: per VM and container the backup jobs that cover it (by VMID, pool, node or "all"), the last
+  successful backup with age and size, the number of backups, whether the newest one is verified (Proxmox Backup
+  Server) and copied offsite, and the last failure from the task log. Status: OK, too old, never backed up, no job,
+  failed or excluded.
+- **Servers and workstations**: Windows Server Backup (policy, system state, last result), Veeam and other backup
+  agents through the Windows agent; backup tools, timers and cron jobs on Linux. A machine that is a Proxmox guest is
+  covered by the guest's backup.
+- **Policy per customer**: maximum age in hours (SLA, default 26), alerts for failed and missing backups, whether
+  workstations count, extra mail recipients and excluded items.
+- **Actions**: back up now, restore a whole guest (new VMID next to the original, or over the existing guest after
+  typing its VMID), restore files or folders from a Proxmox Backup Server backup to a folder on the node.
+- **Proxmox Backup Server**: a Linux server with the agent that runs PBS shows its datastores (usage, garbage
+  collection), verify, sync and prune jobs and remotes; add datastores and remotes and create, change, run or delete
+  jobs.
+
+Failed or too old backups open an alert in Monitoring and are mailed. The monthly report and the optimisation scan
+include the coverage. The cluster's own vzdump jobs stay under Cluster & HA.
+
 ### Monitoring
 
 One sample per node per minute, kept for 30 days: CPU, memory and disk with trends from 1 hour to 30 days, storage
@@ -360,7 +383,7 @@ See [installation → agents](install.md#agents).
 Admins and viewers. Viewers can look but not change, and only admins can hand out the more powerful MCP scopes.
 Password reset by mail.
 
-### Backups
+### App backups
 
 Backups of Stackpilot itself:
 

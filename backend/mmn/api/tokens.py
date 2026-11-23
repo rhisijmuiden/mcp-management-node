@@ -39,6 +39,7 @@ SCOPES: dict[str, str] = {
     "tasks": "Create, change and run scheduled tasks",
     "network": "Change bridges, firewall rules and SDN on Proxmox VE nodes (applied with backup and roll back)",
     "cluster": "Manage HA, replication, Proxmox backup jobs and storage",
+    "restore_guests": "Restore VMs, containers and files from Proxmox VE backups (destructive, approval by default)",
     "deploy": "Deploy GitHub repositories into containers and change deployments",
     "unifi": "Read UniFi Network and Access: devices, clients, WiFi, firewall zones, events, doors and the access log",
     "unifi_admin": "UniFi Network actions: restart devices, power-cycle switch ports, authorize guests, switch WiFi on or off",
@@ -49,7 +50,7 @@ SCOPES: dict[str, str] = {
     "hub": "Use the tools of other MCP servers registered in the MCP hub (Keystone, GitHub, ...), within the guardrails",
 }
 ADMIN_ONLY_SCOPES = {"restore", "updates", "settings", "backups", "nodes", "node_updates", "logs", "services", "exec", "copy",
-                     "guests", "guests_admin", "templates", "tasks", "network", "cluster", "deploy",
+                     "guests", "guests_admin", "restore_guests", "templates", "tasks", "network", "cluster", "deploy",
                      "unifi", "unifi_admin", "doors", "hub",
                      "workstations", "reports"}
 

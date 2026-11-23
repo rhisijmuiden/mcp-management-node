@@ -1292,3 +1292,130 @@ export interface CustomerReports {
   previous_period: string;
   current_period: string;
 }
+
+/* ------------------------------------------------------------------ phase 11: backup management */
+export type CoverageStatus = "failed" | "never" | "no_job" | "stale" | "none" | "unknown" | "external" | "backup_server" | "ok" | "excluded" | "not_monitored";
+
+export interface BackupPolicy {
+  max_age_hours: number;
+  alert_failed: boolean;
+  alert_missing: boolean;
+  workstations: boolean;
+  recipients: string[];
+  exclude: string[];
+}
+
+export interface CoverageGuest {
+  key: string;
+  kind: "guest";
+  type: "qemu" | "lxc";
+  vmid: number;
+  name: string;
+  node: string;
+  node_id: string;
+  cluster: string;
+  power: string;
+  jobs: string[];
+  next_run: string | null;
+  last_backup: string | null;
+  age_hours: number | null;
+  size: number | null;
+  total_size: number;
+  count: number;
+  storages: string[];
+  last_volid: string | null;
+  verified: string | null;
+  offsite: boolean;
+  failure: { at: string | null; error: string; node: string } | null;
+  status: CoverageStatus;
+}
+
+export interface CoverageMachine {
+  key: string;
+  kind: "machine";
+  machine_id: string;
+  name: string;
+  os: "linux" | "windows";
+  role: "server" | "workstation";
+  online: boolean;
+  error: string | null;
+  guest: { key: string; vmid: number; cluster: string } | null;
+  status: CoverageStatus;
+  method: "wsb" | "veeam" | "guest" | "external" | "pbs" | null;
+  last_backup: string | null;
+  age_hours: number | null;
+  detail: string | null;
+  system_state: boolean | null;
+  local: { checked_at?: string; wsb?: { installed?: boolean; policy?: boolean; schedule?: string[]; volumes?: string[]; target?: string; versions?: number } } | null;
+}
+
+export interface CoverageJob { id: string; prune?: string | Record<string, string> | null; schedule: string; storage: string; enabled: boolean; all: boolean; vmid: string | null; pool: string | null; node: string | null; exclude: string | null; mode: string; next_run: string | null; comment: string | null }
+export interface CoverageStorage { storage: string; type: string; shared: boolean; server?: string | null; datastore?: string | null; backups: number; size: number; used?: number; total?: number; used_pct?: number | null }
+
+export interface CoverageCluster {
+  key: string;
+  name: string;
+  nodes: string[];
+  anchor_id?: string;
+  anchor?: string;
+  error?: string;
+  jobs?: CoverageJob[];
+  storages?: CoverageStorage[];
+  runs?: { ok: number; failed: number; running: number; last_ok: string | null; job_errors: { at: string; node: string; error: string }[] };
+  errors?: string[];
+  guest_count: number;
+}
+
+export interface CoverageCounts { total: number; [status: string]: number }
+
+export interface CoverageSummary {
+  guests: CoverageCounts;
+  machines: CoverageCounts;
+  protected: number;
+  considered: number;
+  protected_pct: number | null;
+  problems: number;
+  failed: number;
+  missing: number;
+  last_backup: string | null;
+  size: number;
+}
+
+export interface PbsJob { id: string; store: string; schedule?: string; remote?: string; "remote-store"?: string; comment?: string; last_state?: string | null; last_run?: number | null; next_run?: number | null; [k: string]: unknown }
+export interface PbsOverview {
+  node_id: string;
+  name: string;
+  error?: string;
+  version?: string | null;
+  fingerprint?: string | null;
+  datastores?: { name: string; path: string; total: number | null; used: number | null; used_pct: number | null; gc_state?: string | null; gc_last?: number | null; gc_schedule?: string | null }[];
+  verify_jobs?: PbsJob[];
+  sync_jobs?: PbsJob[];
+  prune_jobs?: PbsJob[];
+  remotes?: { name: string; host: string; "auth-id"?: string; comment?: string }[];
+}
+
+export interface Coverage {
+  customer: { id: string; name: string; sla: string | null };
+  policy: BackupPolicy;
+  collected_at: string | null;
+  error: string | null;
+  summary: CoverageSummary;
+  clusters: CoverageCluster[];
+  guests: CoverageGuest[];
+  machines: CoverageMachine[];
+  pbs: PbsOverview[];
+}
+
+export interface CoverageRow {
+  customer: { id: string; name: string; sla: string | null };
+  collected_at: string | null;
+  error: string | null;
+  summary: CoverageSummary;
+  policy: { max_age_hours: number };
+  pbs: number;
+  jobs: number;
+}
+
+export interface BackupVolume { volid: string; vmid: number; ctime: string | null; size: number; format: string; type: "qemu" | "lxc"; storage: string; storage_type: string | null; node: string | null; notes: string; protected: boolean; encrypted: boolean; verified: string | null }
+export interface BackupFileEntry { path: string; name: string; type: string; leaf: boolean; size: number | null; mtime: string | null }

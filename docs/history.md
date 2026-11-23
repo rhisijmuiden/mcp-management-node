@@ -18,6 +18,7 @@ Stackpilot is built in phases. Each phase is one pull request and one minor rele
 | 8 | v0.8.0 | AI gateway: command center, approvals, policies, kill switch |
 | 9 | v0.9.0 | MCP hub and tool catalog |
 | 10 | v0.10.0 | Workstations (inventory, security status, actions) and monthly customer reports |
+| 11 | v0.11.0 | Backup management per customer |
 
 ## What each phase added
 
@@ -89,5 +90,19 @@ backups, workstation security, AI actions and recommendations, and is mailed to 
 or made on demand. New MCP tools: `list_workstations`, `get_workstation`, `diagnose_workstation`, `find_software`,
 `refresh_workstation_inventory`, `workstation_action`, `log_off_workstation_user`, `get_customer_report`,
 `send_customer_report`; new scopes `workstations` and `reports`.
+
+**Phase 11** adds **backup management per customer** under Operations → Backups. The coverage overview shows, per
+customer, every VM and container (which backup job covers it, last successful backup, age, size, number of backups,
+verify state, offsite copy, last failure) and every Linux and Windows server and workstation (Windows Server Backup
+with system state, Veeam, other backup agents, or "backed up as a Proxmox guest"). Each customer has a backup policy:
+the maximum age in hours (SLA), whether failed and missing backups raise an alert, whether workstations count, extra
+mail recipients and excluded items. Alerts appear in Monitoring and are mailed. From the app you can back up a guest
+now, restore a whole guest (as a new guest, or over the existing one after typing its VMID) and restore single files
+from a Proxmox Backup Server backup, and manage Proxmox Backup Server itself: datastores, verify, sync and prune jobs
+and remotes for offsite copies. The monthly report and the optimisation scan gained a backups section. New MCP tools:
+`list_backup_coverage`, `set_backup_policy`, `list_guest_backups`, `backup_guest_now`, `restore_guest`,
+`list_backup_files`, `restore_files`, `get_pbs`, `save_pbs_job`, `run_pbs_job`, `delete_pbs_job`,
+`add_pbs_datastore`, `add_pbs_remote`; new scope `restore_guests` (given automatically to tokens with `guests_admin`).
+Restores are destructive and need approval by default.
 
 Bug fix releases in between (v0.2.1, v0.6.1, v0.6.2, v0.7.1) are listed on the releases page.

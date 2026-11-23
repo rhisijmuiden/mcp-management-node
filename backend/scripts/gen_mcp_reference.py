@@ -34,6 +34,7 @@ SECTION_TITLES = {
     "scheduled tasks": "Scheduled tasks",
     "network, firewall, SDN": "Network, firewall and SDN",
     "HA, replication, backup jobs, storage": "Cluster: HA, replication, backup jobs and storage",
+    "backup management per customer (phase 11)": "Backups of customers: coverage, restores, Proxmox Backup Server",
     "monitoring": "Monitoring",
     "GitHub deployments": "Deployments from GitHub",
     "UniFi (phase 6)": "UniFi Network and Access",

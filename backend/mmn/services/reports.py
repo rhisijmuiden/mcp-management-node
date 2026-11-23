@@ -55,6 +55,11 @@ TEXT: dict[str, dict[str, str]] = {
         "none_ws": "No workstations with an agent.", "none_security": "No security points of attention.",
         "none_ai": "The AI did not change anything in this period.", "none_rec": "No recommendations.",
         "not_backed_up": "Guests without a backup job", "backups_error": "Could not read the backup tasks of",
+        "coverage": "Backup coverage", "protected": "Protected", "cov_line": "{good} of {total} guests and servers have a recent backup ({pct}%); the SLA is a backup at most {hours} hours old.",
+        "cov_none": "Backup coverage has not been collected for this customer.", "item": "Item", "last_backup": "Last backup",
+        "age": "Age", "cov_problems": "Items without a good recent backup",
+        "bst_failed": "Failed", "bst_never": "No backup yet", "bst_no_job": "No backup job", "bst_stale": "Too old",
+        "bst_none": "No backup found", "hours": "h",
         "ai_calls": "AI calls", "ai_changes": "changes", "ai_approvals": "approvals",
         "ai_rejected": "rejected", "minutes": "min", "proxmox": "Proxmox VE", "server": "Server",
         "workstation": "Workstation", "st_ok": "OK", "st_warning": "Attention", "st_critical": "Action needed",
@@ -88,6 +93,11 @@ TEXT: dict[str, dict[str, str]] = {
         "none_ws": "Geen werkplekken met een agent.", "none_security": "Geen beveiligingspunten.",
         "none_ai": "De AI heeft in deze periode niets veranderd.", "none_rec": "Geen aanbevelingen.",
         "not_backed_up": "Gasten zonder back-uptaak", "backups_error": "Kon de back-uptaken niet lezen van",
+        "coverage": "Back-updekking", "protected": "Beschermd", "cov_line": "{good} van {total} guests en servers hebben een recente back-up ({pct}%); de SLA is een back-up van hooguit {hours} uur oud.",
+        "cov_none": "De back-updekking van deze klant is nog niet verzameld.", "item": "Onderdeel", "last_backup": "Laatste back-up",
+        "age": "Leeftijd", "cov_problems": "Onderdelen zonder goede recente back-up",
+        "bst_failed": "Mislukt", "bst_never": "Nog geen back-up", "bst_no_job": "Geen back-uptaak", "bst_stale": "Te oud",
+        "bst_none": "Geen back-up gevonden", "hours": "u",
         "ai_calls": "AI-aanroepen", "ai_changes": "wijzigingen", "ai_approvals": "goedkeuringen",
         "ai_rejected": "afgewezen", "minutes": "min", "proxmox": "Proxmox VE", "server": "Server",
         "workstation": "Werkplek", "st_ok": "OK", "st_warning": "Aandacht", "st_critical": "Actie nodig",
@@ -165,6 +175,31 @@ FINDING_NL = {
                              "Isoleer het gastnetwerk van het LAN met een firewall-zonebeleid."),
     "guest_isolation_partial": ("Het gastnetwerk ({networks}) kan het LAN deels bereiken.",
                                 "Isoleer het gastnetwerk van het LAN met een firewall-zonebeleid."),
+    "backup_failed": ("De laatste back-up is mislukt voor {count} guest(s): {names}.",
+                      "Lees de fout in het back-uplog, los die op en start de taak opnieuw."),
+    "backup_no_job": ("{count} guest(s) zitten in geen enkele back-uptaak: {names}.",
+                      "Voeg ze toe aan een back-uptaak, of sluit ze uit op de pagina Back-ups als ze geen back-up nodig hebben."),
+    "backup_never": ("{count} guest(s) zitten in een back-uptaak maar hebben nog geen back-up: {names}.",
+                     "Start de back-uptaak nu en controleer of de opslag bereikbaar is."),
+    "backup_stale": ("De laatste back-up van {count} guest(s) is ouder dan {max} uur: {names}.",
+                     "Controleer de planning van de taak en de laatste back-ups."),
+    "backup_local_only": ("Alle back-ups staan op lokale opslag van de node zelf ({storages}).",
+                          "Bewaar back-ups op een aparte machine (Proxmox Backup Server of NFS) en houd een kopie buiten de deur."),
+    "machine_backup_failed": ("De laatste back-up is mislukt ({detail}).",
+                              "Controleer de back-up op de machine en start hem opnieuw."),
+    "machine_backup_none": ("Geen back-up gevonden: geen Windows Server Backup, geen back-upagent en geen guest met back-up.",
+                            "Richt een back-up in (voor Windows: Windows Server Backup met systeemstatus), of maak een "
+                            "back-up van de machine als Proxmox VE-guest."),
+    "machine_backup_stale": ("De laatste back-up is ouder dan {max} uur.", "Controleer de back-upplanning op de machine."),
+    "wsb_no_system_state": ("Windows Server Backup neemt de systeemstatus niet mee.",
+                            "Voeg de systeemstatus toe aan de back-up (nodig om een domeincontroller of zijn rollen terug te zetten)."),
+    "pbs_no_verify": ("Datastore {store} heeft geen verificatietaak.",
+                      "Voeg een verificatietaak toe (bijvoorbeeld wekelijks), zodat beschadigde back-ups op tijd opvallen."),
+    "pbs_no_sync": ("Datastore {store} heeft geen kopie buiten de deur.",
+                    "Voeg een remote en een synchronisatietaak naar een tweede Proxmox Backup Server toe (3-2-1-regel)."),
+    "pbs_full": ("Datastore {store} is {pct}% vol.", "Scherp de bewaartermijn aan (prune-taak) of vergroot de datastore."),
+    "backup_unknown": ("De back-updekking is nog niet verzameld.",
+                       "Open Back-ups in Stackpilot of roep list_backup_coverage aan met refresh=true."),
     "open_alerts": ("{count} openstaande monitoringmelding(en).", "Bekijk de openstaande meldingen."),
     "no_window": ("Voor deze klant is geen onderhoudsvenster ingesteld.",
                   "Spreek een onderhoudsvenster af en stel het in op de klantpagina, zodat updates gepland kunnen worden."),
@@ -305,6 +340,24 @@ async def _backups(ns: list[Node], start: datetime, end: datetime) -> dict[str, 
         out["failed"] += failed
         out["not_backed_up"] += len(names)
     return out
+
+
+async def _coverage(db: AsyncSession, e: Environment) -> dict[str, Any] | None:
+    """The current backup coverage (phase 11): protected share and the items that need attention."""
+    from mmn.services import protection
+
+    row = await protection.stored(db, e)
+    if row is None:
+        return None
+    v = protection.view(e, row)
+    sm = v["summary"]
+    items = [{"item": protection.label_of(r), "where": r.get("cluster") or ("server" if r.get("role") == "server" else r.get("role")),
+              "status": r["status"], "last_backup": r.get("last_backup"), "age_hours": r.get("age_hours"),
+              "error": ((r.get("failure") or {}).get("error") if r["kind"] == "guest" else r.get("detail"))}
+             for r in protection.problems(v)]
+    return {"collected_at": v["collected_at"], "protected": sm["protected"], "considered": sm["considered"],
+            "protected_pct": sm["protected_pct"], "failed": sm["failed"], "missing": sm["missing"],
+            "max_age_hours": v["policy"]["max_age_hours"], "items": items[:40]}
 
 
 def _in_period(iso: Any, start: datetime, end: datetime) -> bool:
@@ -458,6 +511,8 @@ async def build(db: AsyncSession, e: Environment, period: str, lang: str = "en",
 
     backups = await _backups(ns, start, end) if live else {"clusters": [], "ok": 0, "failed": 0, "errors": [],
                                                             "not_backed_up": 0}
+
+    backups["coverage"] = await _coverage(db, e)
 
     crit = sum(1 for s in sec if s["severity"] == "high") + backups["failed"]
     status = "critical" if crit else ("warning" if sec or recs or inc else "ok")
@@ -689,6 +744,17 @@ def render_pdf(data: dict[str, Any], tz: ZoneInfo) -> bytes:
         para(T["none_backups"], muted=True)
     if b.get("errors"):
         para(f"{T['backups_error']}: {', '.join(b['errors'])}", muted=True, size=8)
+    cov = b.get("coverage")
+    if cov and cov.get("considered"):
+        para(T["cov_line"].format(good=cov["protected"], total=cov["considered"], pct=cov["protected_pct"],
+                                  hours=cov["max_age_hours"]))
+        if cov["items"]:
+            table([T["item"], T["status"], T["last_backup"], T["age"]],
+                  [[x["item"], T.get(f"bst_{x['status']}", x["status"]), _fmt_dt(x["last_backup"], tz),
+                    f"{x['age_hours']:.0f} {T['hours']}" if x.get("age_hours") is not None else "–"] for x in cov["items"]],
+                  [70, 40, 42, 28], ["critical" if x["status"] == "failed" else "warning" for x in cov["items"]], 1)
+    elif "coverage" in b:
+        para(T["cov_none"], muted=True, size=8)
 
     h2(T["workstations"])
     if data["workstations"]:

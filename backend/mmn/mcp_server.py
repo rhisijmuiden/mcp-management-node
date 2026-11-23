@@ -257,6 +257,14 @@ replication, Proxmox backup jobs and storage. Monitoring: `get_monitoring`, `get
 `list_alerts`, `get_disk_smart`. GitHub deployments into containers: `list_deployments`,
 `list_github_repos`, `save_deployment`, `run_deployment`.
 
+Backups per customer: `list_backup_coverage` (every guest, server and workstation with its last backup,
+age, failures and status against the customer's SLA; start here for "is everything backed up"), then
+`save_backup_job` / `run_backup_job` (Proxmox VE jobs), `backup_guest_now`, `set_backup_policy` (SLA,
+alerts, exclusions), `list_guest_backups`, `restore_guest` (a new guest by default; overwriting needs the
+user's go-ahead), `list_backup_files` + `restore_files` (file level from a Proxmox Backup Server), and
+for a PBS `get_pbs`, `save_pbs_job` (verify, offsite sync, prune), `run_pbs_job`, `add_pbs_datastore`,
+`add_pbs_remote`; connect a cluster to a PBS datastore with `add_storage` type pbs.
+
 Standalone servers ("Servers" in the app, Linux and Windows with the same agent): `list_servers`,
 `diagnose_server` (one-call health check: start here), `find_errors` and `search_logs` across all
 machines (journal, Windows Event Log or log files), `read_event_log` (Windows), `check_cve` (installed
@@ -1929,7 +1937,8 @@ async def list_backup_jobs(node: str) -> dict:
 async def save_backup_job(node: str, storage: str, schedule: str = "sun 01:00", all: bool = False,
                           vmids: list[int] | None = None, mode: str = "snapshot", keep_last: int | None = None,
                           keep_daily: int | None = None, keep_weekly: int | None = None,
-                          mailto: list[str] | None = None, enabled: bool = True, job_id: str | None = None) -> dict:
+                          mailto: list[str] | None = None, enabled: bool = True, job_id: str | None = None,
+                          keep_monthly: int | None = None, comment: str = "") -> dict:
     """Create (or with job_id change) a Proxmox VE backup job: storage, schedule (systemd calendar,
     e.g. 'daily 02:00', 'sun 01:00'), all guests or vmids, mode snapshot/suspend/stop, retention."""
     from mmn.services import cluster
@@ -1938,7 +1947,7 @@ async def save_backup_job(node: str, storage: str, schedule: str = "sun 01:00", 
     try:
         body = cluster.BackupJobIn(storage=storage, schedule=schedule, all=all, vmids=vmids or [], mode=mode,
                                    keep_last=keep_last, keep_daily=keep_daily, keep_weekly=keep_weekly,
-                                   mailto=mailto or [], enabled=enabled)
+                                   keep_monthly=keep_monthly, mailto=mailto or [], enabled=enabled, comment=comment)
     except ValueError as e:
         raise ToolDenied(str(e)) from e
     return await _call(cluster.save_backup_job(nid, body, job_id))
@@ -1964,6 +1973,269 @@ async def delete_backup_job(node: str, job_id: str, confirm: str) -> dict:
         raise ToolDenied("confirm must equal the job id")
     nid, _ = await _pve(node)
     return await _call(cluster.delete_backup_job(nid, job_id))
+
+
+# ------------------------------------------------------------------ backup management per customer (phase 11)
+async def _customer_env(customer: str):
+    from mmn.services import nodes
+
+    async with sessionmaker()() as db:
+        try:
+            return await nodes.get_environment(db, customer)
+        except nodes.NodeError as e:
+            raise ToolDenied(str(e)) from e
+
+
+@tool("read", RO)
+async def list_backup_coverage(customer: str, refresh: bool = False, problems_only: bool = False) -> dict:
+    """Backup coverage of a customer: every Proxmox VE guest, server and workstation with its status
+    (ok, stale, failed, no_job, never, none, external, backup_server, excluded, not_monitored), last
+    backup, age in hours, size, the jobs that cover it, the storages and the last error; plus the
+    backup jobs, backup storages, Proxmox Backup Servers and the customer's backup policy (SLA).
+    Items carry a `key` for set_backup_policy (exclude). `refresh` collects it again now (up to a
+    minute); otherwise it is at most 30 minutes old. `problems_only` leaves out the good items."""
+    from mmn.services import nodes, protection
+
+    e = await _customer_env(customer)
+    if refresh:
+        v = await _call(protection.collect(e.id, force=True))
+    else:
+        async with sessionmaker()() as db:
+            e = await nodes.get_environment(db, e.id)
+            v = protection.view(e, await protection.stored(db, e))
+    if problems_only:
+        v["guests"] = [g for g in v["guests"] if g["status"] in protection.PROBLEMS]
+        v["machines"] = [m for m in v["machines"] if m["status"] in protection.PROBLEMS]
+    if not v["collected_at"]:
+        v["note"] = "Not collected yet: call again with refresh=true."
+    return _jsonable(v)
+
+
+@tool("cluster", WRITE)
+async def set_backup_policy(customer: str, max_age_hours: int | None = None, alert_failed: bool | None = None,
+                            alert_missing: bool | None = None, workstations: bool | None = None,
+                            recipients: list[str] | None = None, exclude: list[str] | None = None,
+                            include: list[str] | None = None) -> dict:
+    """Change a customer's backup policy: the SLA as the maximum age of the last good backup in hours
+    (default 26), alerts for failed and for missing backups, whether workstations count, extra alert
+    recipients (besides the monitoring recipients), and items to `exclude` from (or `include` again
+    in) the coverage and alerts, by their key from list_backup_coverage (e.g. guest:pve-cl:105)."""
+    from mmn.services import nodes, protection
+
+    e = await _customer_env(customer)
+    async with sessionmaker()() as db:
+        e = await nodes.get_environment(db, e.id)
+        cur = protection.policy_of(e)
+        keys = (set(cur["exclude"]) | set(exclude or [])) - set(include or [])
+        try:
+            body = protection.PolicyIn(
+                max_age_hours=max_age_hours if max_age_hours is not None else cur["max_age_hours"],
+                alert_failed=cur["alert_failed"] if alert_failed is None else alert_failed,
+                alert_missing=cur["alert_missing"] if alert_missing is None else alert_missing,
+                workstations=cur["workstations"] if workstations is None else workstations,
+                recipients=cur["recipients"] if recipients is None else recipients, exclude=sorted(keys))
+        except ValueError as ex:
+            raise ToolDenied(str(ex)) from ex
+        res = await protection.save_policy(db, e, body)
+        await db.commit()
+    return _jsonable(res)
+
+
+@tool("read", RO)
+async def list_guest_backups(guest: str, node: str | None = None) -> list[dict]:
+    """All backups of one VM or container on every backup storage of its cluster (Proxmox Backup
+    Server included), newest first: volume id, time, size, storage, verification state, notes.
+    Use the volume id with restore_guest or list_backup_files."""
+    from mmn.services import restore
+
+    n, g = await _guest(guest, node)
+    async with sessionmaker()() as db:
+        from mmn.services import nodes
+
+        nn = await nodes.get_node(db, n.id)
+        return await _call(restore.guest_backups(db, nn, g["vmid"]))
+
+
+@tool("cluster", WRITE)
+async def backup_guest_now(guest: str, storage: str, node: str | None = None, mode: str = "snapshot",
+                           protected: bool = False) -> dict:
+    """Make a one-off backup of a VM or container now (vzdump to `storage`, a backup storage of its
+    cluster), outside the backup jobs; `protected` keeps it from being pruned. Follow the job with
+    get_node_job."""
+    from mmn.services import nodes, restore
+
+    n, g = await _guest(guest, node)
+    try:
+        body = restore.BackupNowIn(vmid=g["vmid"], storage=storage, mode=mode, protected=protected)
+    except ValueError as e:
+        raise ToolDenied(str(e)) from e
+    p = current_principal()
+    async with sessionmaker()() as db:
+        nn = await nodes.get_node(db, n.id)
+        job = await _call(restore.backup_now(db, nn, body, source="mcp", requested_by=p.username if p else None))
+    return job if isinstance(job, dict) else _jsonable(nodes.job_out(job, with_output=False))
+
+
+@tool("restore_guests", DESTRUCTIVE)
+async def restore_guest(node: str, volume: str, confirm: str, vmid: int | None = None, storage: str | None = None,
+                        overwrite: bool = False, start: bool = False, unique: bool = False) -> dict:
+    """Restore a backup (volume id from list_guest_backups or list_backup_coverage) as a VM or
+    container on `node`. By default as a NEW guest with a free VMID (or `vmid`) next to the original;
+    `overwrite=true` replaces the existing guest with that VMID (it must be stopped). A container
+    needs `storage` for its disks unless it is overwritten; `unique` gives a copy new MAC addresses.
+    Set `confirm` to the VMID that is overwritten, or to 'new' for a new guest. Always ask the user
+    first; the AI gateway asks an admin's approval by default. Follow the job with get_node_job."""
+    from mmn.services import nodes, restore
+
+    try:
+        body = restore.RestoreIn(volume=volume, vmid=vmid, storage=storage, overwrite=overwrite, start=start,
+                                 unique=unique)
+        expected = str(vmid or restore.volume_vmid(volume) or "") if overwrite else "new"
+    except (ValueError, nodes.NodeError) as e:
+        raise ToolDenied(str(e)) from e
+    if str(confirm).strip().lower() != expected.lower():
+        raise ToolDenied(f"confirm must be '{expected}'")
+    nid, _ = await _pve(node)
+    p = current_principal()
+    async with sessionmaker()() as db:
+        n = await nodes.get_node(db, nid)
+        try:
+            job, info = await restore.restore_guest(db, n, body, source="mcp", requested_by=p.username if p else None)
+        except Exception as e:  # noqa: BLE001
+            raise _agent_errors(e) from e
+    return _jsonable({"job": nodes.job_out(job, with_output=False), **info})
+
+
+@tool("restore_guests", RO)
+async def list_backup_files(node: str, volume: str, path: str = "/") -> dict:
+    """Browse the files inside a backup on a Proxmox Backup Server (file-level restore), through the
+    Proxmox VE `node`. Start at '/': a VM backup shows its disks and partitions first, a container
+    backup its file system. Then restore_files with the path of a file or folder."""
+    from mmn.services import nodes, restore
+
+    nid, _ = await _pve(node)
+    async with sessionmaker()() as db:
+        n = await nodes.get_node(db, nid)
+    return await _call(restore.list_files(n, volume, path))
+
+
+@tool("restore_guests", WRITE)
+async def restore_files(node: str, volume: str, path: str, target_dir: str | None = None) -> dict:
+    """Extract a file or folder from a Proxmox Backup Server backup (path from list_backup_files)
+    into a new folder on the Proxmox VE `node` (default /var/lib/stackpilot-restore/<time>); nothing
+    existing is overwritten. Move it to the machine that needs it with copy_data. Follow the job
+    with get_node_job."""
+    from mmn.services import nodes, restore
+
+    try:
+        body = restore.FileRestoreIn(volume=volume, path=path, target_dir=target_dir)
+    except ValueError as e:
+        raise ToolDenied(str(e)) from e
+    nid, _ = await _pve(node)
+    p = current_principal()
+    async with sessionmaker()() as db:
+        n = await nodes.get_node(db, nid)
+    try:
+        job, target = await restore.restore_files(n, body, source="mcp", requested_by=p.username if p else None)
+    except Exception as e:  # noqa: BLE001
+        raise _agent_errors(e) from e
+    return _jsonable({"job": nodes.job_out(job, with_output=False), "target": target})
+
+
+async def _pbs_server(server: str) -> str:
+    from mmn.services import agent_hub, nodes
+
+    async with sessionmaker()() as db:
+        try:
+            n = await nodes.get_node(db, server)
+        except nodes.NodeError as e:
+            raise ToolDenied(str(e)) from e
+        if n.kind != "linux":
+            raise ToolDenied("a Proxmox Backup Server is a Linux server with the agent")
+        if not agent_hub.is_online(n.id):
+            raise ToolDenied(f"the agent of {n.name} is not connected")
+        return n.id
+
+
+@tool("read", RO)
+async def get_pbs(server: str) -> dict:
+    """A Proxmox Backup Server (a Linux server with the agent): version, certificate fingerprint (for
+    add_storage type pbs), datastores with usage and garbage collection, verify jobs, sync jobs
+    (offsite copies), prune jobs (retention) and remotes."""
+    from mmn.services import pbs
+
+    return await _call(pbs.overview(await _pbs_server(server)))
+
+
+@tool("cluster", WRITE)
+async def save_pbs_job(server: str, kind: str, job_id: str, store: str, schedule: str | None = None,
+                       remote: str | None = None, remote_store: str | None = None, direction: str = "pull",
+                       remove_vanished: bool = False, ignore_verified: bool = True, outdated_after: int | None = 30,
+                       keep_last: int | None = None, keep_daily: int | None = None, keep_weekly: int | None = None,
+                       keep_monthly: int | None = None, keep_yearly: int | None = None, ns: str | None = None,
+                       comment: str | None = None) -> dict:
+    """Create or change a job on a Proxmox Backup Server. kind 'verify' (check backups, e.g.
+    schedule 'sat 03:00', re-verify after `outdated_after` days), 'sync' (offsite copy: pull
+    `remote_store` of `remote` into `store`, or direction 'push' on PBS 3.3+) or 'prune'
+    (retention: keep_last/daily/weekly/monthly/yearly, needs a schedule)."""
+    from mmn.services import pbs
+
+    try:
+        body = pbs.PbsJobIn(kind=kind, id=job_id, store=store, schedule=schedule, remote=remote,
+                            remote_store=remote_store, direction=direction, remove_vanished=remove_vanished,
+                            ignore_verified=ignore_verified, outdated_after=outdated_after, keep_last=keep_last,
+                            keep_daily=keep_daily, keep_weekly=keep_weekly, keep_monthly=keep_monthly,
+                            keep_yearly=keep_yearly, ns=ns, comment=comment)
+    except ValueError as e:
+        raise ToolDenied(str(e)) from e
+    return await _call(pbs.save_job(await _pbs_server(server), body))
+
+
+@tool("cluster", WRITE)
+async def run_pbs_job(server: str, kind: str, job_id: str) -> dict:
+    """Run a verify, sync or prune job of a Proxmox Backup Server now (it runs as a PBS task)."""
+    from mmn.services import pbs
+
+    return await _call(pbs.run_job(await _pbs_server(server), kind, job_id))
+
+
+@tool("cluster", DESTRUCTIVE)
+async def delete_pbs_job(server: str, kind: str, job_id: str, confirm: str) -> dict:
+    """Remove a verify, sync or prune job from a Proxmox Backup Server (backups stay). Set `confirm`
+    to the job id."""
+    from mmn.services import pbs
+
+    if confirm != job_id:
+        raise ToolDenied("confirm must equal the job id")
+    return await _call(pbs.delete_job(await _pbs_server(server), kind, job_id))
+
+
+@tool("cluster", WRITE)
+async def add_pbs_datastore(server: str, name: str, path: str, gc_schedule: str = "daily") -> dict:
+    """Create a datastore on a Proxmox Backup Server in an existing, dedicated directory or mount
+    point `path` (for example /mnt/datastore/backup)."""
+    from mmn.services import pbs
+
+    try:
+        body = pbs.DatastoreIn(name=name, path=path, gc_schedule=gc_schedule)
+    except ValueError as e:
+        raise ToolDenied(str(e)) from e
+    return await _call(pbs.add_datastore(await _pbs_server(server), body))
+
+
+@tool("cluster", WRITE)
+async def add_pbs_remote(server: str, name: str, host: str, auth_id: str, password: str,
+                         fingerprint: str | None = None, port: int | None = None) -> dict:
+    """Add a remote (another Proxmox Backup Server, usually offsite) to a PBS, for sync jobs.
+    `auth_id` like sync@pbs or sync@pbs!token, `password` the password or token secret."""
+    from mmn.services import pbs
+
+    try:
+        body = pbs.RemoteIn(name=name, host=host, auth_id=auth_id, password=password, fingerprint=fingerprint,
+                            port=port)
+    except ValueError as e:
+        raise ToolDenied(str(e)) from e
+    return await _call(pbs.add_remote(await _pbs_server(server), body))
 
 
 @tool("read", RO)

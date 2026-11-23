@@ -2,6 +2,7 @@ import * as DM from "@radix-ui/react-dropdown-menu";
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
+  Archive,
   ArrowUpCircle,
   Gauge,
   Plug,
@@ -222,6 +223,7 @@ export function Layout() {
       title: t("nav.section.operations"),
       items: [
         { to: "/monitoring", icon: <Activity />, label: t("nav.monitoring") },
+        { to: "/backups", icon: <Archive />, label: t("nav.protection") },
         { to: "/proxmox/updates", icon: <ArrowUpCircle />, label: t("nav.updates") },
         { to: "/servers/software", icon: <ShieldCheck />, label: t("nav.srv_software"), admin: true },
         { to: "/tasks", icon: <CalendarClock />, label: t("nav.tasks") },

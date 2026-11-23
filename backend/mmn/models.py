@@ -233,6 +233,9 @@ class Environment(Base):
     sla: Mapped[str | None] = mapped_column(String(200), nullable=True)
     # Phase 10: monthly report settings {"enabled", "day", "recipients", "lang", "include_ai"}.
     report: Mapped[dict] = mapped_column(JsonType, default=dict)
+    # Phase 11: backup policy {"max_age_hours", "alert_failed", "alert_missing", "workstations",
+    # "recipients", "exclude": [item keys]}.
+    backup: Mapped[dict] = mapped_column(JsonType, default=dict)
 
     nodes: Mapped[list[Node]] = relationship(back_populates="environment", lazy="selectin")
 
@@ -727,3 +730,17 @@ class CustomerReport(Base):
     sent_to: Mapped[list] = mapped_column(JsonType, default=list)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     send_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+# ------------------------------------------------------------------ phase 11: backup management
+class BackupCoverage(Base):
+    """The latest backup coverage of one customer: every Proxmox VE guest, server and workstation
+    with its last backup, age, size, failures and status, plus the backup jobs, storages and Proxmox
+    Backup Servers. Collected by the scheduler; alerts, the report and the scan read it."""
+
+    __tablename__ = "backup_coverage"
+
+    environment_id: Mapped[str] = mapped_column(ForeignKey("environments.id", ondelete="CASCADE"), primary_key=True)
+    collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    data: Mapped[dict] = mapped_column(JsonType, default=dict)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
