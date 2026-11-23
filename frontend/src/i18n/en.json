@@ -103,7 +103,8 @@
     "ai_sessions": "Sessions & audit",
     "mcp_hub": "MCP hub",
     "tool_catalog": "Tool catalog",
-    "protection": "Backups"
+    "protection": "Backups",
+    "nightly": "Morning summary"
   },
   "roles": {
     "admin": "Admin",
@@ -2518,7 +2519,8 @@
       "other": "Policy",
       "where_customer": "customer {{customer}}",
       "where_token": "this token",
-      "where_default": "default policy"
+      "where_default": "default policy",
+      "nightly": "Proposed by the nightly checks"
     },
     "toast": {
       "new": "{{who}} asks for approval: {{tool}}",
@@ -2618,7 +2620,12 @@
       "failed": "The call failed",
       "result": "Result",
       "approved_toast": "Approved, the call runs now",
-      "rejected_toast": "Rejected"
+      "rejected_toast": "Rejected",
+      "waits_window_title": "Waits for the maintenance window",
+      "waits_window": "After approval this starts when the maintenance window opens: {{when}}.",
+      "scheduled_title": "Scheduled",
+      "scheduled": "Approved. It starts when the maintenance window opens: {{when}}.",
+      "scheduled_toast": "Approved, starts in the maintenance window ({{when}})"
     },
     "pol": {
       "title": "Policies & guardrails",
@@ -3256,6 +3263,30 @@
     "backup_unknown": {
       "f": "Backup coverage has not been collected yet.",
       "s": "Open Backups in Stackpilot or call list_backup_coverage with refresh=true."
+    },
+    "cve_fixable": {
+      "f": "{{count}} security update(s) fix {{cves}} known vulnerabilities: {{list}}.",
+      "s": "Install the updates in the maintenance window."
+    },
+    "security_updates": {
+      "f": "{{count}} security update(s) pending: {{names}}.",
+      "s": "Install them in the maintenance window."
+    },
+    "windows_security": {
+      "f": "{{count}} security update(s) pending ({{critical}} critical): {{names}}.",
+      "s": "Install them in the maintenance window."
+    },
+    "cert_expired": {
+      "f": "Certificate {{name}} expired on {{date}}.",
+      "s": "Renew or replace the certificate."
+    },
+    "cert_expiring": {
+      "f": "Certificate {{name}} expires in {{days}} day(s), on {{date}}.",
+      "s": "Renew the certificate before it expires."
+    },
+    "cert_endpoint_error": {
+      "f": "The certificate of {{endpoint}} could not be checked: {{error}}.",
+      "s": "Check that Stackpilot can reach the address, or remove it from the list."
     }
   },
   "prot": {
@@ -3450,5 +3481,158 @@
     "excluded": "Excluded items",
     "excluded_hint": "Items that need no backup (test machines, templates you rebuild). They do not raise alerts.",
     "none_excluded": "Nothing is excluded."
+  },
+  "nightly": {
+    "title": "Morning summary",
+    "desc": "Every night Stackpilot checks every customer: updates, security updates and CVEs, disks, certificates and backups. In the morning you get one summary with proposals you approve with one click.",
+    "desc_run": "Checks of {{when}} ({{ago}}). Proposals you approve wait for the customer's maintenance window.",
+    "settings": "Settings",
+    "send": "Send summary",
+    "run_now": "Run checks now",
+    "started": "The checks are running; this takes a few minutes.",
+    "sent": "The summary was sent.",
+    "send_failed": "The summary mail could not be sent (check the mail server).",
+    "running": "The checks are running…",
+    "running_hint": "Update lists, backups and certificates are refreshed per customer. The page updates itself.",
+    "tab_summary": "Summary",
+    "tab_history": "History",
+    "empty": "The nightly checks have not run yet",
+    "empty_hint": "They run every night (next: {{run}}). You can also run them now.",
+    "old_run": "You are looking at the checks of {{when}}.",
+    "to_latest": "Show the latest",
+    "failed": "The run failed",
+    "k_high": "High",
+    "k_high_hint": "{{medium}} medium, {{low}} low",
+    "k_new": "New since last night",
+    "k_new_hint": "Not found the night before",
+    "k_resolved": "Resolved",
+    "k_resolved_hint": "Gone since the night before",
+    "k_pending": "Waiting for you",
+    "k_pending_hint": "Proposals ready to approve",
+    "ready_title": "{{count}} proposal(s) ready",
+    "ready_hint": "Approve them with one click. Changes (updates, reboots, commands) wait for each customer's maintenance window; the rest runs right away.",
+    "approve_all": "Approve all ({{count}})",
+    "approve_customer": "Approve all ({{count}})",
+    "approved_all": "{{count}} approved, {{scheduled}} wait for the maintenance window",
+    "cat": {
+      "all": "All",
+      "updates": "Updates",
+      "cves": "Security & CVEs",
+      "disks": "Disks & storage",
+      "certificates": "Certificates",
+      "backups": "Backups",
+      "other": "Other"
+    },
+    "cat_hint": {
+      "updates": "Pending updates and reboots, old agents, firmware",
+      "cves": "Security updates and the CVEs they fix (Windows: critical updates)",
+      "disks": "Full disks and storage, SMART health",
+      "certificates": "Certificates on servers and nodes, plus the addresses you list per customer",
+      "backups": "Failed, missing and old backups",
+      "other": "The rest of the optimisation scan: offline machines, failed services, network"
+    },
+    "v_all": "All",
+    "v_new": "New",
+    "v_proposals": "With proposal",
+    "sev": {
+      "high": "High",
+      "medium": "Medium",
+      "low": "Low",
+      "info": "Info"
+    },
+    "sev_n": {
+      "high": "{{count}} high",
+      "medium": "{{count}} medium",
+      "low": "{{count}} low",
+      "info": "{{count}} info"
+    },
+    "all_clear": "All clear",
+    "n_new": "{{count}} new",
+    "n_resolved": "{{count}} resolved",
+    "window": "Maintenance window: {{window}}",
+    "no_window": "No maintenance window: approved changes run right away",
+    "errors": "Some checks could not run",
+    "none_in_filter": "Nothing in this filter.",
+    "new": "New",
+    "no_proposal": "Needs a person",
+    "details": "Details",
+    "approve": "Approve",
+    "runs_in_window": "Runs in the maintenance window ({{when}})",
+    "runs_now": "Runs right after approval",
+    "scheduled_for": "Starts {{when}}",
+    "prop": {
+      "install_updates": "Install updates",
+      "reboot": "Reboot",
+      "update_agent": "Update the agent",
+      "cleanup_disk": "Free disk space",
+      "renew_cert": "Renew the certificate"
+    },
+    "pst": {
+      "pending": "Waiting",
+      "scheduled": "Scheduled",
+      "approved": "Approved",
+      "running": "Running",
+      "executed": "Done",
+      "failed": "Failed",
+      "rejected": "Rejected",
+      "expired": "Expired",
+      "missing": "Gone"
+    },
+    "resolved_title": "{{count}} resolved since last night",
+    "clean_title": "All clear",
+    "clean_hint": "Nothing found at these customers.",
+    "ran": "Ran {{start}} – {{end}}",
+    "sent_at": "Summary sent {{when}}",
+    "not_sent": "Summary not sent yet",
+    "next": "Next checks {{run}}, summary {{summary}}",
+    "history": "Earlier nights",
+    "history_hint": "Click a run to see its findings.",
+    "h_started": "Started",
+    "h_trigger": "By",
+    "h_status": "Status",
+    "h_customers": "Customers",
+    "h_findings": "Findings",
+    "h_proposals": "Proposals",
+    "h_sent": "Summary sent",
+    "trigger": {
+      "schedule": "Schedule",
+      "manual": "By hand",
+      "mcp": "AI (MCP)"
+    },
+    "status": {
+      "running": "Running",
+      "done": "Done",
+      "failed": "Failed"
+    },
+    "settings_title": "Nightly checks",
+    "settings_desc": "When the checks run, what they check and who gets the summary.",
+    "s_general": "General",
+    "s_customers": "Per customer",
+    "s_enabled": "Run the checks every night",
+    "s_next": "Next run: {{when}}",
+    "s_run_at": "Run at",
+    "s_local": "Local time (Scheduled tasks > time zone)",
+    "s_summary_at": "Summary at",
+    "s_summary_hint": "Or right after the run, if it finishes later",
+    "s_cert_days": "Warn about certificates (days ahead)",
+    "s_checks": "What is checked",
+    "s_cve": "Look up CVE numbers",
+    "s_cve_hint": "Asks OSV.dev which CVEs the pending security updates fix (only package names and versions are sent).",
+    "s_proposals": "Make proposals",
+    "s_proposals_hint": "Findings with a fix of one step become approval requests.",
+    "s_window": "Wait for the maintenance window",
+    "s_window_hint": "Approved changes start when the customer's maintenance window opens.",
+    "s_notify": "Summary",
+    "s_app": "Notification in the app",
+    "s_mail": "Mail",
+    "s_clean": "Also mail when everything is fine",
+    "s_mail_to": "Mail to",
+    "s_mail_to_hint": "Comma separated. Empty: every admin with an email address.",
+    "s_customers_hint": "Switch customers off that need no nightly checks, and list the addresses (host or host:port) whose TLS certificate Stackpilot checks, for example a website, Exchange or an RD gateway. Stackpilot itself must be able to reach them.",
+    "s_endpoints": "Certificates of addresses",
+    "s_endpoints_hint": "One per line, for example portal.example.nl or mail.example.nl:993.",
+    "saved": "Saved",
+    "toast": "Morning summary: {{high}} high, {{new}} new, {{proposals}} proposal(s)",
+    "toast_open": "Open"
   }
 }

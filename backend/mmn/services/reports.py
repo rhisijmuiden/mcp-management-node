@@ -203,6 +203,16 @@ FINDING_NL = {
     "open_alerts": ("{count} openstaande monitoringmelding(en).", "Bekijk de openstaande meldingen."),
     "no_window": ("Voor deze klant is geen onderhoudsvenster ingesteld.",
                   "Spreek een onderhoudsvenster af en stel het in op de klantpagina, zodat updates gepland kunnen worden."),
+    "cve_fixable": ("{count} beveiligingsupdate(s) verhelpen {cves} bekende kwetsbaarheden: {list}.",
+                    "Installeer de updates in het onderhoudsvenster."),
+    "security_updates": ("{count} beveiligingsupdate(s) staan klaar: {names}.", "Installeer ze in het onderhoudsvenster."),
+    "windows_security": ("{count} beveiligingsupdate(s) staan klaar ({critical} kritiek): {names}.",
+                         "Installeer ze in het onderhoudsvenster."),
+    "cert_expired": ("Certificaat {name} is verlopen op {date}.", "Vernieuw of vervang het certificaat."),
+    "cert_expiring": ("Certificaat {name} verloopt over {days} dag(en), op {date}.",
+                      "Vernieuw het certificaat voordat het verloopt."),
+    "cert_endpoint_error": ("Het certificaat van {endpoint} kon niet worden gecontroleerd: {error}.",
+                            "Controleer of Stackpilot het adres kan bereiken, of haal het uit de lijst."),
 }
 FINDING_TARGET_NL = {"guests_stopped": "{count} gestopte guest(s)"}
 

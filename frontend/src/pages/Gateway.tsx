@@ -71,7 +71,13 @@ export interface ApprovalRow {
   args?: Record<string, unknown>;
   result?: unknown;
   description?: string | null;
+  /** Approved calls of the nightly checks wait for the customer's maintenance window. */
+  run_after?: string | null;
+  source?: string | null;
 }
+
+export const isScheduled = (a: { status: string; run_after?: string | null }) =>
+  a.status === "approved" && !!a.run_after && new Date(a.run_after).getTime() > Date.now();
 
 interface Policy {
   scope: "global" | "customer" | "token";
@@ -257,11 +263,20 @@ export function ApprovalDialog({ id, onClose }: { id: string | null; onClose: ()
     queryKey: ["approval", id],
     queryFn: () => get<ApprovalRow>(`api/gateway/approvals/${id}`),
     enabled: !!id,
-    refetchInterval: (query) => (["approved", "running"].includes(query.state.data?.status ?? "") ? 1500 : false),
+    refetchInterval: (query) => {
+      const d = query.state.data;
+      if (d && isScheduled(d)) return 60_000;
+      return ["approved", "running"].includes(d?.status ?? "") ? 1500 : false;
+    },
   });
   const decide = useMutation({
     mutationFn: (approve: boolean) => post<ApprovalRow>(`api/gateway/approvals/${id}/${approve ? "approve" : "reject"}`, { note: note || null }),
-    onSuccess: (_, approve) => { invalidate(); toast.success(approve ? t("gw.appr.approved_toast") : t("gw.appr.rejected_toast")); },
+    onSuccess: (res, approve) => {
+      invalidate();
+      if (!approve) toast.success(t("gw.appr.rejected_toast"));
+      else if (isScheduled(res)) toast.success(t("gw.appr.scheduled_toast", { when: formatDate(res.run_after!, i18n.language) }));
+      else toast.success(t("gw.appr.approved_toast"));
+    },
   });
   const a = q.data;
   return (
@@ -297,6 +312,9 @@ export function ApprovalDialog({ id, onClose }: { id: string | null; onClose: ()
             <div className="mb-1 text-[13px] font-semibold">{t("gw.appr.args")}</div>
             <JsonBlock value={a.args ?? {}} />
           </div>
+          {a.status === "pending" && a.run_after && (
+            <Alert tone="info" title={t("gw.appr.waits_window_title")}>{t("gw.appr.waits_window", { when: formatDate(a.run_after, i18n.language) })}</Alert>
+          )}
           {a.status === "pending" && (
             <Field label={t("gw.appr.note")} hint={t("gw.appr.note_hint")}>
               <Textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} />
@@ -308,7 +326,9 @@ export function ApprovalDialog({ id, onClose }: { id: string | null; onClose: ()
               {a.decision_note}
             </Alert>
           )}
-          {["approved", "running"].includes(a.status) && <div className="flex items-center gap-2 text-muted"><Spinner className="size-4" /> {t("gw.appr.running")}</div>}
+          {isScheduled(a) ? (
+            <Alert tone="info" title={t("gw.appr.scheduled_title")}>{t("gw.appr.scheduled", { when: formatDate(a.run_after!, i18n.language) })}</Alert>
+          ) : ["approved", "running"].includes(a.status) && <div className="flex items-center gap-2 text-muted"><Spinner className="size-4" /> {t("gw.appr.running")}</div>}
           {a.status === "failed" && a.error && <Alert tone="offline" title={t("gw.appr.failed")}>{a.error}</Alert>}
           {a.status === "executed" && a.result !== undefined && a.result !== null && (
             <div><div className="mb-1 text-[13px] font-semibold">{t("gw.appr.result")}</div><JsonBlock value={a.result} /></div>

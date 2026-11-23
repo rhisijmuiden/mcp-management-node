@@ -8,6 +8,7 @@ import { AiActivityPage, AuditPage, ConnectionsPage, TokensPage } from "@/pages/
 import { ConsentPage, ForgotPage, LoginPage, ResetPage, SetupPage } from "@/pages/AuthPages";
 import { BackupsPage } from "@/pages/Backups";
 import { ProtectionPage } from "@/pages/Protection";
+import { NightlyPage } from "@/pages/Nightly";
 import { ApprovalsPage, CommandCenterPage, PoliciesPage, SessionsPage } from "@/pages/Gateway";
 import { HubPage, ToolCatalogPage } from "@/pages/Hub";
 import { HelpPage, McpCapabilitiesPage, McpHelpPage, NodesHelpPage } from "@/pages/Help";
@@ -70,6 +71,7 @@ export default function App() {
         <Route path="ai/tokens" element={<TokensPage />} />
         <Route path="ai/activity" element={<RequireAuth admin><AiActivityPage /></RequireAuth>} />
         <Route path="ai/approvals" element={<RequireAuth admin><ApprovalsPage /></RequireAuth>} />
+        <Route path="ai/nightly" element={<NightlyPage />} />
         <Route path="ai/policies" element={<RequireAuth admin><PoliciesPage /></RequireAuth>} />
         <Route path="ai/sessions" element={<RequireAuth admin><SessionsPage /></RequireAuth>} />
         <Route path="ai/hub" element={<RequireAuth admin><HubPage /></RequireAuth>} />

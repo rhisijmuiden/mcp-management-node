@@ -53,6 +53,7 @@ OPERATE_TOOLS = {
     "send_test_mail", "send_node_test_notification", "create_pairing_code", "sync_templates",
     "run_scheduled_task", "run_deployment", "update_node_agent", "set_cpu_governor", "manage_service",
     "restart_unifi_device", "refresh_mcp_server", "workstation_action", "send_customer_report",
+    "run_nightly_checks",
 }
 
 FINAL = {"executed", "failed", "rejected", "expired"}
@@ -218,6 +219,23 @@ def in_window(windows: list[Window], now: datetime) -> bool:
     return False
 
 
+def next_window_start(windows: list[Window], now: datetime) -> datetime | None:
+    """When the next maintenance window opens (``now`` is local time). None when it is open now."""
+    if in_window(windows, now):
+        return None
+    best: datetime | None = None
+    base = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    for offset in range(0, 8):
+        day = base + timedelta(days=offset)
+        for w in windows:
+            if day.weekday() not in w.days:
+                continue
+            start = day + timedelta(minutes=w.start if w.start != w.end else 0)
+            if start > now and (best is None or start < best):
+                best = start
+    return best
+
+
 async def local_now(db: AsyncSession) -> datetime:
     tz = (await get_setting(db, "schedules")).get("timezone") or "Europe/Amsterdam"
     try:
@@ -380,6 +398,8 @@ def reason_text(r: dict[str, Any]) -> str:
         where = (f"customer {p['customer']}" if p.get("customer") else "this token" if p.get("layer") == "token"
                  else "the default policy")
         return f"rule for {p.get('tool')}: {p.get('action')} ({where})"
+    if c == "nightly":
+        return "proposed by the nightly checks"
     if c == "outside_window":
         return f"outside the maintenance window of {p.get('customer')} ({p.get('window')})"
     return c or ""
@@ -495,7 +515,8 @@ def approval_out(a: AiApproval, *, full: bool = True) -> dict[str, Any]:
         "reason_texts": [reason_text(r) for r in (a.reasons or [])], "ai_reason": a.ai_reason,
         "token_id": a.token_id, "token_name": a.token_name, "username": a.username, "client": a.client or {},
         "decided_at": a.decided_at, "decided_by": a.decided_by, "decision_note": a.decision_note,
-        "executed_at": a.executed_at, "error": a.error,
+        "executed_at": a.executed_at, "error": a.error, "run_after": a.run_after,
+        "source": (a.client or {}).get("source"),
     }
     if full:
         out.update(args=a.args_view or {}, result=a.result)
@@ -586,6 +607,73 @@ def start_execution(approval_id: str) -> None:
     task.add_done_callback(_running.discard)
 
 
+# Approval requests that Stackpilot itself makes (no token): client["source"].
+SYSTEM_SOURCES = {"nightly"}
+
+
+async def _approver(db: AsyncSession, username: str | None):
+    from mmn.models import Role, User
+
+    if not username:
+        return None
+    u = (await db.execute(select(User).where(User.username == username))).scalars().first()
+    return u if u is not None and u.is_active and u.role == Role.admin else None
+
+
+def after_approved(a: AiApproval) -> bool:
+    """Start an approved call now, or leave it for run_due() when it waits for a maintenance
+    window. Returns True when it started now."""
+    if a.run_after is not None and a.run_after > datetime.now(UTC):
+        return False
+    start_execution(a.id)
+    return True
+
+
+async def run_due() -> int:
+    """Scheduler: start approved calls whose maintenance window has opened (not while paused)."""
+    async with sessionmaker()() as db:
+        if (await gateway_settings(db)).get("paused"):
+            return 0
+        rows = (await db.execute(select(AiApproval.id).where(
+            AiApproval.status == "approved", AiApproval.run_after.is_not(None),
+            AiApproval.run_after <= datetime.now(UTC)))).scalars().all()
+    for aid in rows:
+        start_execution(aid)
+    return len(rows)
+
+
+async def create_system_approval(db: AsyncSession, *, source: str, label: str, tool: str, args: dict[str, Any],
+                                 target: str | None, customers: list[tuple[str, str]], reason: str,
+                                 run_after: datetime | None, expires_hours: int | None = None,
+                                 ) -> tuple[AiApproval, bool]:
+    """An approval request made by Stackpilot itself (for example a proposal of the nightly checks).
+    The same pending request is returned instead of a duplicate."""
+    spec = REGISTRY.get(tool)
+    if spec is None:
+        raise ApprovalError(f"unknown tool {tool}")
+    await expire_old(db)
+    fp = fingerprint(f"system:{source}", tool, args)
+    existing = (await db.execute(select(AiApproval).where(AiApproval.fingerprint == fp,
+                                                          AiApproval.status == "pending"))).scalars().first()
+    if existing is not None:
+        existing.run_after = run_after
+        return existing, False
+    cfg = await gateway_settings(db)
+    hours = expires_hours or max(1, min(int(cfg.get("approval_expiry_hours") or 24), 24 * 14))
+    from mmn.mcp_server import _redact
+
+    a = AiApproval(
+        expires_at=datetime.now(UTC) + timedelta(hours=hours), status="pending", tool=tool, risk=spec.risk,
+        args_enc=encrypt_secret(json.dumps(args, default=str)), args_view=_redact(json.loads(json.dumps(args, default=str))),
+        fingerprint=fp, target=target, customer_ids=[c[0] for c in customers], customer_names=[c[1] for c in customers],
+        reasons=[{"code": source, "params": {}}], ai_reason=reason, token_id=None, token_name=label,
+        user_id=None, username=None, client={"name": label, "source": source}, run_after=run_after,
+    )
+    db.add(a)
+    await db.flush()
+    return a, True
+
+
 def _store_result(result: Any) -> Any:
     data = json.loads(json.dumps(result, default=str))
     raw = json.dumps(data)
@@ -608,11 +696,16 @@ async def execute(approval_id: str) -> None:
         await db.commit()
         spec = REGISTRY.get(a.tool)
         tok = await db.get(ApiToken, a.token_id) if a.token_id else None
+        system = a.token_id is None and (a.client or {}).get("source") in SYSTEM_SOURCES
+        approver = await _approver(db, a.decided_by) if system else None
         now = datetime.now(UTC)
         problem = None
         if spec is None or spec.call is None:
             problem = "this tool no longer exists"
-        elif tok is None or tok.revoked or (tok.expires_at and tok.expires_at < now) or not tok.user.is_active:
+        elif system and approver is None:
+            problem = "the admin who approved this no longer exists or is not an admin"
+        elif not system and (tok is None or tok.revoked or (tok.expires_at and tok.expires_at < now)
+                             or not tok.user.is_active):
             problem = "the token that asked for this was revoked or expired"
         try:
             args = json.loads(decrypt_secret(a.args_enc) or "null")
@@ -625,10 +718,19 @@ async def execute(approval_id: str) -> None:
             await db.commit()
             events.publish("approval.changed", {"id": a.id, "status": a.status})
             return
-        principal = Principal(user_id=tok.user_id, username=tok.user.username, token_id=tok.id, token_name=tok.name,
-                              token_kind=tok.kind, scopes=effective_scopes(tok), ip=None,
-                              client={**(tok.last_client or {}), "approved_by": a.decided_by},
-                              customers=frozenset(tok.customer_ids) if tok.customer_ids is not None else None)
+        if system:
+            # Proposed by Stackpilot itself (nightly checks): it runs with the rights of the admin
+            # who approved it.
+            from mmn.api.tokens import SCOPES
+
+            principal = Principal(user_id=approver.id, username=approver.username, token_id=None,
+                                  token_name=a.token_name, token_kind="system", scopes=set(SCOPES), ip=None,
+                                  client={**(a.client or {}), "approved_by": a.decided_by}, customers=None)
+        else:
+            principal = Principal(user_id=tok.user_id, username=tok.user.username, token_id=tok.id,
+                                  token_name=tok.name, token_kind=tok.kind, scopes=effective_scopes(tok), ip=None,
+                                  client={**(tok.last_client or {}), "approved_by": a.decided_by},
+                                  customers=frozenset(tok.customer_ids) if tok.customer_ids is not None else None)
 
     ptok = _principal.set(principal)
     ttok = tenancy.set_allowed(principal.customers)

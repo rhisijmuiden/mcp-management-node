@@ -236,6 +236,8 @@ class Environment(Base):
     # Phase 11: backup policy {"max_age_hours", "alert_failed", "alert_missing", "workstations",
     # "recipients", "exclude": [item keys]}.
     backup: Mapped[dict] = mapped_column(JsonType, default=dict)
+    # Phase 12: nightly checks {"enabled": bool, "cert_endpoints": ["host:port", ...]}.
+    nightly: Mapped[dict] = mapped_column(JsonType, default=dict)
 
     nodes: Mapped[list[Node]] = relationship(back_populates="environment", lazy="selectin")
 
@@ -663,6 +665,8 @@ class AiApproval(Base):
     executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     result: Mapped[dict | list | None] = mapped_column(JsonType, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Approved calls of the nightly checks that wait for the customer's maintenance window.
+    run_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
 
 
 class McpUpstream(Base):
@@ -744,3 +748,46 @@ class BackupCoverage(Base):
     collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     data: Mapped[dict] = mapped_column(JsonType, default=dict)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class NightlyRun(Base):
+    """One run of the nightly checks (all customers, or the ones in customer_ids). ``summary`` holds
+    per customer the counts, what is new and what was resolved since the run before."""
+
+    __tablename__ = "nightly_runs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="running")  # running | done | failed
+    trigger: Mapped[str] = mapped_column(String(16), default="schedule")  # schedule | manual | mcp
+    requested_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    customer_ids: Mapped[list | None] = mapped_column(JsonType, nullable=True)
+    summary: Mapped[dict] = mapped_column(JsonType, default=dict)
+    summary_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class NightlyFinding(Base):
+    """A finding of a nightly run, with the proposal (a tool call) that fixes it and the approval
+    request that waits for one click."""
+
+    __tablename__ = "nightly_findings"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    run_id: Mapped[str] = mapped_column(ForeignKey("nightly_runs.id", ondelete="CASCADE"), index=True)
+    environment_id: Mapped[str] = mapped_column(ForeignKey("environments.id", ondelete="CASCADE"), index=True)
+    key: Mapped[str] = mapped_column(String(64), index=True)  # stable over runs: code + target
+    category: Mapped[str] = mapped_column(String(16))  # updates | cves | disks | certificates | backups | other
+    severity: Mapped[str] = mapped_column(String(8))
+    area: Mapped[str] = mapped_column(String(32))
+    target: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    params: Mapped[dict] = mapped_column(JsonType, default=dict)
+    finding: Mapped[str] = mapped_column(Text)
+    suggestion: Mapped[str] = mapped_column(Text)
+    next_tool: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    is_new: Mapped[bool] = mapped_column(Boolean, default=False)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    proposal: Mapped[dict | None] = mapped_column(JsonType, nullable=True)
+    approval_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)

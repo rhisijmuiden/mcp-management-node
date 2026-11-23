@@ -76,6 +76,10 @@ export function useLiveEvents() {
             for (const k of ["approvals", "approvals-count", "approval", "gateway-overview"]) qc.invalidateQueries({ queryKey: [k] });
             if (msg.event === "approval.created") window.dispatchEvent(new CustomEvent("mmn:approval", { detail: msg.data }));
           }
+          if (msg.event === "nightly.changed" || msg.event === "nightly.summary") {
+            for (const k of ["nightly", "nightly-runs", "nightly-run"]) qc.invalidateQueries({ queryKey: [k] });
+            if (msg.event === "nightly.summary") window.dispatchEvent(new CustomEvent("mmn:nightly", { detail: msg.data }));
+          }
           if (msg.event === "gateway.paused" || msg.event === "gateway.policy") {
             for (const k of ["gateway-status", "gateway-overview", "gateway-policies"]) qc.invalidateQueries({ queryKey: [k] });
           }
