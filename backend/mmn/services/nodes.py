@@ -527,10 +527,59 @@ async def apply_updates(node_id: str, *, source: str = "ui", requested_by: str |
     return await start_job(node_id, "updates.apply", "updates.apply", {}, source=source, requested_by=requested_by)
 
 
+# Windows agents 0.7.1 and 0.8.0 stop their service after a self-update and rely on a helper
+# process to start it again, which does not work: the service stays stopped. Before updating
+# such an agent, the app arms a scheduled task (as SYSTEM) that starts the service if it is
+# still stopped. Same script as RestartTaskScript in agent/internal/winsvc/restart.go.
+BROKEN_WINDOWS_RESTART = {"0.7.1", "0.8.0"}
+RESTART_TASK = "Stackpilot agent restart"
+
+
+def _ps_quote(s: str) -> str:
+    return "'" + s.replace("'", "''") + "'"
+
+
+def windows_restart_task_script(service: str = "mmn-agent", delay_sec: int = 90) -> str:
+    loop = (f"for ($i = 0; $i -lt 40; $i++) {{ $s = Get-Service -Name '{service}' -ErrorAction SilentlyContinue; "
+            "if ($s -and $s.Status -eq 'Running') { break }; "
+            f"if ($s -and $s.Status -eq 'Stopped') {{ Start-Service -Name '{service}' -ErrorAction SilentlyContinue }}; "
+            "Start-Sleep -Seconds 15 }")
+    return "\n".join([
+        "$ErrorActionPreference = 'Stop'",
+        "$cmd = " + _ps_quote(loop),
+        "$enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($cmd))",
+        "$ps = Join-Path $env:SystemRoot 'System32\\WindowsPowerShell\\v1.0\\powershell.exe'",
+        "$a = New-ScheduledTaskAction -Execute $ps -Argument ('-NoProfile -NonInteractive -ExecutionPolicy Bypass "
+        "-EncodedCommand ' + $enc)",
+        f"$t = New-ScheduledTaskTrigger -Once -At ((Get-Date).AddSeconds({int(delay_sec)}))",
+        "$st = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable "
+        "-ExecutionTimeLimit (New-TimeSpan -Minutes 15)",
+        "$p = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest",
+        f"Register-ScheduledTask -TaskName {_ps_quote(RESTART_TASK)} -Action $a -Trigger $t -Settings $st "
+        "-Principal $p -Force | Out-Null",
+        "'armed'",
+    ])
+
+
+def needs_restart_guard(os_name: str | None, version: str | None) -> bool:
+    return (os_name or "").lower() == "windows" and (version or "") in BROKEN_WINDOWS_RESTART
+
+
+async def _arm_windows_restart(node_id: str) -> None:
+    res = await agent_hub.request(node_id, "exec", {"command": windows_restart_task_script(), "timeout": 60},
+                                  timeout=90) or {}
+    if res.get("exit_code") != 0 or "armed" not in (res.get("stdout") or ""):
+        raise NodeError("could not arm the restart safety task on this Windows agent: "
+                        + (res.get("stderr") or res.get("stdout") or "no output").strip()[:300])
+
+
 async def update_agent(node_id: str, *, source: str = "ui", requested_by: str | None = None) -> NodeJob:
     async with sessionmaker()() as db:
         node = await get_node(db, node_id)
     agent_hub.get(node.id)
+    if needs_restart_guard(node.os, node.agent_version):
+        # Without the task the agent would stay stopped after the update; refuse rather than risk it.
+        await _arm_windows_restart(node.id)
     pkg = agent_packages.package_for(node.os, node.arch, node.install_kind)
     if pkg is None:
         raise NodeError("no agent build for this platform in this release")
