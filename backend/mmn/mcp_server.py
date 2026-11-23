@@ -317,6 +317,12 @@ the runbook says so, waits for the maintenance window and logs everything. Follo
 a manual step for the AI waits for `complete_runbook_step`. `save_runbook` creates or changes one (show the user
 the steps first).
 
+Automatic recovery (self-healing): rules link a known problem (an alert such as a stopped service, a full
+disk or an offline agent, or a finding of the nightly checks) to a runbook that Stackpilot runs by itself,
+within the policy, with loop protection and an emergency stop. `get_remediation` shows the rules and what
+was fixed; `save_remediation_rule` adds one, `pause_remediation` is the emergency stop. Repair tools:
+`cleanup_disk` and `recover_agent`. A Proxmox VE node is never rebooted automatically.
+
 Nodes and servers can be named by id or by name. Every call is written to the audit log with your token's name.
 Destructive tools need `confirm` set to the exact node name, or are marked destructive: ask the user
 before calling them, and give a short `reason` for commands and service actions."""
@@ -3367,6 +3373,155 @@ async def delete_runbook(runbook: str, confirm: str) -> dict:
         await db.delete(rb)
         await db.commit()
     return {"ok": True, "deleted": runbook}
+
+
+# ------------------------------------------------------------------ automatic recovery (phase 14)
+@tool("services", WRITE)
+async def cleanup_disk(node: str, reason: str) -> dict:
+    """Free disk space on a machine, safely: package caches, journal entries older than 14 days and
+    temp files older than 7 days (Linux); temp files, the Windows Update download cache and the
+    component store (Windows). Shows the disk use before and after."""
+    from mmn.services import nodes, remediation
+
+    if not reason.strip():
+        raise ToolDenied("give a reason")
+    try:
+        return _jsonable(await remediation.cleanup_disk(node))
+    except nodes.NodeError as e:
+        raise ToolDenied(str(e)) from e
+    except Exception as e:
+        raise _agent_errors(e) from e
+
+
+@tool("services", WRITE)
+async def recover_agent(node: str, reason: str) -> dict:
+    """Bring back the agent of a server that runs as a VM or container on a Proxmox VE node that
+    Stackpilot reaches: starts the guest when it is stopped, otherwise restarts the agent service
+    inside it (pct exec, or the QEMU guest agent for a VM). Never on a Proxmox VE node itself."""
+    from mmn.services import nodes, remediation
+
+    if not reason.strip():
+        raise ToolDenied("give a reason")
+    p = current_principal()
+    try:
+        return _jsonable(await remediation.recover_agent(node, requested_by=p.username if p else None))
+    except nodes.NodeError as e:
+        raise ToolDenied(str(e)) from e
+    except Exception as e:
+        raise _agent_errors(e) from e
+
+
+@tool("read", RO)
+async def get_remediation(customer: str | None = None, limit: int = 30) -> dict:
+    """Automatic recovery: whether it is on or stopped (emergency stop), its limits, the rules
+    (problem -> runbook, mode auto/approve/notify) and the latest attempts with their outcome
+    (succeeded = the problem is gone, failed, waiting_approval, skipped by the loop protection)."""
+    from sqlalchemy import select
+
+    from mmn.models import RemediationAttempt, RemediationRule
+    from mmn.services import nodes, remediation
+
+    async with sessionmaker()() as db:
+        cid = None
+        if customer:
+            try:
+                cid = (await nodes.get_environment(db, customer)).id
+            except nodes.NodeError as ex:
+                raise ToolDenied(str(ex)) from ex
+        cfg = await remediation.settings(db)
+        names, rbs = await remediation.lookups(db)
+        rq = select(RemediationRule).order_by(RemediationRule.name)
+        aq = select(RemediationAttempt).order_by(RemediationAttempt.created_at.desc()).limit(max(1, min(limit, 200)))
+        if cid:
+            rq = rq.where((RemediationRule.customer_id == cid) | RemediationRule.customer_id.is_(None))
+            aq = aq.where(RemediationAttempt.customer_id == cid)
+        rules = [remediation.rule_out(r, names, rbs) for r in (await db.execute(rq)).scalars()]
+        attempts = [remediation.attempt_out(a) | {"reason_text": remediation.reason_text(a.reason) if a.reason else None}
+                    for a in (await db.execute(aq)).scalars()]
+    return _jsonable({"settings": cfg, "rules": rules, "attempts": attempts})
+
+
+@tool("runbooks", WRITE)
+async def save_remediation_rule(name: str, trigger: str, match: dict[str, Any], runbook: str,
+                                params: dict[str, Any] | None = None, mode: str = "auto", customer: str | None = None,
+                                rule: str | None = None, enabled: bool = True, delay_minutes: int = 5,
+                                cooldown_minutes: int = 30, max_attempts: int = 3,
+                                description: str | None = None) -> dict:
+    """Create or change (`rule` = its id) an automatic recovery rule: when a problem shows up,
+    Stackpilot runs `runbook` (id or exact name) within the policy. trigger "alert" with match
+    {"kinds": [offline|service|disk|storage|memory|cpu|smart|unifi|backup], "services": [units to
+    watch, for "service"], "machine": "web*", "machine_types": [server|workstation|proxmox]} or
+    trigger "finding" with match {"codes": ["disk_full", "agent_old", ...]}. params fill in the
+    runbook's parameters and may use {{machine.name}}, {{alert.detail.service}},
+    {{finding.params.x}} and {{customer.name}}. mode: auto, approve (every change asks an admin) or
+    notify (only report). Show the user the rule before saving."""
+    from mmn.models import RemediationRule
+    from mmn.services import nodes, remediation, runbooks
+
+    p = current_principal()
+    async with sessionmaker()() as db:
+        cid = None
+        if customer:
+            try:
+                cid = (await nodes.get_environment(db, customer)).id
+            except nodes.NodeError as ex:
+                raise ToolDenied(str(ex)) from ex
+        elif p is not None and p.customers is not None:
+            raise ToolDenied("this token is tied to customers: give the customer the rule is for")
+        r = None
+        if rule:
+            r = await db.get(RemediationRule, rule)
+            if r is None:
+                raise ToolDenied("rule not found")
+            if r.customer_id is None and p is not None and p.customers is not None:
+                raise ToolDenied("this rule is for every customer; a token tied to customers cannot change it")
+        try:
+            rb = await runbooks.find_runbook(db, runbook)
+            r = await remediation.save_rule(db, r, name=name, description=description, customer_id=cid,
+                                            enabled=enabled, trigger=trigger, match=match, runbook_id=rb.id,
+                                            params=params, mode=mode, delay_minutes=delay_minutes,
+                                            cooldown_minutes=cooldown_minutes, max_attempts=max_attempts,
+                                            by=p.token_name if p else None)
+        except (runbooks.RunbookError, remediation.RemediationError) as e:
+            raise ToolDenied(str(e)) from e
+        await db.commit()
+        names, rbs = await remediation.lookups(db)
+        return _jsonable(remediation.rule_out(r, names, rbs))
+
+
+@tool("runbooks", DESTRUCTIVE)
+async def delete_remediation_rule(rule: str, confirm: str) -> dict:
+    """Delete an automatic recovery rule (its past attempts stay). Set `confirm` to the rule's name."""
+    from mmn.models import RemediationRule
+
+    p = current_principal()
+    async with sessionmaker()() as db:
+        r = await db.get(RemediationRule, rule)
+        if r is None:
+            raise ToolDenied("rule not found")
+        if confirm != r.name:
+            raise ToolDenied(f"confirm must equal the rule name '{r.name}'")
+        if r.customer_id is None and p is not None and p.customers is not None:
+            raise ToolDenied("this rule is for every customer; a token tied to customers cannot delete it")
+        await db.delete(r)
+        await db.commit()
+    return {"ok": True, "deleted": rule}
+
+
+@tool("runbooks", WRITE, all_customers=True)
+async def pause_remediation(paused: bool, reason: str) -> dict:
+    """The emergency stop of automatic recovery: paused=true stops it for every customer and cancels
+    the recoveries that are busy (steps that already ran are not undone); paused=false resumes it.
+    Give a short `reason`."""
+    from mmn.services import remediation
+
+    p = current_principal()
+    async with sessionmaker()() as db:
+        cfg = await remediation.set_paused(db, paused, by=p.token_name if p else "AI", note=reason, source="mcp")
+        await db.commit()
+    if paused:
+        await remediation.notify_paused()
+    return _jsonable({"paused": cfg["paused"], "cancelled": cfg.get("cancelled", 0)})
 
 
 # ------------------------------------------------------------------ AI gateway: approvals and guardrails

@@ -389,6 +389,41 @@ A run keeps a copy of the runbook, so editing a runbook never changes a run in p
 rights of the admin who started them; runs started by the AI (`run_runbook`) use the token's rights and need the scopes
 of every step. Every step is in the audit log with the run's id. The menu shows how many runs wait for you.
 
+### Automatic recovery
+
+Operations → **Automatic recovery**: known problems that Stackpilot fixes by itself, within the policy.
+
+- **Rules** link a problem to a repair runbook, for one customer or for every customer (a customer's own rule comes
+  first). The problem is an open monitoring alert (agent offline, a stopped service, a full disk or storage, memory,
+  CPU, SMART, UniFi, backups) or a finding of the nightly checks (a full disk, an outdated agent, pending updates, a
+  certificate that expires, ...). Narrow it down with a machine name pattern (`web*`) and machine types. For stopped
+  services, the rule names the services Stackpilot watches (systemd units or Windows services, checked every few
+  minutes); a watched service that is down becomes a normal monitoring alert.
+- The rule fills in the runbook's **parameters** with placeholders: `{{machine.name}}`, `{{alert.detail.service}}`,
+  `{{alert.message}}`, `{{finding.params.<x>}}` and `{{customer.name}}`.
+- **Mode**: *automatic* runs within the policy (what the policy allows runs right away, the rest asks approval),
+  *with approval* asks an admin for every step that changes something, *report only* changes nothing and reports
+  which runbook would run.
+- **Guardrails**: every step goes through the AI gateway (destructive = approval, outside the maintenance window =
+  approval, pauses). On top of that destructive steps always ask an admin, a Proxmox VE node is never rebooted, and
+  automatic recovery never deletes, restores, rolls back or changes the network.
+- **Verification**: after the run the alert has to be gone within a few minutes (settings), otherwise the attempt
+  counts as failed. A finding is checked again the next night.
+- **Loop protection**: per problem a wait before acting, a cooldown between attempts and a maximum number of attempts
+  per 24 hours (then it stops and mails you); for the whole app a maximum number of recoveries per hour, and a
+  circuit breaker that stops everything after too many failures in an hour.
+- **Emergency stop**: one button stops all automatic recovery and cancels the recoveries that are busy, with their
+  approval requests. Resume it when the cause is clear.
+- **Recommended rules** add a ready rule with its runbook (from the templates): restart a stopped service, free disk
+  space, bring an offline agent back (starts the VM or container, or restarts the agent inside it) and update
+  outdated agents.
+
+Every attempt is on the Activity tab with the problem, the rule, a link to the runbook run and the outcome, and in the
+audit log. Notifications go to the app and by mail (every outcome, only failures, or never); the morning summary and
+the monthly report show what was fixed. Over MCP: `get_remediation`, `save_remediation_rule`,
+`delete_remediation_rule`, `pause_remediation` (the emergency stop), and the repair tools `cleanup_disk` and
+`recover_agent`.
+
 ### Monitoring
 
 One sample per node per minute, kept for 30 days: CPU, memory and disk with trends from 1 hour to 30 days, storage

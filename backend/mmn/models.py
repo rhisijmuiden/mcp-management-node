@@ -858,3 +858,68 @@ class RunbookRun(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class RemediationRule(Base):
+    """Automatic recovery (phase 14): when a known problem shows up (an open monitoring alert or a
+    finding of the nightly checks) Stackpilot starts a runbook that fixes it, within the policy.
+
+    ``trigger``: "alert" (``match.kinds``: offline, disk, storage, memory, cpu, smart, unifi, backup,
+    service) or "finding" (``match.codes``: nightly finding codes such as disk_full or agent_old).
+    ``match`` may also hold ``machine`` (a name pattern with * and ?), ``machine_types`` (proxmox,
+    server, workstation), ``min_severity`` and, for service alerts, ``services`` (the units that
+    Stackpilot watches). ``params`` fills in the runbook's parameters; values may use {{machine.name}},
+    {{alert.detail.service}}, {{finding.params.x}} and {{customer.name}}.
+    ``mode``: auto (run within the policy), approve (every changing step asks an admin) or notify
+    (only report what would run)."""
+
+    __tablename__ = "remediation_rules"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    name: Mapped[str] = mapped_column(String(120))
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    customer_id: Mapped[str | None] = mapped_column(ForeignKey("environments.id", ondelete="CASCADE"), nullable=True,
+                                                    index=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    trigger: Mapped[str] = mapped_column(String(16), default="alert")  # alert | finding
+    match: Mapped[dict] = mapped_column(JsonType, default=dict)
+    runbook_id: Mapped[str | None] = mapped_column(ForeignKey("runbooks.id", ondelete="SET NULL"), nullable=True)
+    params: Mapped[dict] = mapped_column(JsonType, default=dict)
+    mode: Mapped[str] = mapped_column(String(16), default="auto")  # auto | approve | notify
+    delay_minutes: Mapped[int] = mapped_column(Integer, default=5)
+    cooldown_minutes: Mapped[int] = mapped_column(Integer, default=30)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=3)  # per problem per 24 hours
+    preset: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+
+class RemediationAttempt(Base):
+    """One time automatic recovery acted (or decided not to act) on a problem."""
+
+    __tablename__ = "remediation_attempts"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    rule_id: Mapped[str | None] = mapped_column(ForeignKey("remediation_rules.id", ondelete="SET NULL"), nullable=True,
+                                                index=True)
+    rule_name: Mapped[str] = mapped_column(String(120))
+    customer_id: Mapped[str | None] = mapped_column(ForeignKey("environments.id", ondelete="SET NULL"), nullable=True,
+                                                    index=True)
+    customer_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    source: Mapped[str] = mapped_column(String(16))  # alert | finding
+    source_key: Mapped[str] = mapped_column(String(200), index=True)  # alert key or finding key
+    source_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    node_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    target: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    problem: Mapped[str] = mapped_column(String(500), default="")
+    # running | waiting_approval | succeeded | failed | cancelled | skipped | notified
+    status: Mapped[str] = mapped_column(String(20), default="running", index=True)
+    reason: Mapped[dict] = mapped_column(JsonType, default=dict)  # {"code", "params"}: why skipped / failed
+    run_id: Mapped[str | None] = mapped_column(ForeignKey("runbook_runs.id", ondelete="SET NULL"), nullable=True)
+    runbook_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    resolved: Mapped[bool | None] = mapped_column(Boolean, nullable=True)  # did the problem go away?
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

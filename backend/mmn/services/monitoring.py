@@ -330,6 +330,10 @@ async def _conditions(db: AsyncSession, cfg: MonitoringSettings) -> dict[str, di
         from mmn.services import protection
 
         want.update(await protection.alert_conditions(db, now))
+    # Phase 14: services that an automatic recovery rule watches.
+    from mmn.services import remediation
+
+    want.update(await remediation.service_conditions(db, now))
     return want
 
 

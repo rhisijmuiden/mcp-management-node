@@ -160,6 +160,64 @@ TEMPLATES: list[T] = [
              "title": {"en": "Status after", "nl": "Status achteraf"}},
         ],
     },
+    {
+        "key": "free_disk_space",
+        "category": "remediation",
+        "name": {"en": "Free disk space", "nl": "Schijfruimte vrijmaken"},
+        "description": {
+            "en": "Clean up package caches, journal entries older than 14 days and old temp files (Windows: temp files, "
+                  "the update download cache and the component store), then check the machine again.",
+            "nl": "Pakketcache, journal ouder dan 14 dagen en oude tijdelijke bestanden opruimen (Windows: tijdelijke "
+                  "bestanden, de downloadcache van updates en de componentenopslag) en de machine daarna controleren.",
+        },
+        "params": [
+            {"name": "server", "label": {"en": "Server", "nl": "Server"}, "required": True},
+        ],
+        "steps": [
+            {"id": "cleanup", "kind": "tool", "tool": "cleanup_disk",
+             "args": {"node": "{{params.server}}", "reason": "Runbook {{run.id}}: free disk space"},
+             "title": {"en": "Clean up", "nl": "Opruimen"}},
+            {"id": "after", "kind": "tool", "tool": "diagnose_server", "args": {"server": "{{params.server}}"},
+             "on_failure": "continue", "title": {"en": "Health check after", "nl": "Gezondheidscheck achteraf"}},
+        ],
+    },
+    {
+        "key": "recover_offline_agent",
+        "category": "remediation",
+        "name": {"en": "Bring an offline agent back", "nl": "Offline agent terugbrengen"},
+        "description": {
+            "en": "For a server that runs as a VM or container on a Proxmox VE node: start the guest when it is stopped, "
+                  "or restart the agent inside it, then wait for it to reconnect. Never touches a Proxmox VE node.",
+            "nl": "Voor een server die als VM of container op een Proxmox VE-node draait: start de guest als hij uit "
+                  "staat, of herstart de agent erin, en wacht tot hij weer verbindt. Raakt nooit een Proxmox VE-node.",
+        },
+        "params": [
+            {"name": "server", "label": {"en": "Server", "nl": "Server"}, "required": True},
+        ],
+        "steps": [
+            {"id": "recover", "kind": "tool", "tool": "recover_agent",
+             "args": {"node": "{{params.server}}", "reason": "Runbook {{run.id}}: the agent is offline"},
+             "title": {"en": "Start the guest or restart the agent", "nl": "Guest starten of agent herstarten"}},
+            {"id": "wait", "kind": "wait", "minutes": 3,
+             "title": {"en": "Wait for the agent", "nl": "Wachten op de agent"}},
+        ],
+    },
+    {
+        "key": "update_agent",
+        "category": "remediation",
+        "name": {"en": "Update the agent", "nl": "Agent bijwerken"},
+        "description": {
+            "en": "Update the Stackpilot agent on a machine to the version of this Stackpilot.",
+            "nl": "De Stackpilot-agent op een machine bijwerken naar de versie van deze Stackpilot.",
+        },
+        "params": [
+            {"name": "server", "label": {"en": "Machine", "nl": "Machine"}, "required": True},
+        ],
+        "steps": [
+            {"id": "update", "kind": "tool", "tool": "update_node_agent", "args": {"node": "{{params.server}}"},
+             "title": {"en": "Update the agent", "nl": "Agent bijwerken"}},
+        ],
+    },
 ]
 
 

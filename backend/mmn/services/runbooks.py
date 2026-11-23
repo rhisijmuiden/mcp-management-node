@@ -386,6 +386,12 @@ async def _principal_for(db: AsyncSession, run: RunbookRun):
                          token_kind=tok.kind, scopes=effective_scopes(tok), ip=None,
                          client={**(tok.last_client or {}), "runbook_run": run.id},
                          customers=frozenset(tok.customer_ids) if tok.customer_ids is not None else None)
+    if run.trigger == "remediation" and not run.user_id:
+        # Automatic recovery (phase 14): Stackpilot itself, within the policy and the recovery guardrails.
+        return Principal(user_id=None, username=None, token_id=None, token_name="Automatic recovery",
+                         token_kind="remediation", scopes=set(SCOPES), ip=None,
+                         client={"name": "Automatic recovery", "source": "remediation", "runbook_run": run.id},
+                         customers=None)
     u = await db.get(User, run.user_id) if run.user_id else None
     if u is None or not u.is_active or u.role != Role.admin:
         raise RunbookError("the admin who started this run no longer exists or is not an admin")
@@ -444,8 +450,9 @@ async def _save(db: AsyncSession, run: RunbookRun, state: list[dict[str, Any]]) 
 async def _audit_run(db: AsyncSession, run: RunbookRun, action: str, success: bool = True, **detail: Any) -> None:
     from mmn.models import AuditLog
 
-    db.add(AuditLog(action=f"runbook.{action}", user_id=run.user_id, username=run.username,
-                    source="mcp" if run.token_id else "ui", target=run.runbook_name[:255], success=success,
+    db.add(AuditLog(action=f"runbook.{action}", user_id=run.user_id, username=run.username or
+                    (run.token_name if run.trigger == "remediation" else None),
+                    source="mcp" if run.token_id else "system" if run.trigger == "remediation" else "ui", target=run.runbook_name[:255], success=success,
                     detail=json.loads(json.dumps({"run_id": run.id, "customer": run.customer_name,
                                                   "token": run.token_name, **detail}, default=str))))
 
@@ -573,6 +580,14 @@ async def _advance(run_id: str) -> None:  # noqa: C901 - one step machine, easie
             # tool step
             tool = sd["tool"]
             spec = gateway.REGISTRY.get(tool)
+            if run.trigger == "remediation":
+                from mmn.services import remediation
+
+                if not await remediation.active(db):
+                    await cancel(db, run, by="Automatic recovery (stopped)", via="emergency stop")
+                    await db.commit()
+                    _publish(run)
+                    return
             try:
                 args = render(sd.get("args") or {}, ctx)
                 if not isinstance(args, dict):
@@ -590,6 +605,13 @@ async def _advance(run_id: str) -> None:  # noqa: C901 - one step machine, easie
 
             st["args"] = _redact(json.loads(json.dumps(args, default=str)))
             risk = "read" if args.get("dry_run") is True else spec.risk
+            recovery = run.trigger == "remediation"
+            if recovery:
+                why = await remediation.step_blocked(db, tool, args)
+                if why:
+                    st.update(status="failed", finished_at=now, error=why)
+                    await _save(db, run, state)
+                    continue
             # Placeholders (customer, nodes) decide which customer's policy applies; the run's own
             # customer always counts too.
             d = await gateway.decide(db, tool=tool, risk=risk,
@@ -603,6 +625,10 @@ async def _advance(run_id: str) -> None:  # noqa: C901 - one step machine, easie
                 await _save(db, run, state)
                 continue
             always = sd.get("approval") == "always"
+            if recovery and (risk == "destructive" or (risk != "read" and (run.context or {}).get("approve_all"))):
+                # Automatic recovery: destructive steps always ask an admin; in mode "approve" every
+                # step that changes something does.
+                always = True
             if d.action == "approve" or always:
                 run_after = None
                 if run.definition.get("use_window", True) and any(r.get("code") == "outside_window" for r in d.reasons):
@@ -610,8 +636,10 @@ async def _advance(run_id: str) -> None:  # noqa: C901 - one step machine, easie
                 a = await gateway.create_runbook_approval(
                     db, run_id=run.id, step=idx, label=f"Runbook: {run.runbook_name}", tool=tool, args=args,
                     target=_target_of(args) or run.customer_name, decision=d,
-                    extra_reason={"code": "runbook", "params": {"runbook": run.runbook_name, "step": idx + 1,
-                                                                 "title": sd.get("title"), "always": always}},
+                    extra_reason={"code": "runbook", "params": {
+                    "runbook": run.runbook_name, "step": idx + 1, "title": sd.get("title"), "always": always,
+                    **({"recovery": ((run.context or {}).get("remediation") or {}).get("rule") or "-"}
+                       if recovery else {})}},
                     token_id=run.token_id, token_name=run.token_name, user_id=run.user_id, username=run.username,
                     ai_reason=run.reason, run_after=run_after)
                 st.update(status="waiting_approval", approval_id=a.id)

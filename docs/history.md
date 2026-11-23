@@ -21,6 +21,7 @@ Stackpilot is built in phases. Each phase is one pull request and one minor rele
 | 11 | v0.11.0 | Backup management per customer |
 | 12 | v0.12.0 | Nightly checks and the morning summary |
 | 13 | v0.13.0 | Runbooks |
+| 14 | v0.14.0 | Automatic recovery (self-healing) |
 
 ## What each phase added
 
@@ -129,5 +130,20 @@ page Operations → Runbooks with an editor, templates and run history; new scop
 `list_runbooks`, `get_runbook`, `run_runbook`, `get_runbook_run`, `list_runbook_runs`, `complete_runbook_step`,
 `cancel_runbook_run`, `save_runbook`, `delete_runbook`. Runbooks with category "repair action" are the building blocks
 for automatic recovery (phase 14).
+
+**Phase 14** added automatic recovery: known problems that Stackpilot fixes by itself, within the policy. Rules (per
+customer or for everyone) link a problem to a repair runbook: an open monitoring alert (agent offline, a stopped
+service that the rule watches, full disk or storage, memory, SMART, UniFi, backups) or a finding of the nightly checks
+(a full disk, an outdated agent, ...). The rule fills in the runbook's parameters (`{{machine.name}}`,
+`{{alert.detail.service}}`) and runs in mode automatic, with approval or report only. Every step goes through the AI
+gateway; on top of that destructive steps always ask an admin, a Proxmox VE node is never rebooted and nothing is
+deleted or restored. After a run the alert has to be gone within a few minutes, otherwise the attempt counts as
+failed. Loop protection per problem (wait first, cooldown, maximum attempts per 24 hours), a limit per hour for the
+whole app, a circuit breaker that stops everything after too many failures, and an emergency stop that cancels the
+recoveries that are busy. New page Operations → Automatic recovery with activity, rules, recommended rules (restart a
+stopped service, free disk space, bring an offline agent back, update outdated agents) and settings; notifications in
+the app and by mail; results in the morning summary and the monthly report. New runbook templates "Free disk space",
+"Bring an offline agent back" and "Update the agent"; new MCP tools `get_remediation`, `save_remediation_rule`,
+`delete_remediation_rule`, `pause_remediation`, `cleanup_disk` and `recover_agent`.
 
 Bug fix releases in between (v0.2.1, v0.6.1, v0.6.2, v0.7.1) are listed on the releases page.
