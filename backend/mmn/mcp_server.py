@@ -229,7 +229,9 @@ day-to-day administration without a separate remote session.
 
 Customers are the top layer: everything hangs under a customer ("Home" is a customer too). Start with
 `list_customers`; for "check customer X" use `get_customer_overview` and, to find improvements,
-`optimisation_scan`. Every customer has notes for you, a maintenance window and an SLA
+`optimisation_scan`. "What happened last night" / "what needs attention today": `get_morning_summary`
+(the nightly checks of every customer, with what is new and proposals an admin approves with one
+click). Every customer has notes for you, a maintenance window and an SLA
 (`get_customer_context`, or the resource stackpilot://customers/<id>): read and follow them before
 changing anything, and plan restarts and updates inside the maintenance window. Most list tools take
 `customer` (name or id) to limit them to one customer. A token can be tied to some customers: it then
@@ -604,6 +606,68 @@ async def optimisation_scan(customer: str, live_network_checks: bool = True) -> 
         except nodes.NodeError as ex:
             raise ToolDenied(str(ex)) from ex
         return _jsonable(await customers.optimisation_scan(db, e, live=live_network_checks))
+
+
+@tool("read", RO)
+async def get_morning_summary(customer: str | None = None, only_new: bool = False) -> dict:
+    """The morning summary of the nightly checks: per customer the findings of last night (updates,
+    security updates with the CVEs they fix, full disks, certificates that expire, failed or missing
+    backups and the optimisation scan), what is new since the night before, what was resolved, and
+    the proposals that wait for one click in Stackpilot (approval requests; changes wait for the
+    customer's maintenance window). Tell the user what needs attention; an admin approves the
+    proposals in the app (Morning summary or Approvals), not you."""
+    from mmn.services import nightly, nodes
+
+    async with sessionmaker()() as db:
+        cid = None
+        if customer:
+            try:
+                cid = (await nodes.get_environment(db, customer)).id
+            except nodes.NodeError as ex:
+                raise ToolDenied(str(ex)) from ex
+        r = await nightly.latest(db, finished=True)
+        if r is None:
+            return {"run": None, "running": nightly.running(),
+                    "note": "The nightly checks have not run yet. Use run_nightly_checks to run them now."}
+        d = await nightly.detail(db, r)
+        url = await nightly.summary_url(db)
+    if cid:
+        d["customers"] = [c for c in d["customers"] if c.get("id") == cid]
+        d["findings"] = [f for f in d["findings"] if f["customer_id"] == cid]
+    if only_new:
+        d["findings"] = [f for f in d["findings"] if f["is_new"]]
+    names = {c["id"]: c.get("name") for c in d["customers"]}
+    for f in d["findings"]:
+        f["customer"] = names.get(f["customer_id"])
+    d["url"] = url
+    d["running"] = nightly.running()
+    return _jsonable(d)
+
+
+@tool("read", WRITE)
+async def run_nightly_checks(customer: str | None = None) -> dict:
+    """Run the nightly checks now (normally they run every night), for all customers or one. They
+    refresh the update lists and the backup coverage, check certificates and look up CVEs, and
+    create proposals that an admin approves. Takes a few minutes; then read get_morning_summary."""
+    from mmn.services import nightly, nodes, tenancy
+
+    ids = None
+    async with sessionmaker()() as db:
+        if customer:
+            try:
+                ids = [(await nodes.get_environment(db, customer)).id]
+            except nodes.NodeError as ex:
+                raise ToolDenied(str(ex)) from ex
+    allowed = tenancy.allowed()
+    if ids is None and allowed is not None:
+        ids = sorted(allowed)
+    p = current_principal()
+    try:
+        rid = await nightly.start(trigger="mcp", requested_by=p.username if p else None, customer_ids=ids)
+    except nightly.NightlyBusy as ex:
+        raise ToolDenied(str(ex)) from ex
+    return {"run_id": rid, "status": "running",
+            "message": "The checks run in the background; call get_morning_summary in a few minutes."}
 
 
 @tool("read", RO)

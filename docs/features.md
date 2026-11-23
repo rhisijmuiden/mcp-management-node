@@ -7,7 +7,7 @@ through the [MCP tools](mcp-tools.md), within the limits you set.
 
 - [Customers](#customers)
 - [AI gateway](#ai-gateway)
-  - [Command center](#command-center) · [Approvals](#approvals) · [Policies & guardrails](#policies--guardrails) ·
+  - [Command center](#command-center) · [Morning summary](#morning-summary) · [Approvals](#approvals) · [Policies & guardrails](#policies--guardrails) ·
     [Connected AI and API tokens](#connected-ai-and-api-tokens) · [Sessions & audit](#sessions--audit) ·
     [The MCP server](#the-mcp-server)
 - [Infrastructure](#infrastructure)
@@ -68,6 +68,39 @@ connected AI tools, the current guardrails per risk level and the reach and heal
 
 **Pause all AI actions** is the kill switch: from that moment every tool call that changes something is refused until
 you resume. It can also be set per customer or per token.
+
+### Morning summary
+
+Every night (02:30 by default, local time) Stackpilot checks every customer, and in the morning (07:00 by default)
+you get **one summary** in the app and by mail. The page **Morning summary** under AI gateway shows it.
+
+What is checked, per customer:
+
+- **Updates**: pending updates and reboots, old agents, UniFi firmware. The package lists are refreshed first.
+- **Security & CVEs**: pending security updates (apt/dnf from a security suite, Windows updates with an MSRC
+  severity). For Debian and Ubuntu Stackpilot asks [OSV.dev](https://osv.dev) which CVEs the update fixes, by
+  comparing the installed and the new version (only package names and versions are sent; it can be switched off).
+- **Disks & storage**: full disks of servers, full Proxmox storage and container disks, SMART health.
+- **Certificates**: certificates on servers and Proxmox nodes through the agent (Proxmox, Proxmox Backup Server,
+  Let's Encrypt, Nginx and Apache on Linux; the computer store on Windows servers), plus the addresses you list per
+  customer (for example a website, Exchange or an RD gateway). It warns 21 days ahead by default.
+- **Backups**: the backup coverage is refreshed and failed, missing and old backups are reported.
+- **Other**: the rest of the [optimisation scan](#customers) (offline machines, failed services, network).
+
+Each finding is compared with the night before: **new** findings are marked and **resolved** ones are listed. When a
+finding can be fixed in one step, it gets a **proposal**: install the updates, reboot (not Proxmox nodes), update the
+agent, free disk space (package cache and old logs on Linux, temp files and the component store on Windows) or renew a
+certificate (certbot or the Proxmox ACME client). A proposal is an approval request in the [approvals](#approvals)
+inbox. **Approve** one, or **Approve all** for a customer or for everyone, with one click. Changes then wait for the
+customer's maintenance window (*Scheduled*) and start when it opens; customers without a window run right away. The
+call runs with the rights of the admin who approved it and is written to the audit log. Proposals that are not
+approved expire before the next night, which makes fresh ones.
+
+**Settings** sets the times, what is checked, CVE lookup, proposals, waiting for the maintenance window, the app
+notification and the mail (recipients, and whether to mail when everything is fine). Under **Per customer** you switch
+the checks off for a customer and list the TLS addresses to check. **Run checks now** runs them straight away,
+**Send summary** mails the summary again, and **History** keeps 90 days of nights. The AI reads the summary with
+`get_morning_summary` and can start a run with `run_nightly_checks`.
 
 ### Approvals
 

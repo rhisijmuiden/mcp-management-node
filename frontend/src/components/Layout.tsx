@@ -47,6 +47,7 @@ import {
   History,
   ShieldHalf,
   Wrench,
+  Sunrise,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -159,8 +160,19 @@ export function Layout() {
         action: { label: t("gw.appr.review"), onClick: () => navigate(d.id ? `/ai/approvals?id=${d.id}` : "/ai/approvals") },
       });
     };
+    const onNightly = (e: Event) => {
+      const d = (e as CustomEvent).detail as { high?: number; new?: number; proposals?: number };
+      toast(t("nightly.toast", { high: d.high ?? 0, new: d.new ?? 0, proposals: d.proposals ?? 0 }), {
+        duration: 20_000,
+        action: { label: t("nightly.toast_open"), onClick: () => navigate("/ai/nightly") },
+      });
+    };
     window.addEventListener("mmn:approval", onApproval);
-    return () => window.removeEventListener("mmn:approval", onApproval);
+    window.addEventListener("mmn:nightly", onNightly);
+    return () => {
+      window.removeEventListener("mmn:approval", onApproval);
+      window.removeEventListener("mmn:nightly", onNightly);
+    };
   }, [isAdmin, navigate, t]);
 
   const pending = useQuery({
@@ -180,6 +192,7 @@ export function Layout() {
       title: t("nav.section.gateway"),
       items: [
         { to: "/", icon: <LayoutDashboard />, label: t("nav.command_center") },
+        { to: "/ai/nightly", icon: <Sunrise />, label: t("nav.nightly") },
         { to: "/ai/approvals", icon: <Hand />, label: t("nav.approvals"), admin: true, badge: pending.data?.pending },
         { to: "/ai/policies", icon: <ShieldHalf />, label: t("nav.ai_policies"), admin: true },
         { to: "/ai/hub", icon: <Network />, label: t("nav.mcp_hub"), admin: true },

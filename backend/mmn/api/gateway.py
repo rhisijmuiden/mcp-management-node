@@ -191,7 +191,7 @@ async def approve(aid: str, body: DecisionIn, request: Request, db: AsyncSession
     await audit(db, "ai.approval.approve", user=admin, target=f"{a.tool} {a.target or ''}".strip()[:255],
                 ip=client_ip(request), approval_id=a.id, note=body.note)
     await db.commit()
-    gateway.start_execution(a.id)
+    gateway.after_approved(a)
     return gateway.approval_out(a)
 
 

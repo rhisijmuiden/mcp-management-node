@@ -300,7 +300,8 @@ def _scan_machines(ns: list[Node], bundled: str | None, findings: list[dict[str,
                                      else "Check the machine and the agent service.", "diagnose_server",
                                      code="workstation_offline" if t == "workstation" else "machine_offline"))
         if count:
-            sec = sum(1 for p in upd.get("packages") or [] if p.get("security"))
+            sec = sum(1 for p in upd.get("packages") or []
+                      if p.get("security") or "security" in str(p.get("suite") or "").lower())
             findings.append(_finding("medium" if sec or count >= 20 else "low", "updates", n.name,
                                      f"{count} pending update(s){f', {sec} security' if sec else ''}.",
                                      "Install them in the maintenance window.", "install_node_updates",

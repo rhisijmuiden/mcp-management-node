@@ -19,6 +19,7 @@ Stackpilot is built in phases. Each phase is one pull request and one minor rele
 | 9 | v0.9.0 | MCP hub and tool catalog |
 | 10 | v0.10.0 | Workstations (inventory, security status, actions) and monthly customer reports |
 | 11 | v0.11.0 | Backup management per customer |
+| 12 | v0.12.0 | Nightly checks and the morning summary |
 
 ## What each phase added
 
@@ -104,5 +105,16 @@ and remotes for offsite copies. The monthly report and the optimisation scan gai
 `list_backup_files`, `restore_files`, `get_pbs`, `save_pbs_job`, `run_pbs_job`, `delete_pbs_job`,
 `add_pbs_datastore`, `add_pbs_remote`; new scope `restore_guests` (given automatically to tokens with `guests_admin`).
 Restores are destructive and need approval by default.
+
+**Phase 12** adds the **nightly checks and the morning summary**. Every night every customer is checked for pending
+updates and reboots, security updates with the CVEs they fix (looked up at OSV.dev), full disks and storage, SMART
+health, certificates that expire (on the machines through the agent and on TLS addresses listed per customer), failed
+or missing backups and the rest of the optimisation scan. Findings are compared with the night before (new,
+resolved). Findings with a one-step fix become proposals: approval requests that are approved with one click (one at a
+time, per customer or all) and that wait for the customer's maintenance window before they run, with the rights of the
+admin who approved them. In the morning one summary goes out in the app and by mail. New page AI gateway → Morning
+summary with settings per customer and the history of earlier nights; approved requests can now be scheduled for the
+maintenance window. New MCP tools: `get_morning_summary`, `run_nightly_checks`. The optimisation scan now counts
+security updates from a security suite.
 
 Bug fix releases in between (v0.2.1, v0.6.1, v0.6.2, v0.7.1) are listed on the releases page.

@@ -103,7 +103,8 @@
     "ai_sessions": "Sessies & audit",
     "mcp_hub": "MCP hub",
     "tool_catalog": "Toolcatalogus",
-    "protection": "Back-ups"
+    "protection": "Back-ups",
+    "nightly": "Ochtendsamenvatting"
   },
   "roles": {
     "admin": "Beheerder",
@@ -2518,7 +2519,8 @@
       "other": "Beleid",
       "where_customer": "klant {{customer}}",
       "where_token": "dit token",
-      "where_default": "standaardbeleid"
+      "where_default": "standaardbeleid",
+      "nightly": "Voorgesteld door de nachtelijke controle"
     },
     "toast": {
       "new": "{{who}} vraagt goedkeuring: {{tool}}",
@@ -2618,7 +2620,12 @@
       "failed": "De call is mislukt",
       "result": "Resultaat",
       "approved_toast": "Goedgekeurd, de call wordt nu uitgevoerd",
-      "rejected_toast": "Afgewezen"
+      "rejected_toast": "Afgewezen",
+      "waits_window_title": "Wacht op het onderhoudsvenster",
+      "waits_window": "Na goedkeuring start dit zodra het onderhoudsvenster opent: {{when}}.",
+      "scheduled_title": "Ingepland",
+      "scheduled": "Goedgekeurd. Het start zodra het onderhoudsvenster opent: {{when}}.",
+      "scheduled_toast": "Goedgekeurd, start in het onderhoudsvenster ({{when}})"
     },
     "pol": {
       "title": "Beleid & guardrails",
@@ -3256,6 +3263,30 @@
     "backup_unknown": {
       "f": "De back-updekking is nog niet verzameld.",
       "s": "Open Back-ups in Stackpilot of roep list_backup_coverage aan met refresh=true."
+    },
+    "cve_fixable": {
+      "f": "{{count}} beveiligingsupdate(s) verhelpen {{cves}} bekende kwetsbaarheden: {{list}}.",
+      "s": "Installeer de updates in het onderhoudsvenster."
+    },
+    "security_updates": {
+      "f": "{{count}} beveiligingsupdate(s) staan klaar: {{names}}.",
+      "s": "Installeer ze in het onderhoudsvenster."
+    },
+    "windows_security": {
+      "f": "{{count}} beveiligingsupdate(s) staan klaar ({{critical}} kritiek): {{names}}.",
+      "s": "Installeer ze in het onderhoudsvenster."
+    },
+    "cert_expired": {
+      "f": "Certificaat {{name}} is verlopen op {{date}}.",
+      "s": "Vernieuw of vervang het certificaat."
+    },
+    "cert_expiring": {
+      "f": "Certificaat {{name}} verloopt over {{days}} dag(en), op {{date}}.",
+      "s": "Vernieuw het certificaat voordat het verloopt."
+    },
+    "cert_endpoint_error": {
+      "f": "Het certificaat van {{endpoint}} kon niet worden gecontroleerd: {{error}}.",
+      "s": "Controleer of Stackpilot het adres kan bereiken, of haal het uit de lijst."
     }
   },
   "prot": {
@@ -3450,5 +3481,158 @@
     "excluded": "Uitgesloten onderdelen",
     "excluded_hint": "Onderdelen die geen back-up nodig hebben (testmachines, dingen die je opnieuw opbouwt). Ze geven geen meldingen.",
     "none_excluded": "Niets is uitgesloten."
+  },
+  "nightly": {
+    "title": "Ochtendsamenvatting",
+    "desc": "Elke nacht controleert Stackpilot elke klant: updates, beveiligingsupdates en CVE's, schijven, certificaten en back-ups. 's Ochtends krijg je één samenvatting met voorstellen die je met één klik goedkeurt.",
+    "desc_run": "Controle van {{when}} ({{ago}}). Voorstellen die je goedkeurt wachten op het onderhoudsvenster van de klant.",
+    "settings": "Instellingen",
+    "send": "Samenvatting versturen",
+    "run_now": "Nu controleren",
+    "started": "De controle loopt; dit duurt een paar minuten.",
+    "sent": "De samenvatting is verstuurd.",
+    "send_failed": "De samenvatting kon niet worden gemaild (controleer de mailserver).",
+    "running": "De controle loopt…",
+    "running_hint": "Per klant worden updatelijsten, back-ups en certificaten ververst. De pagina werkt zichzelf bij.",
+    "tab_summary": "Samenvatting",
+    "tab_history": "Geschiedenis",
+    "empty": "De nachtelijke controle heeft nog niet gedraaid",
+    "empty_hint": "Hij draait elke nacht (volgende: {{run}}). Je kunt hem ook nu starten.",
+    "old_run": "Je bekijkt de controle van {{when}}.",
+    "to_latest": "Toon de laatste",
+    "failed": "De controle is mislukt",
+    "k_high": "Hoog",
+    "k_high_hint": "{{medium}} middel, {{low}} laag",
+    "k_new": "Nieuw sinds vannacht",
+    "k_new_hint": "De nacht ervoor nog niet gevonden",
+    "k_resolved": "Opgelost",
+    "k_resolved_hint": "Verdwenen sinds de nacht ervoor",
+    "k_pending": "Wacht op jou",
+    "k_pending_hint": "Voorstellen klaar om goed te keuren",
+    "ready_title": "{{count}} voorstel(len) klaar",
+    "ready_hint": "Keur ze met één klik goed. Wijzigingen (updates, herstarts, commando's) wachten op het onderhoudsvenster van elke klant; de rest draait meteen.",
+    "approve_all": "Alles goedkeuren ({{count}})",
+    "approve_customer": "Alles goedkeuren ({{count}})",
+    "approved_all": "{{count}} goedgekeurd, {{scheduled}} wachten op het onderhoudsvenster",
+    "cat": {
+      "all": "Alles",
+      "updates": "Updates",
+      "cves": "Beveiliging & CVE's",
+      "disks": "Schijven & opslag",
+      "certificates": "Certificaten",
+      "backups": "Back-ups",
+      "other": "Overig"
+    },
+    "cat_hint": {
+      "updates": "Openstaande updates en herstarts, oude agents, firmware",
+      "cves": "Beveiligingsupdates en de CVE's die ze verhelpen (Windows: kritieke updates)",
+      "disks": "Volle schijven en opslag, SMART-status",
+      "certificates": "Certificaten op servers en nodes, plus de adressen die je per klant opgeeft",
+      "backups": "Mislukte, ontbrekende en oude back-ups",
+      "other": "De rest van de optimalisatiescan: offline machines, mislukte services, netwerk"
+    },
+    "v_all": "Alles",
+    "v_new": "Nieuw",
+    "v_proposals": "Met voorstel",
+    "sev": {
+      "high": "Hoog",
+      "medium": "Middel",
+      "low": "Laag",
+      "info": "Info"
+    },
+    "sev_n": {
+      "high": "{{count}} hoog",
+      "medium": "{{count}} middel",
+      "low": "{{count}} laag",
+      "info": "{{count}} info"
+    },
+    "all_clear": "Alles in orde",
+    "n_new": "{{count}} nieuw",
+    "n_resolved": "{{count}} opgelost",
+    "window": "Onderhoudsvenster: {{window}}",
+    "no_window": "Geen onderhoudsvenster: goedgekeurde wijzigingen draaien meteen",
+    "errors": "Sommige controles konden niet draaien",
+    "none_in_filter": "Niets in dit filter.",
+    "new": "Nieuw",
+    "no_proposal": "Vraagt een mens",
+    "details": "Details",
+    "approve": "Goedkeuren",
+    "runs_in_window": "Draait in het onderhoudsvenster ({{when}})",
+    "runs_now": "Draait direct na goedkeuring",
+    "scheduled_for": "Start {{when}}",
+    "prop": {
+      "install_updates": "Updates installeren",
+      "reboot": "Herstarten",
+      "update_agent": "Agent bijwerken",
+      "cleanup_disk": "Schijfruimte vrijmaken",
+      "renew_cert": "Certificaat vernieuwen"
+    },
+    "pst": {
+      "pending": "Wacht",
+      "scheduled": "Ingepland",
+      "approved": "Goedgekeurd",
+      "running": "Bezig",
+      "executed": "Klaar",
+      "failed": "Mislukt",
+      "rejected": "Afgewezen",
+      "expired": "Verlopen",
+      "missing": "Weg"
+    },
+    "resolved_title": "{{count}} opgelost sinds vannacht",
+    "clean_title": "Alles in orde",
+    "clean_hint": "Bij deze klanten is niets gevonden.",
+    "ran": "Gedraaid {{start}} – {{end}}",
+    "sent_at": "Samenvatting verstuurd {{when}}",
+    "not_sent": "Samenvatting nog niet verstuurd",
+    "next": "Volgende controle {{run}}, samenvatting {{summary}}",
+    "history": "Eerdere nachten",
+    "history_hint": "Klik op een controle om de bevindingen te zien.",
+    "h_started": "Gestart",
+    "h_trigger": "Door",
+    "h_status": "Status",
+    "h_customers": "Klanten",
+    "h_findings": "Bevindingen",
+    "h_proposals": "Voorstellen",
+    "h_sent": "Samenvatting verstuurd",
+    "trigger": {
+      "schedule": "Planning",
+      "manual": "Handmatig",
+      "mcp": "AI (MCP)"
+    },
+    "status": {
+      "running": "Bezig",
+      "done": "Klaar",
+      "failed": "Mislukt"
+    },
+    "settings_title": "Nachtelijke controle",
+    "settings_desc": "Wanneer de controle draait, wat er wordt gecontroleerd en wie de samenvatting krijgt.",
+    "s_general": "Algemeen",
+    "s_customers": "Per klant",
+    "s_enabled": "Elke nacht controleren",
+    "s_next": "Volgende controle: {{when}}",
+    "s_run_at": "Controleren om",
+    "s_local": "Lokale tijd (Geplande taken > tijdzone)",
+    "s_summary_at": "Samenvatting om",
+    "s_summary_hint": "Of direct na de controle, als die later klaar is",
+    "s_cert_days": "Waarschuwen voor certificaten (dagen vooruit)",
+    "s_checks": "Wat wordt gecontroleerd",
+    "s_cve": "CVE-nummers opzoeken",
+    "s_cve_hint": "Vraagt OSV.dev welke CVE's de openstaande beveiligingsupdates verhelpen (alleen pakketnamen en versies worden verstuurd).",
+    "s_proposals": "Voorstellen maken",
+    "s_proposals_hint": "Bevindingen met een oplossing van één stap worden goedkeuringsverzoeken.",
+    "s_window": "Wachten op het onderhoudsvenster",
+    "s_window_hint": "Goedgekeurde wijzigingen starten zodra het onderhoudsvenster van de klant opent.",
+    "s_notify": "Samenvatting",
+    "s_app": "Melding in de app",
+    "s_mail": "Mail",
+    "s_clean": "Ook mailen als alles in orde is",
+    "s_mail_to": "Mailen naar",
+    "s_mail_to_hint": "Gescheiden door komma's. Leeg: elke beheerder met een e-mailadres.",
+    "s_customers_hint": "Zet klanten uit die geen nachtelijke controle nodig hebben, en geef de adressen op (host of host:poort) waarvan Stackpilot het TLS-certificaat controleert, bijvoorbeeld een website, Exchange of een RD-gateway. Stackpilot moet ze zelf kunnen bereiken.",
+    "s_endpoints": "Certificaten van adressen",
+    "s_endpoints_hint": "Eén per regel, bijvoorbeeld portal.example.nl of mail.example.nl:993.",
+    "saved": "Opgeslagen",
+    "toast": "Ochtendsamenvatting: {{high}} hoog, {{new}} nieuw, {{proposals}} voorstel(len)",
+    "toast_open": "Openen"
   }
 }

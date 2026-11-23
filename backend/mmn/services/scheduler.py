@@ -162,6 +162,80 @@ async def _approvals_expire_job() -> None:
         await db.commit()
 
 
+async def _approvals_due_job() -> None:
+    from mmn.services import gateway
+
+    try:
+        await gateway.run_due()
+    except Exception:  # noqa: BLE001
+        log.exception("starting approved calls failed")
+
+
+async def _nightly_job() -> None:
+    from mmn.services import nightly
+
+    try:
+        await nightly.schedule_job()
+    except Exception:  # noqa: BLE001
+        log.exception("nightly checks failed")
+
+
+async def _nightly_summary_job() -> None:
+    from mmn.services import nightly
+
+    try:
+        await nightly.summary_job()
+    except Exception:  # noqa: BLE001
+        log.exception("morning summary failed")
+
+
+async def _nightly_prune_job() -> None:
+    from mmn.services import nightly
+
+    try:
+        await nightly.prune()
+    except Exception:  # noqa: BLE001
+        log.exception("pruning nightly runs failed")
+
+
+async def reload_nightly_jobs() -> None:
+    """(Re)schedule the nightly checks and the morning summary at the configured local times."""
+    from mmn.services import nightly
+    from mmn.services.settings_store import get_setting
+
+    if not scheduler.running:
+        return
+    async with sessionmaker()() as db:
+        cfg = await nightly.settings(db)
+        tz = (await get_setting(db, "schedules")).get("timezone") or "UTC"
+    for jid in ("nightly-run", "nightly-summary"):
+        if scheduler.get_job(jid):
+            scheduler.remove_job(jid)
+    if not cfg.get("enabled"):
+        return
+    rh, rm = nightly.parse_hhmm(cfg.get("run_at"), "02:30")
+    sh, sm = nightly.parse_hhmm(cfg.get("summary_at"), "07:00")
+    try:
+        run_trigger = CronTrigger(hour=rh, minute=rm, timezone=tz)
+        sum_trigger = CronTrigger(hour=sh, minute=sm, timezone=tz)
+    except Exception:  # noqa: BLE001 - unknown time zone
+        run_trigger = CronTrigger(hour=rh, minute=rm, timezone="UTC")
+        sum_trigger = CronTrigger(hour=sh, minute=sm, timezone="UTC")
+    scheduler.add_job(_nightly_job, run_trigger, id="nightly-run", replace_existing=True, coalesce=True,
+                      max_instances=1, misfire_grace_time=3 * 3600)
+    scheduler.add_job(_nightly_summary_job, sum_trigger, id="nightly-summary", replace_existing=True, coalesce=True,
+                      max_instances=1, misfire_grace_time=6 * 3600)
+
+
+def nightly_next_runs() -> dict[str, str | None]:
+    out: dict[str, str | None] = {}
+    for key, jid in (("run", "nightly-run"), ("summary", "nightly-summary")):
+        job = scheduler.get_job(jid) if scheduler.running else None
+        nrt = getattr(job, "next_run_time", None) if job else None
+        out[key] = nrt.isoformat() if nrt else None
+    return out
+
+
 async def _hub_health_job() -> None:
     from mmn.models import McpUpstream
     from mmn.services import hub, tenancy
@@ -216,6 +290,10 @@ async def start() -> None:
     scheduler.add_job(_hub_health_job, "interval", minutes=5, id="hub-health", replace_existing=True,
                       coalesce=True, max_instances=1)
     scheduler.add_job(_approvals_expire_job, "interval", minutes=5, id="ai-approvals-expire", replace_existing=True)
+    scheduler.add_job(_approvals_due_job, "interval", minutes=1, id="ai-approvals-due", replace_existing=True,
+                      coalesce=True, max_instances=1)
+    scheduler.add_job(_nightly_prune_job, CronTrigger(hour=4, minute=47, timezone="UTC"), id="nightly-prune",
+                      replace_existing=True, coalesce=True)
     scheduler.add_job(_update_check_job, CronTrigger(hour="*/6", minute=17, timezone="UTC"), id="update-check",
                       replace_existing=True, coalesce=True)
     scheduler.add_job(_stale_jobs, "interval", minutes=15, id="node-stale-jobs", replace_existing=True,
@@ -241,6 +319,10 @@ async def start() -> None:
     except Exception:  # noqa: BLE001
         log.exception("default scheduled tasks")
     await reload_task_jobs()
+    try:
+        await reload_nightly_jobs()
+    except Exception:  # noqa: BLE001
+        log.exception("scheduling the nightly checks")
     from mmn.services.settings_store import get_setting
 
     async with sessionmaker()() as db:

@@ -82,6 +82,24 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "notify_mail": True,
         "notify_mail_to": "",  # empty: every admin with an email address
     },
+    "nightly": {
+        # Phase 12: every night the checks run for every customer; in the morning one summary with
+        # proposals that are approved with one click (see services/nightly.py). Times are local
+        # (schedules.timezone).
+        "enabled": True,
+        "run_at": "02:30",
+        "summary_at": "07:00",
+        "notify_app": True,
+        "notify_mail": True,
+        "mail_to": "",  # empty: every admin with an email address
+        "checks": {"updates": True, "cves": True, "disks": True, "certificates": True, "backups": True,
+                   "other": True},
+        "cert_warn_days": 21,
+        "cve_lookup": True,  # look up the CVE numbers that pending security updates fix (OSV.dev)
+        "proposals": True,  # turn findings into approval requests that run with one click
+        "use_window": True,  # approved changes wait for the customer's maintenance window
+        "mail_when_clean": True,  # also mail when nothing needs attention
+    },
     "proxy": {
         "mode": "direct",  # direct | proxy
         "trusted_proxies": [],

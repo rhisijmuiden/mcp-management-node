@@ -317,6 +317,7 @@ async def _reload() -> None:
     from mmn.services import scheduler
 
     await scheduler.reload_task_jobs()
+    await scheduler.reload_nightly_jobs()
 
 
 @router.post("/api/tasks/preview")
