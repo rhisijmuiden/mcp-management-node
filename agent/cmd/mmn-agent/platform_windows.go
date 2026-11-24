@@ -32,6 +32,12 @@ func runPlatform(fn func(ctx context.Context)) bool {
 		}
 	}
 	go func() { time.Sleep(3 * time.Minute); winsvc.DisarmRestartTask() }()
+	// The keys and state in %ProgramData%\mmn-agent are for SYSTEM and administrators only.
+	for _, d := range []string{config.Dir, config.StateDir} {
+		if err := config.Protect(d); err != nil {
+			log.Printf("protecting %s: %v", d, err)
+		}
+	}
 	if err := winsvc.Run(config.StateDir, fn); err != nil {
 		log.Printf("service: %v", err)
 	}

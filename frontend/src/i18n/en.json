@@ -1336,7 +1336,10 @@
     "count_success": "Succeeded",
     "count_failed": "Failed",
     "count_skipped": "Skipped",
-    "run_not_found": "This run was not found."
+    "run_not_found": "This run was not found.",
+    "command_linux": "Script for Linux (bash)",
+    "command_windows": "Script for Windows (PowerShell)",
+    "command_windows_hint": "Runs on Windows servers and workstations as a PowerShell script under the agent account (LocalSystem). Every machine runs the script of its own OS; a machine without one is skipped. Needs agent v0.15.0 or later."
   },
   "net": {
     "title": "Network",
@@ -1756,7 +1759,8 @@
     "th_unifi_hint": "Alert when a UniFi device is offline or a UniFi connection can't be reached.",
     "kind_unifi": "UniFi",
     "kind_backup": "Backup",
-    "kind_service": "Service"
+    "kind_service": "Service",
+    "kind_network": "Network"
   },
   "dep": {
     "title": "Deployments",
@@ -3849,7 +3853,8 @@
     "open_run": "Open the run",
     "source": {
       "alert": "monitoring alert",
-      "finding": "nightly checks"
+      "finding": "nightly checks",
+      "local": "Repaired by the agent itself"
     },
     "status": {
       "running": "Busy",
@@ -3871,7 +3876,9 @@
       "run_gone": "The runbook run is gone.",
       "cancelled": "Cancelled: {{error}}",
       "run_failed": "The run failed: {{error}}",
-      "not_fixed": "The run finished but the problem was still there after {{minutes}} minutes."
+      "not_fixed": "The run finished but the problem was still there after {{minutes}} minutes.",
+      "local_ok": "The agent restarted {{adapter}} itself while Stackpilot could not reach it; the link is back.",
+      "local_failed": "The agent restarted {{adapter}} itself but the link did not come back ({{after}}). {{error}}"
     },
     "rules_title": "Rules",
     "rules_desc": "When this problem shows up, run this runbook. Rules of a customer come before rules for every customer.",
@@ -3923,6 +3930,7 @@
     "kind": {
       "offline": "Agent offline",
       "service": "Service stopped",
+      "network": "Network adapter without link",
       "disk": "Disk full",
       "storage": "Storage full",
       "memory": "Memory high",
@@ -3995,6 +4003,12 @@
       "notified": "Automatic recovery would act on {{target}} ({{rule}})",
       "paused": "Automatic recovery is stopped: {{note}}",
       "open": "Open"
-    }
+    },
+    "adapters": "Network adapters",
+    "adapters_hint": "Names or descriptions, comma-separated, with * and ? (for example *X710*). Empty: every wired physical adapter that was up before.",
+    "local": "Also repair on the machine itself",
+    "local_hint": "When the agent cannot reach Stackpilot (often because of this very link), it restarts the adapter itself after the delay, with the same cooldown and maximum attempts. Needs agent v0.15.0 or later.",
+    "local_short": "local fallback",
+    "local_outdated": "The local network fallback needs agent v0.15.0 or later. Update the agent on: {{machines}}."
   }
 }

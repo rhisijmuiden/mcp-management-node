@@ -55,7 +55,7 @@ log = logging.getLogger("mmn.remediation")
 
 TRIGGERS = ("alert", "finding")
 MODES = ("auto", "approve", "notify")
-ALERT_KINDS = ("offline", "service", "disk", "storage", "memory", "cpu", "smart", "unifi", "backup")
+ALERT_KINDS = ("offline", "service", "network", "disk", "storage", "memory", "cpu", "smart", "unifi", "backup")
 # Finding codes of the nightly checks that a rule can answer (the interface offers these).
 FINDING_CODES = ("disk_full", "guest_disk_full", "agent_old", "reboot_pending", "updates_pending",
                  "updates_pending_sec", "security_updates", "cve_fixable", "windows_security", "cert_expiring",
@@ -176,6 +176,18 @@ def clean_match(trigger: str, match: dict[str, Any] | None) -> dict[str, Any]:
             raise RemediationError("name the service(s) that Stackpilot watches, for example nginx")
         if services:
             out["services"] = services[:50]
+        if "network" in out["kinds"]:
+            from mmn.services import netwatch
+
+            try:
+                adapters = netwatch.clean_patterns(m.get("adapters"))
+            except netwatch.NetwatchError as e:
+                raise RemediationError(str(e)) from e
+            if adapters:
+                out["adapters"] = adapters
+            if m.get("local"):
+                # Phase 15: the agent also repairs the adapter itself when it cannot reach Stackpilot.
+                out["local"] = True
     else:
         codes = [_str(c, 64) for c in (m.get("codes") or []) if _str(c, 64)]
         if not codes:
@@ -319,6 +331,12 @@ def match_alert(rule: RemediationRule, alert: Alert, node: Node | None, customer
         return False
     if alert.kind == "service" and (alert.detail or {}).get("service") not in (m.get("services") or []):
         return False
+    if alert.kind == "network" and m.get("adapters"):
+        from mmn.services import netwatch
+
+        d = alert.detail or {}
+        if not netwatch.glob_any(m["adapters"], {"name": d.get("adapter"), "description": d.get("description")}):
+            return False
     if m.get("min_severity") and SEVERITY_RANK.get(alert.severity, 0) < SEVERITY_RANK[m["min_severity"]]:
         return False
     return True
@@ -1026,6 +1044,17 @@ PRESETS: list[dict[str, Any]] = [
      "match": {"kinds": ["offline"], "machine_types": ["server"]},
      "params": {"server": "{{machine.name}}"},
      "delay_minutes": 10, "cooldown_minutes": 60, "max_attempts": 2},
+    {"key": "restart_network_adapter", "template": "restart_network_adapter", "trigger": "alert",
+     "name": {"en": "Restart a network adapter without link", "nl": "Netwerkadapter zonder link herstarten"},
+     "description": {"en": "When a network card or uplink that was up stays down (for example X710 ports after a "
+                           "switch reboot), restart the adapter and check that the link is back. With the local "
+                           "fallback the agent also does this itself when Stackpilot cannot reach the machine.",
+                     "nl": "Als een netwerkkaart of uplink die eerst up was down blijft (bijvoorbeeld X710-poorten na "
+                           "een herstart van de switch), herstart de adapter en controleer dat de link terug is. Met "
+                           "de lokale terugval doet de agent dit ook zelf als Stackpilot de machine niet bereikt."},
+     "match": {"kinds": ["network"], "adapters": [], "local": True},
+     "params": {"server": "{{machine.name}}", "adapter": "{{alert.detail.adapter}}"},
+     "delay_minutes": 3, "cooldown_minutes": 15, "max_attempts": 3},
     {"key": "update_agent", "template": "update_agent", "trigger": "finding",
      "name": {"en": "Update outdated agents", "nl": "Verouderde agents bijwerken"},
      "description": {"en": "When the nightly checks find an outdated agent, update it.",
@@ -1042,7 +1071,8 @@ def preset_list(lang: str) -> list[dict[str, Any]]:
 
 
 async def add_preset(db: AsyncSession, key: str, *, customer_id: str | None, lang: str, by: str | None,
-                     services: list[str] | None = None) -> RemediationRule:
+                     services: list[str] | None = None, adapters: list[str] | None = None,
+                     local: bool | None = None) -> RemediationRule:
     """Create a recommended rule, and the runbook it uses from the built-in template when there is
     none yet."""
     from mmn.services import runbook_templates, runbooks
@@ -1063,6 +1093,11 @@ async def add_preset(db: AsyncSession, key: str, *, customer_id: str | None, lan
     match = dict(p["match"])
     if services:
         match["services"] = services
+    if "network" in match.get("kinds", []):
+        if adapters is not None:
+            match["adapters"] = adapters
+        if local is not None:
+            match["local"] = bool(local)
     lang = "nl" if lang == "nl" else "en"
     return await save_rule(db, None, name=p["name"][lang], description=p["description"][lang], customer_id=customer_id,
                            enabled=True, trigger=p["trigger"], match=match, runbook_id=rb.id, params=p["params"],

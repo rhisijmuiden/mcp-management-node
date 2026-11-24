@@ -203,6 +203,35 @@ TEMPLATES: list[T] = [
         ],
     },
     {
+        "key": "restart_network_adapter",
+        "category": "remediation",
+        "name": {"en": "Restart a network adapter", "nl": "Netwerkadapter herstarten"},
+        "description": {
+            "en": "Read the network adapters, restart the one without link (Restart-NetAdapter on Windows, ip link "
+                  "down/up on Linux), wait a minute and check that the link is back. An adapter that is up or "
+                  "switched off on purpose is left alone.",
+            "nl": "Netwerkadapters uitlezen, de adapter zonder link herstarten (Restart-NetAdapter op Windows, ip link "
+                  "down/up op Linux), een minuut wachten en controleren dat de link terug is. Een adapter die up is of "
+                  "bewust is uitgeschakeld blijft ongemoeid.",
+        },
+        "params": [
+            {"name": "server", "label": {"en": "Machine", "nl": "Machine"}, "required": True},
+            {"name": "adapter", "label": {"en": "Network adapter (exact name)", "nl": "Netwerkadapter (exacte naam)"},
+             "required": True},
+        ],
+        "steps": [
+            {"id": "before", "kind": "tool", "tool": "list_network_adapters", "args": {"node": "{{params.server}}"},
+             "title": {"en": "Adapters before", "nl": "Adapters vooraf"}},
+            {"id": "restart", "kind": "tool", "tool": "restart_network_adapter",
+             "args": {"node": "{{params.server}}", "adapter": "{{params.adapter}}",
+                      "reason": "Runbook {{run.id}}: {{params.adapter}} has no link"},
+             "title": {"en": "Restart the adapter", "nl": "Adapter herstarten"}},
+            {"id": "wait", "kind": "wait", "minutes": 1, "title": {"en": "Wait a minute", "nl": "Een minuut wachten"}},
+            {"id": "after", "kind": "tool", "tool": "list_network_adapters", "args": {"node": "{{params.server}}"},
+             "title": {"en": "Adapters after", "nl": "Adapters achteraf"}},
+        ],
+    },
+    {
         "key": "update_agent",
         "category": "remediation",
         "name": {"en": "Update the agent", "nl": "Agent bijwerken"},

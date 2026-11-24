@@ -318,10 +318,10 @@ a manual step for the AI waits for `complete_runbook_step`. `save_runbook` creat
 the steps first).
 
 Automatic recovery (self-healing): rules link a known problem (an alert such as a stopped service, a full
-disk or an offline agent, or a finding of the nightly checks) to a runbook that Stackpilot runs by itself,
+disk, an offline agent or a network adapter without link, or a finding of the nightly checks) to a runbook that Stackpilot runs by itself,
 within the policy, with loop protection and an emergency stop. `get_remediation` shows the rules and what
 was fixed; `save_remediation_rule` adds one, `pause_remediation` is the emergency stop. Repair tools:
-`cleanup_disk` and `recover_agent`. A Proxmox VE node is never rebooted automatically.
+`cleanup_disk`, `recover_agent` and `restart_network_adapter` (see `list_network_adapters`). A Proxmox VE node is never rebooted automatically.
 
 Nodes and servers can be named by id or by name. Every call is written to the audit log with your token's name.
 Destructive tools need `confirm` set to the exact node name, or are marked destructive: ask the user
@@ -1580,7 +1580,10 @@ async def save_scheduled_task(name: str, kind: str, cron: str, targets: dict | N
     targets: {"scope": "all"|"environments"|"nodes"|"guests"|"tag", "environment_ids": [...],
     "node_ids": [...], "guests": [{"node_id": ..., "vmid": ...}], "tag": "...", "exclude_vmids": [...]}.
     options: {"snapshot": true, "rollback": true, "keep_snapshots": 3, "command": "...",
-    "run_on": "ct"|"node", "timeout": 3600}. mail_on: always, failure or never."""
+    "command_windows": "...", "run_on": "ct"|"node", "timeout": 3600}. For custom_command on
+    machines (run_on "node"), `command` is a bash script for Linux machines and `command_windows` a
+    PowerShell script for Windows servers and workstations (it runs as LocalSystem); a machine only
+    runs the script of its own OS. mail_on: always, failure or never."""
     from mmn.services import tasks
     from mmn.services.scheduler import reload_task_jobs
 
@@ -3412,6 +3415,50 @@ async def recover_agent(node: str, reason: str) -> dict:
 
 
 @tool("read", RO)
+async def list_network_adapters(node: str) -> dict:
+    """The physical network adapters of a machine (Windows or Linux) with their link state: up,
+    down (no link), disabled (switched off) or absent, plus description, speed and MAC address."""
+    from mmn.services import netwatch, nodes
+
+    try:
+        return _jsonable(await netwatch.adapters(node))
+    except nodes.NodeError as e:
+        raise ToolDenied(str(e)) from e
+    except Exception as e:
+        raise _agent_errors(e) from e
+
+
+@tool("services", WRITE)
+async def restart_network_adapter(node: str, adapter: str, reason: str, force: bool = False,
+                                  confirm: str | None = None) -> dict:
+    """Restart a network adapter that has no link (for example an uplink or X710 port that stayed
+    down after a switch reboot): Restart-NetAdapter on Windows, ip link down/up on Linux, then wait
+    up to a minute for the link. `adapter` is the exact name from list_network_adapters. An
+    adapter that is up, switched off or absent is left alone, unless `force` is true and `confirm`
+    equals the machine name (restarting an adapter that is up interrupts its traffic)."""
+    from mmn.services import netwatch, nodes
+
+    if not reason.strip():
+        raise ToolDenied("give a reason")
+    p = current_principal()
+    if force:
+        async with sessionmaker()() as db:
+            try:
+                n = await nodes.get_node(db, node)
+            except nodes.NodeError as e:
+                raise ToolDenied(str(e)) from e
+        if confirm != n.name:
+            raise ToolDenied(f"force restarts an adapter that may be in use: set confirm to the machine name '{n.name}'")
+    try:
+        return _jsonable(await netwatch.restart_adapter(node, adapter, force=force,
+                                                        requested_by=p.username if p else None))
+    except nodes.NodeError as e:
+        raise ToolDenied(str(e)) from e
+    except Exception as e:
+        raise _agent_errors(e) from e
+
+
+@tool("read", RO)
 async def get_remediation(customer: str | None = None, limit: int = 30) -> dict:
     """Automatic recovery: whether it is on or stopped (emergency stop), its limits, the rules
     (problem -> runbook, mode auto/approve/notify) and the latest attempts with their outcome
@@ -3449,12 +3496,15 @@ async def save_remediation_rule(name: str, trigger: str, match: dict[str, Any], 
                                 description: str | None = None) -> dict:
     """Create or change (`rule` = its id) an automatic recovery rule: when a problem shows up,
     Stackpilot runs `runbook` (id or exact name) within the policy. trigger "alert" with match
-    {"kinds": [offline|service|disk|storage|memory|cpu|smart|unifi|backup], "services": [units to
-    watch, for "service"], "machine": "web*", "machine_types": [server|workstation|proxmox]} or
+    {"kinds": [offline|service|network|disk|storage|memory|cpu|smart|unifi|backup], "services":
+    [units to watch, for "service"], "adapters": [names or descriptions with * ?, for "network";
+    empty = every wired physical adapter that was up], "local": true (network: the agent also
+    restarts the adapter itself when it cannot reach Stackpilot), "machine": "web*",
+    "machine_types": [server|workstation|proxmox]} or
     trigger "finding" with match {"codes": ["disk_full", "agent_old", ...]}. params fill in the
     runbook's parameters and may use {{machine.name}}, {{alert.detail.service}},
-    {{finding.params.x}} and {{customer.name}}. mode: auto, approve (every change asks an admin) or
-    notify (only report). Show the user the rule before saving."""
+    {{alert.detail.adapter}}, {{finding.params.x}} and {{customer.name}}. mode: auto, approve
+    (every change asks an admin) or notify (only report). Show the user the rule before saving."""
     from mmn.models import RemediationRule
     from mmn.services import nodes, remediation, runbooks
 
