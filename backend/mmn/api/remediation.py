@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from mmn.api.deps import current_user, require_admin
 from mmn.db import get_db
 from mmn.models import Alert, Node, RemediationAttempt, RemediationRule, RunbookRun, User
-from mmn.services import remediation, tenancy
+from mmn.services import netwatch, remediation, tenancy
 
 router = APIRouter(prefix="/api/remediation", tags=["remediation"])
 
@@ -48,7 +48,8 @@ async def get_status(db: AsyncSession = Depends(get_db), _: User = Depends(curre
             "rules_enabled": sum(1 for r in rules if r.enabled and _visible(r.customer_id)),
             "active": sum(1 for a in active if _visible(a.customer_id)),
             "alert_kinds": list(remediation.ALERT_KINDS), "finding_codes": list(remediation.FINDING_CODES),
-            "machine_types": list(remediation.MACHINE_TYPES), "modes": list(remediation.MODES)}
+            "machine_types": list(remediation.MACHINE_TYPES), "modes": list(remediation.MODES),
+            "network": await netwatch.status(db)}
 
 
 class SettingsBody(BaseModel):
@@ -198,6 +199,8 @@ class PresetBody(BaseModel):
     customer_id: str | None = None
     lang: str = "en"
     services: list[str] | None = None
+    adapters: list[str] | None = None
+    local: bool | None = None
 
 
 @router.post("/presets/{key}", status_code=201)
@@ -205,7 +208,8 @@ async def add_preset(key: str, body: PresetBody, db: AsyncSession = Depends(get_
                      admin: User = Depends(require_admin)):
     try:
         r = await remediation.add_preset(db, key, customer_id=body.customer_id, lang=body.lang, by=admin.username,
-                                         services=body.services)
+                                         services=body.services, adapters=body.adapters,
+                                         local=body.local)
     except remediation.RemediationError as e:
         raise _bad(e) from e
     await db.commit()
@@ -239,6 +243,7 @@ async def run_now(_: User = Depends(require_admin)):
     from mmn.services import monitoring
 
     checked = await remediation.probe_services(force=True)
+    adapters = await netwatch.probe(force=True)
     await monitoring.evaluate()
     res = await remediation.tick()
-    return {**res, "services_checked": checked}
+    return {**res, "services_checked": checked, "adapters_checked": adapters}

@@ -197,6 +197,12 @@ async def _remediation_job() -> None:
     except Exception:  # noqa: BLE001
         log.exception("service checks of automatic recovery failed")
     try:
+        from mmn.services import netwatch
+
+        await netwatch.probe()
+    except Exception:  # noqa: BLE001
+        log.exception("network checks of automatic recovery failed")
+    try:
         await remediation.tick()
     except Exception:  # noqa: BLE001
         log.exception("automatic recovery tick failed")

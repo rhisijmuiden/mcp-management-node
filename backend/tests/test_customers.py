@@ -12,7 +12,7 @@ async def _machine(env_id: str, name: str, kind: str = "linux", role: str = "ser
     from mmn.models import Node
 
     async with sessionmaker()() as db:
-        n = Node(environment_id=env_id, name=name, kind=kind, role=role, capabilities=[], info={}, metrics={},
+        n = Node(environment_id=env_id, name=name, kind=kind, role=role, capabilities=extra.pop("capabilities", []), info={}, metrics={},
                  updates=extra.pop("updates", {}), governor={}, **extra)
         db.add(n)
         await db.commit()

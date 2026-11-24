@@ -30,6 +30,7 @@ import (
 	"github.com/rhisijmuiden/stackpilot/agent/internal/governor"
 	"github.com/rhisijmuiden/stackpilot/agent/internal/httprelay"
 	"github.com/rhisijmuiden/stackpilot/agent/internal/logsearch"
+	"github.com/rhisijmuiden/stackpilot/agent/internal/netwatch"
 	"github.com/rhisijmuiden/stackpilot/agent/internal/ops"
 	"github.com/rhisijmuiden/stackpilot/agent/internal/pkgmgr"
 	"github.com/rhisijmuiden/stackpilot/agent/internal/proto"
@@ -83,6 +84,18 @@ type Agent struct {
 
 	exit     func(int)
 	inflight atomic.Int64 // requests being handled right now
+
+	offlineSince atomic.Int64 // unix nanoseconds since the last connection ended (0 = connected)
+	net          *netwatch.Watcher
+}
+
+// OfflineFor is how long the agent has been without a connection to Stackpilot.
+func (a *Agent) OfflineFor() time.Duration {
+	since := a.offlineSince.Load()
+	if since == 0 {
+		return 0
+	}
+	return time.Since(time.Unix(0, since))
 }
 
 // New loads the enrollment from disk.
@@ -111,17 +124,23 @@ func New(version string) (*Agent, error) {
 		return nil, errors.New("ca.crt does not match the pinned fingerprint")
 	}
 	tc := tlsutil.ClientConfig(cert, ca)
-	return &Agent{
+	a := &Agent{
 		Version: version, cfg: cfg, tls: tc,
 		http: &http.Client{Timeout: 10 * time.Minute, Transport: &http.Transport{TLSClientConfig: tc, Proxy: http.ProxyFromEnvironment}},
 		exit: os.Exit,
-	}, nil
+	}
+	a.offlineSince.Store(time.Now().UnixNano())
+	a.net = netwatch.New(a.OfflineFor)
+	return a, nil
 }
 
 // Run connects forever, with exponential backoff (1s .. 60s, jittered).
 func (a *Agent) Run(ctx context.Context) error {
 	a.applyStoredGovernor()
 	go a.updatesLoop(ctx)
+	if a.net != nil {
+		go a.net.Run(ctx)
+	}
 	backoff := time.Second
 	for {
 		start := time.Now()
@@ -171,10 +190,12 @@ func (a *Agent) session(ctx context.Context) error {
 	pending := a.pending
 	a.pending = nil
 	a.mu.Unlock()
+	a.offlineSince.Store(0)
 	defer func() {
 		a.mu.Lock()
 		a.out = nil
 		a.mu.Unlock()
+		a.offlineSince.Store(time.Now().UnixNano())
 	}()
 
 	errc := make(chan error, 3)
@@ -283,13 +304,14 @@ func (a *Agent) send(m proto.Envelope) {
 }
 
 func (a *Agent) capabilities() []string {
-	caps := []string{"metrics", "selfupdate", "exec", "files", "logsearch", "diagnose", "copy", "http"}
+	caps := []string{"metrics", "selfupdate", "exec", "files", "logsearch", "diagnose", "copy", "http", "netwatch"}
 	if pkgmgr.Available() {
 		caps = append(caps, "updates", "update-"+pkgmgr.Name())
 	}
 	switch runtime.GOOS {
 	case "windows":
-		caps = append(caps, "reboot", "logs", "eventlog", "services", "packages", "powershell", "terminal", "scripts")
+		caps = append(caps, "reboot", "logs", "eventlog", "services", "packages", "powershell", "terminal", "scripts",
+			"ps-scripts")
 		if apt.Available() {
 			caps = append(caps, "apt")
 		}
@@ -652,6 +674,12 @@ func (a *Agent) handle(ctx context.Context, m proto.Envelope) {
 			a.sendGuests(context.Background())
 			return r, err
 		})
+	case "netwatch.status", "netwatch.apply", "netwatch.ack":
+		if a.net == nil {
+			a.reply(m, nil, errors.New("the network watchdog is not running"))
+			return
+		}
+		a.netwatch(m)
 	case "file.fetch":
 		var q fetchRequest
 		if err := json.Unmarshal(m.Params, &q); err != nil {
@@ -770,5 +798,28 @@ func (a *Agent) handle(ctx context.Context, m proto.Envelope) {
 		a.reply(m, res, err)
 	default:
 		a.reply(m, nil, fmt.Errorf("unknown method %q", m.Method))
+	}
+}
+
+func (a *Agent) netwatch(m proto.Envelope) {
+	switch m.Method {
+	case "netwatch.status":
+		a.reply(m, a.net.Status(), nil)
+	case "netwatch.apply":
+		var c netwatch.Config
+		if err := json.Unmarshal(m.Params, &c); err != nil {
+			a.reply(m, nil, err)
+			return
+		}
+		a.reply(m, a.net.Apply(c), nil)
+	case "netwatch.ack":
+		var q struct {
+			Until time.Time `json:"until"`
+		}
+		if err := json.Unmarshal(m.Params, &q); err != nil {
+			a.reply(m, nil, err)
+			return
+		}
+		a.reply(m, map[string]any{"removed": a.net.Ack(q.Until)}, nil)
 	}
 }

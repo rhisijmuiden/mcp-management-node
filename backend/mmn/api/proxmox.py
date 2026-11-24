@@ -48,9 +48,9 @@ async def _node(db: AsyncSession, node_id: str) -> Node:
 @router.get("/api/proxmox/overview")
 async def overview(environment_id: str | None = None, db: AsyncSession = Depends(get_db),
                    _: User = Depends(current_user), kind: str | None = "proxmox"):
-    """Proxmox VE nodes only (standalone servers are in /api/servers/overview); kind=None for all."""
+    """Proxmox VE nodes only (standalone servers are in /api/servers/overview); kind=all for every machine."""
     envs = await nodes.list_environments(db)
-    all_nodes = [n for n in await nodes.list_nodes(db, environment_id) if kind is None or n.kind == kind]
+    all_nodes = [n for n in await nodes.list_nodes(db, environment_id) if kind in (None, "", "all") or n.kind == kind]
     out_nodes = [nodes.node_summary(n) for n in all_nodes]
     return {
         "environments": [nodes.env_out(e) for e in envs],

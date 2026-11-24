@@ -4,7 +4,7 @@ import { Fragment, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
-import { useAllNodes } from "@/components/guests";
+import { useAllMachines, useAllNodes } from "@/components/guests";
 import { JobBadge, JobView, Output } from "@/components/jobs";
 import { useEnvironments } from "@/components/proxmox";
 import { Button } from "@/components/ui/button";
@@ -51,8 +51,12 @@ function TaskDialog({ draft, onClose, timezone }: { draft: Draft; onClose: () =>
   const { t } = useTranslation();
   const qc = useQueryClient();
   const envs = useEnvironments();
-  const nodes = useAllNodes();
   const [d, setD] = useState<Draft>(draft);
+  const pveNodes = useAllNodes();
+  // A custom command on machines also runs on Linux and Windows servers and workstations.
+  const anyMachine = d.kind === "custom_command" && d.options.run_on === "node";
+  const machines = useAllMachines(anyMachine);
+  const nodes = anyMachine ? machines : pveNodes;
   const set = (p: Partial<Draft>) => setD((o) => ({ ...o, ...p }));
   const setT = (p: Partial<TaskTargets>) => setD((o) => ({ ...o, targets: { ...o.targets, ...p } }));
   const setO = (p: Partial<TaskOptions>) => setD((o) => ({ ...o, options: { ...o.options, ...p } }));
@@ -75,7 +79,7 @@ function TaskDialog({ draft, onClose, timezone }: { draft: Draft; onClose: () =>
         <Button onClick={() => preview.mutate()} loading={preview.isPending}><Eye /> {t("tasks.preview")}</Button>
         <div className="flex-1" />
         <Button onClick={onClose}>{t("common.cancel")}</Button>
-        <Button variant="primary" loading={save.isPending} disabled={!d.cron || (d.kind === "custom_command" && !d.options.command)} onClick={() => save.mutate()}>{t("common.save")}</Button>
+        <Button variant="primary" loading={save.isPending} disabled={!d.cron || (d.kind === "custom_command" && !d.options.command && (d.options.run_on === "ct" || !d.options.command_windows))} onClick={() => save.mutate()}>{t("common.save")}</Button>
       </>}>
       <div className="space-y-5">
         <div className="grid gap-3 sm:grid-cols-2">
@@ -107,7 +111,13 @@ function TaskDialog({ draft, onClose, timezone }: { draft: Draft; onClose: () =>
                 <option value="ct">{t("tasks.run_on_ct")}</option><option value="node">{t("tasks.run_on_node")}</option>
               </Select>
             </Field>
-            <Field label={t("tasks.command")} hint={t("tasks.command_hint")}><Textarea rows={5} className="mono text-[12px]" value={d.options.command ?? ""} onChange={(e) => setO({ command: e.target.value })} placeholder={"apt-get -y autoremove\nsystemctl restart myapp"} /></Field>
+            <Field label={d.options.run_on === "node" ? t("tasks.command_linux") : t("tasks.command")} hint={t("tasks.command_hint")}><Textarea rows={5} className="mono text-[12px]" value={d.options.command ?? ""} onChange={(e) => setO({ command: e.target.value })} placeholder={"apt-get -y autoremove\nsystemctl restart myapp"} /></Field>
+            {d.options.run_on === "node" && (
+              <Field label={t("tasks.command_windows")} hint={t("tasks.command_windows_hint")}>
+                <Textarea rows={5} className="mono text-[12px]" value={d.options.command_windows ?? ""} onChange={(e) => setO({ command_windows: e.target.value })}
+                  placeholder={"Get-NetAdapter -Physical | Where-Object Status -eq 'Disconnected' |\n  Restart-NetAdapter -Confirm:$false"} />
+              </Field>
+            )}
           </div>
         )}
 
@@ -123,7 +133,7 @@ function TaskDialog({ draft, onClose, timezone }: { draft: Draft; onClose: () =>
           )}
           {d.targets.scope === "nodes" && (
             <div className="grid gap-2 sm:grid-cols-3">
-              {nodes.data?.filter((n) => n.capabilities.includes("guests") || !onGuests).map((n) => <Checkbox key={n.id} checked={d.targets.node_ids.includes(n.id)} onCheckedChange={() => setT({ node_ids: toggle(d.targets.node_ids, n.id) })} label={n.name} description={n.environment_name} />)}
+              {nodes.data?.filter((n) => n.capabilities.includes("guests") || !onGuests).map((n) => <Checkbox key={n.id} checked={d.targets.node_ids.includes(n.id)} onCheckedChange={() => setT({ node_ids: toggle(d.targets.node_ids, n.id) })} label={n.name} description={anyMachine ? `${n.environment_name ?? ""} · ${n.kind}` : n.environment_name} />)}
             </div>
           )}
           {d.targets.scope === "guests" && (guests.isLoading ? <Spinner /> : (

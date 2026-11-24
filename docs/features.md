@@ -399,14 +399,22 @@ Operations → **Automatic recovery**: known problems that Stackpilot fixes by i
   certificate that expires, ...). Narrow it down with a machine name pattern (`web*`) and machine types. For stopped
   services, the rule names the services Stackpilot watches (systemd units or Windows services, checked every few
   minutes); a watched service that is down becomes a normal monitoring alert.
+- **Network adapters without link**: a network rule watches the physical wired adapters of its machines, all of
+  them or the ones you name (`*X710*`, `Ethernet 2`, `eno1`; names or descriptions). An adapter that was up before
+  (or that you name exactly) and has no link becomes an alert; one that is switched off or never had a link is left
+  alone. The recommended rule restarts it (`Restart-NetAdapter` on Windows, `ip link` down/up on Linux) and checks
+  that the link is back. With the **local fallback** the agent does this itself when it cannot reach Stackpilot
+  (often because of that very link): after the rule's wait, with the same cooldown and maximum attempts. It reports
+  what it did when it is back, as an attempt "repaired by the agent itself". Needs agent v0.15.0 or later; the page
+  lists the machines whose agent is too old.
 - The rule fills in the runbook's **parameters** with placeholders: `{{machine.name}}`, `{{alert.detail.service}}`,
-  `{{alert.message}}`, `{{finding.params.<x>}}` and `{{customer.name}}`.
+  `{{alert.detail.adapter}}`, `{{alert.message}}`, `{{finding.params.<x>}}` and `{{customer.name}}`.
 - **Mode**: *automatic* runs within the policy (what the policy allows runs right away, the rest asks approval),
   *with approval* asks an admin for every step that changes something, *report only* changes nothing and reports
   which runbook would run.
 - **Guardrails**: every step goes through the AI gateway (destructive = approval, outside the maintenance window =
   approval, pauses). On top of that destructive steps always ask an admin, a Proxmox VE node is never rebooted, and
-  automatic recovery never deletes, restores, rolls back or changes the network.
+  automatic recovery never deletes, restores, rolls back or changes the network configuration.
 - **Verification**: after the run the alert has to be gone within a few minutes (settings), otherwise the attempt
   counts as failed. A finding is checked again the next night.
 - **Loop protection**: per problem a wait before acting, a cooldown between attempts and a maximum number of attempts
@@ -415,14 +423,14 @@ Operations → **Automatic recovery**: known problems that Stackpilot fixes by i
 - **Emergency stop**: one button stops all automatic recovery and cancels the recoveries that are busy, with their
   approval requests. Resume it when the cause is clear.
 - **Recommended rules** add a ready rule with its runbook (from the templates): restart a stopped service, free disk
-  space, bring an offline agent back (starts the VM or container, or restarts the agent inside it) and update
-  outdated agents.
+  space, bring an offline agent back (starts the VM or container, or restarts the agent inside it), restart a network
+  adapter without link and update outdated agents.
 
 Every attempt is on the Activity tab with the problem, the rule, a link to the runbook run and the outcome, and in the
 audit log. Notifications go to the app and by mail (every outcome, only failures, or never); the morning summary and
 the monthly report show what was fixed. Over MCP: `get_remediation`, `save_remediation_rule`,
-`delete_remediation_rule`, `pause_remediation` (the emergency stop), and the repair tools `cleanup_disk` and
-`recover_agent`.
+`delete_remediation_rule`, `pause_remediation` (the emergency stop), and the repair tools `cleanup_disk`,
+`recover_agent` and `restart_network_adapter` (with `list_network_adapters`).
 
 ### Monitoring
 
@@ -447,6 +455,11 @@ with `check_cve`.
 Run community-script updates or `apt-get update && full-upgrade` in containers, node updates, the template sync or
 your own command on a cron schedule (time zone configurable), with a **snapshot first, rollback on failure** and a
 **report by mail**. Every run is kept with its output per target.
+
+A custom command on machines has a **bash script for Linux** and/or a **PowerShell script for Windows** servers and
+workstations; every machine runs the script of its own OS and machines without one are not targets. On Windows
+(agent v0.15.0 or later) the script runs as a .ps1 file under the agent's account (LocalSystem), with its output in
+the run; `exit 99` means "not applicable here" and marks the machine as skipped.
 
 ### Deployments from GitHub
 

@@ -595,6 +595,7 @@ export interface TaskOptions {
   rollback: boolean;
   keep_snapshots: number;
   command: string | null;
+  command_windows?: string | null;
   run_on: "ct" | "node";
   timeout: number;
   parallel_nodes: number;

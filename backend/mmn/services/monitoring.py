@@ -334,6 +334,9 @@ async def _conditions(db: AsyncSession, cfg: MonitoringSettings) -> dict[str, di
     from mmn.services import remediation
 
     want.update(await remediation.service_conditions(db, now))
+    from mmn.services import netwatch
+
+    want.update(await netwatch.conditions(db, now))
     return want
 
 

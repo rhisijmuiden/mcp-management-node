@@ -56,6 +56,8 @@ OPERATE_TOOLS = {
     "run_nightly_checks", "run_runbook", "complete_runbook_step", "cancel_runbook_run",
     # Phase 14: safe repair actions that automatic recovery uses, and its emergency stop.
     "cleanup_disk", "recover_agent", "pause_remediation",
+    # Phase 15: restarting a network adapter that has no link (one that is up needs force + confirm).
+    "restart_network_adapter",
 }
 
 FINAL = {"executed", "failed", "rejected", "expired"}

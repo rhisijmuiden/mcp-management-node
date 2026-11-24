@@ -22,6 +22,7 @@ Stackpilot is built in phases. Each phase is one pull request and one minor rele
 | 12 | v0.12.0 | Nightly checks and the morning summary |
 | 13 | v0.13.0 | Runbooks |
 | 14 | v0.14.0 | Automatic recovery (self-healing) |
+| 15 | v0.15.0 | Network recovery and PowerShell scripts on Windows |
 
 ## What each phase added
 
@@ -145,5 +146,18 @@ stopped service, free disk space, bring an offline agent back, update outdated a
 the app and by mail; results in the morning summary and the monthly report. New runbook templates "Free disk space",
 "Bring an offline agent back" and "Update the agent"; new MCP tools `get_remediation`, `save_remediation_rule`,
 `delete_remediation_rule`, `pause_remediation`, `cleanup_disk` and `recover_agent`.
+
+**Phase 15** added network recovery and scripts on Windows. A new alert kind "network adapter without link": on
+machines that a network rule watches, Stackpilot reads the physical wired adapters every few minutes
+(`Get-NetAdapter` on Windows, `/sys/class/net` on Linux) and alerts when one that was up before has no link (an
+adapter that is switched off is left alone). The new recommended rule and runbook template "Restart a network
+adapter" restart it (`Restart-NetAdapter`, or `ip link` down/up) and check that the link is back. With the **local
+fallback** the agent (v0.15.0) also does this itself when it cannot reach Stackpilot, which is often because of that
+very link: after the rule's wait, with its cooldown and maximum per 24 hours; it reports what it did when it is back,
+as a recovery attempt "repaired by the agent itself". This came from a Hyper-V host whose X710 ports did not come
+back after a switch reboot. Scheduled tasks with a custom command now also run on Windows servers and workstations:
+a PowerShell script next to the bash script, each machine runs the one of its OS (agent v0.15.0 runs it as a .ps1
+file under LocalSystem). The Windows agent now limits `%ProgramData%\mmn-agent` to SYSTEM and administrators. New
+MCP tools `list_network_adapters` and `restart_network_adapter`.
 
 Bug fix releases in between (v0.2.1, v0.6.1, v0.6.2, v0.7.1) are listed on the releases page.

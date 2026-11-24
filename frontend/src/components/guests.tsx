@@ -11,6 +11,10 @@ import { cn } from "@/lib/utils";
 export const useAllNodes = () =>
   useQuery({ queryKey: ["overview", "all"], queryFn: () => get<Overview>("api/proxmox/overview"), refetchInterval: 30_000, select: (d) => d.nodes });
 
+/** Every machine with an agent: Proxmox VE nodes, Linux and Windows servers and workstations. */
+export const useAllMachines = (enabled = true) =>
+  useQuery({ queryKey: ["overview", "machines"], queryFn: () => get<Overview>("api/proxmox/overview?kind=all"), enabled, refetchInterval: 30_000, select: (d) => d.nodes });
+
 export function GuestIcon({ type, className }: { type: Guest["type"]; className?: string }) {
   const I = type === "qemu" ? Monitor : Box;
   return <I className={cn("size-4 text-muted", className)} />;

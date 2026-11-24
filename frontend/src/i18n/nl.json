@@ -1336,7 +1336,10 @@
     "count_success": "Gelukt",
     "count_failed": "Mislukt",
     "count_skipped": "Overgeslagen",
-    "run_not_found": "Deze run is niet gevonden."
+    "run_not_found": "Deze run is niet gevonden.",
+    "command_linux": "Script voor Linux (bash)",
+    "command_windows": "Script voor Windows (PowerShell)",
+    "command_windows_hint": "Draait op Windows-servers en -werkplekken als PowerShell-script onder het agentaccount (LocalSystem). Elke machine draait het script van zijn eigen OS; een machine zonder script wordt overgeslagen. Vereist agent v0.15.0 of nieuwer."
   },
   "net": {
     "title": "Netwerk",
@@ -1756,7 +1759,8 @@
     "th_unifi_hint": "Waarschuw als een UniFi-apparaat offline is of een UniFi-koppeling niet bereikbaar is.",
     "kind_unifi": "UniFi",
     "kind_backup": "Back-up",
-    "kind_service": "Service"
+    "kind_service": "Service",
+    "kind_network": "Netwerk"
   },
   "dep": {
     "title": "Deployments",
@@ -3849,7 +3853,8 @@
     "open_run": "Uitvoering openen",
     "source": {
       "alert": "monitoring-alert",
-      "finding": "nachtelijke checks"
+      "finding": "nachtelijke checks",
+      "local": "Door de agent zelf hersteld"
     },
     "status": {
       "running": "Bezig",
@@ -3871,7 +3876,9 @@
       "run_gone": "De runbook-uitvoering bestaat niet meer.",
       "cancelled": "Geannuleerd: {{error}}",
       "run_failed": "De uitvoering is mislukt: {{error}}",
-      "not_fixed": "De uitvoering is klaar maar het probleem was er na {{minutes}} minuten nog."
+      "not_fixed": "De uitvoering is klaar maar het probleem was er na {{minutes}} minuten nog.",
+      "local_ok": "De agent heeft {{adapter}} zelf herstart toen Stackpilot hem niet bereikte; de link is terug.",
+      "local_failed": "De agent heeft {{adapter}} zelf herstart maar de link kwam niet terug ({{after}}). {{error}}"
     },
     "rules_title": "Regels",
     "rules_desc": "Als dit probleem optreedt, start deze runbook. Regels van een klant gaan voor regels voor alle klanten.",
@@ -3923,6 +3930,7 @@
     "kind": {
       "offline": "Agent offline",
       "service": "Service gestopt",
+      "network": "Netwerkadapter zonder link",
       "disk": "Schijf vol",
       "storage": "Opslag vol",
       "memory": "Geheugen hoog",
@@ -3995,6 +4003,12 @@
       "notified": "Automatisch herstel zou ingrijpen op {{target}} ({{rule}})",
       "paused": "Automatisch herstel is gestopt: {{note}}",
       "open": "Openen"
-    }
+    },
+    "adapters": "Netwerkadapters",
+    "adapters_hint": "Namen of omschrijvingen, gescheiden door komma's, met * en ? (bijvoorbeeld *X710*). Leeg: elke bekabelde fysieke adapter die eerder up was.",
+    "local": "Ook op de machine zelf herstellen",
+    "local_hint": "Als de agent Stackpilot niet bereikt (vaak juist door deze link), herstart hij de adapter na de wachttijd zelf, met dezelfde afkoeltijd en het maximum aantal pogingen. Vereist agent v0.15.0 of nieuwer.",
+    "local_short": "lokale terugval",
+    "local_outdated": "De lokale netwerkterugval vereist agent v0.15.0 of nieuwer. Werk de agent bij op: {{machines}}."
   }
 }

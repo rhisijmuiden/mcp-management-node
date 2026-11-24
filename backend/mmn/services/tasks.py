@@ -1,6 +1,10 @@
 """Scheduled tasks: updates inside containers (community-script ``update`` or apt/apk/dnf),
 package updates on nodes, the template sync and custom commands.
 
+A custom command on machines has a shell script for Linux (bash) and/or a PowerShell script for
+Windows (phase 15: agents of v0.15.0 and later run it as a .ps1 file under the agent's account,
+LocalSystem). Every machine gets the script of its own OS; a machine without one is not a target.
+
 Each run can take a snapshot of every container first, roll it back when the step fails, keeps
 only the newest few of its own snapshots, and mails a report. A run has one result per target.
 """
@@ -30,6 +34,7 @@ KINDS = ("ct_community_update", "ct_apt_upgrade", "node_updates", "template_sync
 GUEST_KINDS = ("ct_community_update", "ct_apt_upgrade")
 SNAP_PREFIX = {"ct_community_update": "mmn-upd", "ct_apt_upgrade": "mmn-apt", "custom_command": "mmn-cmd"}
 SKIP_CODE = 99  # a script exits with this to mean "not applicable here"
+PS_CAPABILITY = "ps-scripts"  # Windows agents that run PowerShell scripts as jobs (v0.15.0+)
 
 
 class TargetsIn(BaseModel):
@@ -46,6 +51,7 @@ class OptionsIn(BaseModel):
     rollback: bool = True
     keep_snapshots: int = Field(default=3, ge=1, le=50)
     command: str | None = Field(default=None, max_length=20000)
+    command_windows: str | None = Field(default=None, max_length=20000)  # PowerShell, for Windows machines
     run_on: Literal["ct", "node"] = "ct"
     timeout: int = Field(default=3600, ge=60, le=6 * 3600)
     parallel_nodes: int = Field(default=4, ge=1, le=50)
@@ -90,8 +96,12 @@ def run_out(r: TaskRun) -> dict[str, Any]:
 
 
 def _validate(body: TaskIn) -> None:
-    if body.kind == "custom_command" and not (body.options.command or "").strip():
-        raise NodeError("enter the command to run")
+    if body.kind == "custom_command":
+        sh, ps = (body.options.command or "").strip(), (body.options.command_windows or "").strip()
+        if body.options.run_on == "ct" and not sh:
+            raise NodeError("enter the command to run")
+        if not sh and not ps:
+            raise NodeError("enter the script for Linux, for Windows or both")
     if body.kind in GUEST_KINDS and body.targets.scope == "nodes" and not body.targets.node_ids:
         raise NodeError("choose at least one node")
     if body.targets.scope == "tag" and not body.targets.tag:
@@ -150,9 +160,18 @@ async def resolve_targets(db: AsyncSession, kind: str, targets: dict[str, Any], 
 
     guest_level = kind in GUEST_KINDS or (kind == "custom_command" and options.get("run_on", "ct") == "ct")
     if not guest_level:
-        return [{"kind": "node", "node_id": n.id, "node": n.name, "label": n.name}
-                for n in all_nodes if node_ok(n) and (kind != "node_updates" or "apt" in (n.capabilities or [])
-                                                     or not n.capabilities)]
+        has_sh = bool((options.get("command") or "").strip())
+        has_ps = bool((options.get("command_windows") or "").strip())
+
+        def script_ok(n: Node) -> bool:
+            # A custom command runs on the machines that have a script for their OS.
+            if kind != "custom_command":
+                return True
+            return has_ps if n.kind == "windows" else has_sh
+
+        return [{"kind": "node", "node_id": n.id, "node": n.name, "os": n.kind, "label": n.name}
+                for n in all_nodes if node_ok(n) and script_ok(n)
+                and (kind != "node_updates" or "apt" in (n.capabilities or []) or not n.capabilities)]
     out = []
     wanted = {(str(g.get("node_id")), int(g.get("vmid") or 0)) for g in t.guests}
     for n in all_nodes:
@@ -318,8 +337,17 @@ async def _node_target(task: ScheduledTask, tg: dict[str, Any], requested_by: st
             row.update(job_id=job.id, output=await _job_tail(job.id), remaining=(result or {}).get("remaining"),
                        reboot_required=(result or {}).get("reboot_required"))
         else:
-            job = await guests.script(tg["node_id"], "task.custom_command", opts.command or "", timeout=opts.timeout,
-                                      label={"task": task.name}, **who)
+            windows = tg.get("os") == "windows"
+            if windows:
+                async with sessionmaker()() as db:
+                    n = await db.get(Node, tg["node_id"])
+                    caps = list(n.capabilities or []) if n else []
+                if PS_CAPABILITY not in caps:
+                    return {**row, "status": "skipped",
+                            "error": "the agent is too old to run PowerShell scripts: update it to v0.15.0 or later"}
+            body = (opts.command_windows if windows else opts.command) or ""
+            job = await guests.script(tg["node_id"], "task.custom_command", body, timeout=opts.timeout,
+                                      label={"task": task.name, "shell": "powershell" if windows else "bash"}, **who)
             status, result, err = await guests.run_and_wait(job, opts.timeout + 300)
             row.update(job_id=job.id, output=await _job_tail(job.id))
         if status == "success":

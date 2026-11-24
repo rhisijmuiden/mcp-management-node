@@ -49,8 +49,11 @@ interface Status {
   alert_kinds: string[];
   finding_codes: string[];
   machine_types: string[];
+  network?: { local_agents: number; needs_agent_update: string[] };
 }
-interface Match { kinds?: string[]; services?: string[]; codes?: string[]; machine?: string; machine_types?: string[]; min_severity?: string }
+interface Match { kinds?: string[]; services?: string[]; adapters?: string[]; local?: boolean; codes?: string[]; machine?: string; machine_types?: string[]; min_severity?: string }
+
+const splitList = (v: string) => v.split(",").map((x) => x.trim()).filter(Boolean);
 interface Rule {
   id: string;
   name: string;
@@ -250,7 +253,8 @@ function ruleSummary(r: Rule, t: (k: string, o?: Record<string, unknown>) => str
   const m = r.match || {};
   if (r.trigger === "alert") {
     const kinds = (m.kinds ?? []).map((k) => t(`rem.kind.${k}`)).join(", ");
-    return m.services?.length ? `${kinds}: ${m.services.join(", ")}` : kinds;
+    const extra = [...(m.services ?? []), ...(m.adapters ?? [])];
+    return (extra.length ? `${kinds}: ${extra.join(", ")}` : kinds) + (m.local ? ` · ${t("rem.local_short")}` : "");
   }
   return (m.codes ?? []).map((c) => t(`rem.code.${c}`, { defaultValue: c })).join(", ");
 }
@@ -275,8 +279,10 @@ function Rules({ admin, status }: { admin: boolean; status: Status }) {
   });
   const usedPresets = new Set((rules.data ?? []).filter((r) => (r.customer_id ?? "") === (customerId ?? "")).map((r) => r.preset));
 
+  const outdated = status.network?.needs_agent_update ?? [];
   return (
     <div className="space-y-5">
+      {outdated.length > 0 && <Alert tone="warning">{t("rem.local_outdated", { machines: outdated.join(", ") })}</Alert>}
       <Card>
         <CardHeader icon={<ShieldCheck />} title={t("rem.rules_title")} description={t("rem.rules_desc")}
           action={admin && <Button variant="primary" onClick={() => setEdit("new")}><Plus /> {t("rem.add_rule")}</Button>} />
@@ -335,10 +341,14 @@ function PresetCard({ p, used, customerId }: { p: Preset; used: boolean; custome
   const invalidate = useInvalidate();
   const qc = useQueryClient();
   const [services, setServices] = useState((p.match.services ?? []).join(", "));
+  const [adapters, setAdapters] = useState((p.match.adapters ?? []).join(", "));
+  const [local, setLocal] = useState(!!p.match.local);
+  const network = !!p.match.kinds?.includes("network");
   const add = useMutation({
     mutationFn: () => post<Rule>(`api/remediation/presets/${p.key}`, {
       customer_id: customerId, lang: i18n.language,
       services: p.match.kinds?.includes("service") ? services.split(/[\s,]+/).filter(Boolean) : null,
+      adapters: network ? splitList(adapters) : null, local: network ? local : null,
     }),
     onSuccess: () => { invalidate(); qc.invalidateQueries({ queryKey: ["runbooks"] }); toast.success(t("rem.preset_added", { name: p.name })); },
     onError: (e) => toast.error(errorMessage(e, t)),
@@ -351,6 +361,14 @@ function PresetCard({ p, used, customerId }: { p: Preset; used: boolean; custome
         <Field label={t("rem.services")} hint={t("rem.services_hint")} className="mt-3">
           <Input value={services} onChange={(e) => setServices(e.target.value)} placeholder="nginx, postgresql" />
         </Field>
+      )}
+      {network && (
+        <>
+          <Field label={t("rem.adapters")} hint={t("rem.adapters_hint")} className="mt-3">
+            <Input value={adapters} onChange={(e) => setAdapters(e.target.value)} placeholder="*X710*, Ethernet 2, eno1" />
+          </Field>
+          <div className="mt-3"><Checkbox checked={local} onCheckedChange={setLocal} label={t("rem.local")} description={t("rem.local_hint")} /></div>
+        </>
       )}
       <div className="mt-3 flex items-center justify-between gap-2">
         <span className="text-xs text-muted">{customerId ? t("rem.preset_for_customer") : t("rem.preset_for_all")}</span>
@@ -369,7 +387,7 @@ function bodyOf(r: Rule) {
 }
 
 const PLACEHOLDERS: Record<Trigger, string[]> = {
-  alert: ["{{machine.name}}", "{{alert.detail.service}}", "{{alert.message}}", "{{customer.name}}"],
+  alert: ["{{machine.name}}", "{{alert.detail.service}}", "{{alert.detail.adapter}}", "{{alert.message}}", "{{customer.name}}"],
   finding: ["{{machine.name}}", "{{finding.target}}", "{{finding.params.disk}}", "{{customer.name}}"],
 };
 
@@ -385,6 +403,7 @@ function RuleDialog({ rule, status, onClose }: { rule: Rule | null; status: Stat
     mode: "auto" as Mode, delay_minutes: 5, cooldown_minutes: 30, max_attempts: 3,
   });
   const [servicesText, setServicesText] = useState((f.match.services ?? []).join(", "));
+  const [adaptersText, setAdaptersText] = useState((f.match.adapters ?? []).join(", "));
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((x) => ({ ...x, [k]: v }));
   const setMatch = (m: Partial<Match>) => setF((x) => ({ ...x, match: { ...x.match, ...m } }));
   const rbList = useMemo(() => (runbooks.data ?? []).filter((r) => r.enabled && (r.customer_id === null || r.customer_id === f.customer_id))
@@ -396,7 +415,7 @@ function RuleDialog({ rule, status, onClose }: { rule: Rule | null; status: Stat
     setF((x) => {
       const p: Record<string, string> = {};
       for (const prm of rb.params) {
-        p[prm.name] = x.params[prm.name] ?? (prm.name === "server" || prm.name === "node" ? "{{machine.name}}" : prm.name === "service" || prm.name === "unit" ? "{{alert.detail.service}}" : "");
+        p[prm.name] = x.params[prm.name] ?? (prm.name === "server" || prm.name === "node" ? "{{machine.name}}" : prm.name === "service" || prm.name === "unit" ? "{{alert.detail.service}}" : prm.name === "adapter" ? "{{alert.detail.adapter}}" : "");
       }
       return { ...x, params: p };
     });
@@ -404,8 +423,9 @@ function RuleDialog({ rule, status, onClose }: { rule: Rule | null; status: Stat
   const toggleIn = (list: string[] | undefined, v: string) => (list ?? []).includes(v) ? (list ?? []).filter((x) => x !== v) : [...(list ?? []), v];
   const save = useMutation({
     mutationFn: () => {
-      const match: Match = { ...f.match, services: servicesText.split(/[\s,]+/).filter(Boolean) };
-      if (f.trigger === "finding") { delete match.kinds; delete match.services; } else delete match.codes;
+      const match: Match = { ...f.match, services: servicesText.split(/[\s,]+/).filter(Boolean), adapters: splitList(adaptersText) };
+      if (!(match.kinds ?? []).includes("network")) { delete match.adapters; delete match.local; }
+      if (f.trigger === "finding") { delete match.kinds; delete match.services; delete match.adapters; delete match.local; } else delete match.codes;
       const body = { ...f, match, params: Object.fromEntries(Object.entries(f.params).filter(([, v]) => v !== "")) };
       return rule ? put<Rule>(`api/remediation/rules/${rule.id}`, body) : post<Rule>("api/remediation/rules", body);
     },
@@ -441,6 +461,14 @@ function RuleDialog({ rule, status, onClose }: { rule: Rule | null; status: Stat
             <Field label={t("rem.services")} hint={t("rem.services_hint")} className="mt-3">
               <Input value={servicesText} onChange={(e) => setServicesText(e.target.value)} placeholder="nginx, postgresql, Spooler" />
             </Field>
+          )}
+          {f.trigger === "alert" && (f.match.kinds ?? []).includes("network") && (
+            <div className="mt-3 space-y-3">
+              <Field label={t("rem.adapters")} hint={t("rem.adapters_hint")}>
+                <Input value={adaptersText} onChange={(e) => setAdaptersText(e.target.value)} placeholder="*X710*, Ethernet 2, eno1" />
+              </Field>
+              <Checkbox checked={!!f.match.local} onCheckedChange={(v) => setMatch({ local: v })} label={t("rem.local")} description={t("rem.local_hint")} />
+            </div>
           )}
           <div className="mt-3 grid gap-4 sm:grid-cols-2">
             <Field label={t("rem.f_machine")} hint={t("rem.f_machine_hint")}><Input value={f.match.machine ?? ""} onChange={(e) => setMatch({ machine: e.target.value })} placeholder="web*, db01" /></Field>

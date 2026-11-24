@@ -116,6 +116,12 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "notify_mail": "failure",  # always | failure | never
         "mail_to": "",  # empty: every admin with an email address
     },
+    "netwatch": {
+        # Phase 15: network adapters that automatic recovery watches (see services/netwatch.py).
+        "seen_up": {},  # {node id: {adapter: last time it was up}}
+        "applied": {},  # {node id: hash of the watchdog configuration the agent has}
+        "unsupported": [],  # machines with a local-fallback rule whose agent is too old
+    },
     "proxy": {
         "mode": "direct",  # direct | proxy
         "trusted_proxies": [],
