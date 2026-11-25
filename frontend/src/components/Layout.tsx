@@ -48,7 +48,7 @@ import {
   ShieldHalf,
   Wrench,
   Sunrise,
-  BookOpenCheck, HeartPulse, Radar, CloudCog, LifeBuoy, BookText, LockKeyhole, Award, Flame, Waypoints,
+  BookOpenCheck, HeartPulse, Radar, CloudCog, LifeBuoy, BookText, LockKeyhole, Award, Flame, Waypoints, Wallet,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -240,6 +240,12 @@ export function Layout() {
   });
   const certBadge = (netsec.data?.certificates.expired ?? 0) + (netsec.data?.certificates.critical ?? 0);
 
+  const costBadge = useQuery({
+    queryKey: ["costs", "badge"],
+    queryFn: () => get<{ attention: number }>("api/costs/badge"),
+    refetchInterval: 300_000,
+  });
+
   const ticketCounts = useQuery({
     queryKey: ["ticket-counts"],
     queryFn: () => get<{ needs_reply: number }>("api/tickets/counts"),
@@ -303,6 +309,7 @@ export function Layout() {
         { to: "/tickets", icon: <LifeBuoy />, label: t("nav.tickets"), badge: ticketCounts.data?.needs_reply || undefined },
         { to: "/docs", icon: <BookText />, label: t("nav.docs") },
         { to: "/vault", icon: <LockKeyhole />, label: t("nav.vault") },
+        { to: "/costs/overview", icon: <Wallet />, label: t("nav.costs"), badge: costBadge.data?.attention || undefined },
         { to: "/monitoring", icon: <Activity />, label: t("nav.monitoring") },
         { to: "/uptime", icon: <Radar />, label: t("nav.uptime"), badge: uptimeDown.data || undefined },
         {

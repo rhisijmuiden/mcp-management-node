@@ -16,7 +16,7 @@ import contextvars
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 
-from sqlalchemy import event, select
+from sqlalchemy import event, or_, select
 from sqlalchemy.orm import ORMExecuteState, Session, with_loader_criteria
 
 _allowed: contextvars.ContextVar[frozenset[str] | None] = contextvars.ContextVar("mmn_customers", default=None)
@@ -68,6 +68,10 @@ def _criteria(ids: list[str]):
         CertEndpoint,
         Certificate,
         ConfigBackup,
+        CostItem,
+        CostRate,
+        CostStatement,
+        CostUsage,
         CustomerReport,
         Deployment,
         DeploymentRun,
@@ -110,6 +114,11 @@ def _criteria(ids: list[str]):
     ticket_ids = select(Ticket.id).where(Ticket.customer_id.in_(ids)).scalar_subquery()
     return [
         with_loader_criteria(Document, Document.customer_id.in_(ids), include_aliases=True),
+        with_loader_criteria(CostItem, CostItem.customer_id.in_(ids), include_aliases=True),
+        with_loader_criteria(CostRate, or_(CostRate.customer_id.is_(None), CostRate.customer_id.in_(ids)),
+                             include_aliases=True),
+        with_loader_criteria(CostUsage, CostUsage.customer_id.in_(ids), include_aliases=True),
+        with_loader_criteria(CostStatement, CostStatement.customer_id.in_(ids), include_aliases=True),
         with_loader_criteria(CertEndpoint, CertEndpoint.customer_id.in_(ids), include_aliases=True),
         with_loader_criteria(Certificate, Certificate.customer_id.in_(ids), include_aliases=True),
         with_loader_criteria(FirewallSource, FirewallSource.customer_id.in_(ids), include_aliases=True),

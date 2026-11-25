@@ -123,6 +123,7 @@ class ChecksIn(BaseModel):
     backups: bool = True
     identity: bool = True
     netsec: bool = True
+    contracts: bool = True
     other: bool = True
 
 

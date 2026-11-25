@@ -379,6 +379,8 @@ async def start() -> None:
                       replace_existing=True, coalesce=True)
     scheduler.add_job(_m365_job, "interval", minutes=1, id="m365-tick", replace_existing=True,
                       coalesce=True, max_instances=1, next_run_time=datetime.now(UTC) + timedelta(seconds=45))
+    scheduler.add_job(_costs_job, "interval", hours=1, id="costs-tick", replace_existing=True,
+                      coalesce=True, max_instances=1, next_run_time=datetime.now(UTC) + timedelta(seconds=105))
     scheduler.add_job(_netsec_job, "interval", minutes=1, id="netsec-tick", replace_existing=True,
                       coalesce=True, max_instances=1, next_run_time=datetime.now(UTC) + timedelta(seconds=75))
     scheduler.add_job(_m365_prune_job, CronTrigger(hour=5, minute=17, timezone="UTC"), id="m365-prune",
@@ -509,6 +511,15 @@ async def _netsec_job() -> None:
         await netsec.tick()
     except Exception:  # noqa: BLE001
         log.exception("certificate, firewall and VPN checks failed")
+
+
+async def _costs_job() -> None:
+    from mmn.services import costs
+
+    try:
+        await costs.tick()
+    except Exception:  # noqa: BLE001
+        log.exception("reading the usage of the customers for the costs failed")
 
 
 def stop() -> None:

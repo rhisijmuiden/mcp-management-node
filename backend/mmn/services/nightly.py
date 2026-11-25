@@ -31,7 +31,7 @@ from mmn.services.settings_store import get_setting
 
 log = logging.getLogger("mmn.nightly")
 
-CATEGORIES = ("updates", "cves", "disks", "certificates", "backups", "identity", "netsec", "other")
+CATEGORIES = ("updates", "cves", "disks", "certificates", "backups", "identity", "netsec", "contracts", "other")
 SEVERITIES = ("high", "medium", "low", "info")
 _SEV_ORDER = {s: i for i, s in enumerate(SEVERITIES)}
 SOURCE = "nightly"
@@ -58,6 +58,8 @@ def category_of(f: dict[str, Any]) -> str:
         return "identity"
     if f.get("area") in ("firewall", "vpn") or code.startswith(("fw_", "vpn_")):
         return "netsec"
+    if f.get("area") == "contracts" or code.startswith(("contract_", "licence_", "warranty_", "cost_")):
+        return "contracts"
     return "other"
 
 
@@ -551,6 +553,14 @@ async def check_customer(run_id: str, env_id: str, cfg: dict[str, Any], cache: d
                 found += await certmon.findings(db, e, now, finding, warn_days=warn)
             except Exception as ex:  # noqa: BLE001
                 errors.append(f"certificate check failed ({ex})"[:300])
+        if checks.get("contracts", True):
+            # Phase 21: contracts, licences and warranties that run out, statement lines without a price.
+            from mmn.services import costs
+
+            try:
+                found += await costs.findings(db, e, now, finding)
+            except Exception as ex:  # noqa: BLE001
+                errors.append(f"contract check failed ({ex})"[:300])
         if checks.get("netsec"):
             from mmn.services import netsec
 

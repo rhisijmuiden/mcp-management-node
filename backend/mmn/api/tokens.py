@@ -56,6 +56,10 @@ SCOPES: dict[str, str] = {
                   "confirm or dismiss their risk: every action needs an admin's approval",
     "netsec": "Manage certificate monitoring (TLS addresses, ignore a certificate), acknowledge firewall changes, "
               "choose which VPN tunnels are watched and read them again (reading needs only the read scope)",
+    "costs": "Read costs and licences per customer: the price list, contracts, licences and hardware, resource use and "
+             "the monthly statements",
+    "costs_admin": "Change the price list and the contracts, licences and hardware of customers, and make a month's "
+                   "statement final",
     "docs": "Write customer documentation (pages are readable with the read scope)",
     "vault": "See the password vault (names, no secrets) and ask to use a credential: every use needs an admin's "
              "approval and is written to the vault's access log",
@@ -64,7 +68,8 @@ SCOPES: dict[str, str] = {
 ADMIN_ONLY_SCOPES = {"restore", "updates", "settings", "backups", "nodes", "node_updates", "logs", "services", "exec", "copy",
                      "guests", "guests_admin", "restore_guests", "templates", "tasks", "network", "cluster", "deploy",
                      "unifi", "unifi_admin", "doors", "hub",
-                     "workstations", "reports", "runbooks", "monitoring", "tickets", "docs", "vault", "m365", "m365_admin", "netsec"}
+                     "workstations", "reports", "runbooks", "monitoring", "tickets", "docs", "vault", "m365", "m365_admin", "netsec",
+                     "costs", "costs_admin"}
 
 
 async def clean_customer_ids(db: AsyncSession, ids: list[str] | None) -> list[str] | None:

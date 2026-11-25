@@ -11,6 +11,7 @@ import { ProtectionPage } from "@/pages/Protection";
 import { NightlyPage } from "@/pages/Nightly";
 import { M365Page } from "@/pages/M365";
 import { SecurityPage } from "@/pages/Security";
+import { CostsPage } from "@/pages/Costs";
 import { RemediationPage } from "@/pages/Remediation";
 import { UptimePage } from "@/pages/Uptime";
 import { RunbookEditorPage, RunbookRunPage, RunbooksPage } from "@/pages/Runbooks";
@@ -92,6 +93,8 @@ export default function App() {
         <Route path="m365" element={<M365Page />} />
         <Route path="security" element={<Navigate to="/security/certificates" replace />} />
         <Route path="security/:tab" element={<SecurityPage />} />
+        <Route path="costs" element={<Navigate to="/costs/overview" replace />} />
+        <Route path="costs/:tab" element={<CostsPage />} />
         <Route path="tickets" element={<L><TicketsPage /></L>} />
         <Route path="tickets/:id" element={<L><TicketDetailPage /></L>} />
         <Route path="docs" element={<L><DocsPage /></L>} />

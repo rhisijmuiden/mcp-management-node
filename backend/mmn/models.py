@@ -2,17 +2,20 @@ from __future__ import annotations
 
 import enum
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     JSON,
     BigInteger,
     Boolean,
+    Date,
     DateTime,
     Enum,
     ForeignKey,
     Integer,
     LargeBinary,
+    Numeric,
     Sequence,
     String,
     Text,
@@ -244,6 +247,9 @@ class Environment(Base):
     # Phase 16: uptime SLA {"target_pct": 99.9, "exclude_maintenance": true, "alert_breach": true,
     # "recipients": [...]}; the free text ``sla`` stays for people and the AI.
     uptime: Mapped[dict] = mapped_column(JsonType, default=dict)
+    # Phase 21: costs and invoicing {"discount_pct", "debtor", "bill_resources", "bill_devices", "bill_m365",
+    # "note"} (see services/costs.py CUSTOMER_DEFAULTS).
+    costs: Mapped[dict] = mapped_column(JsonType, default=dict)
 
     nodes: Mapped[list[Node]] = relationship(back_populates="environment", lazy="selectin")
 
@@ -1465,3 +1471,101 @@ class VpnTunnel(Base):
     last_check_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+# ------------------------------------------------------------------ phase 21: costs and licences per customer
+class CostRate(Base):
+    """A price in the price list: what a unit of something costs the customer per month. ``key`` names what
+    is priced: ``resource.cpu`` (a vCPU), ``resource.ram`` (a GB of memory), ``resource.storage`` (a GB of
+    disk), ``device.server`` / ``device.workstation`` / ``device.proxmox`` (a machine with the agent),
+    ``m365.user`` (a licensed Microsoft 365 user) and ``m365.sku.<SKU>`` (a Microsoft 365 licence, e.g.
+    ``m365.sku.O365_BUSINESS_PREMIUM``). ``customer_id`` empty: the default price; set: that customer's own
+    price, which wins. ``cost``: what it costs you (optional, for the margin)."""
+
+    __tablename__ = "cost_rates"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    customer_id: Mapped[str | None] = mapped_column(ForeignKey("environments.id", ondelete="CASCADE"), nullable=True,
+                                                    index=True)
+    key: Mapped[str] = mapped_column(String(120))
+    name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    unit: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    price: Mapped[Decimal] = mapped_column(Numeric(12, 4))
+    cost: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+
+class CostItem(Base):
+    """Something of a customer that costs money or runs out: a software licence, a contract (support,
+    internet line, hosting, lease), hardware with its warranty, a recurring service or a one-off charge.
+    ``unit_price`` is the sale price per ``billing`` period (monthly, quarterly, yearly, once; none: only
+    tracked), ``cost_price`` what it costs you. ``end_date`` is the end of the contract or licence or of the
+    warranty; with ``auto_renew`` and ``renew_months`` it moves on by itself, ``notice_days`` is the notice
+    period (the date to cancel by is warned about). ``history``: [{"at", "from", "to", "by"}] renewals."""
+
+    __tablename__ = "cost_items"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("environments.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(16), default="licence")  # licence | contract | hardware | service | other
+    name: Mapped[str] = mapped_column(String(200))
+    vendor: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    reference: Mapped[str | None] = mapped_column(String(200), nullable=True)  # contract, order or licence number
+    serial: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    node_id: Mapped[str | None] = mapped_column(ForeignKey("nodes.id", ondelete="SET NULL"), nullable=True, index=True)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal(1))
+    unit_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
+    cost_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
+    billing: Mapped[str] = mapped_column(String(12), default="monthly")  # monthly | quarterly | yearly | once | none
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    auto_renew: Mapped[bool] = mapped_column(Boolean, default=False)
+    renew_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    notice_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    warn_days: Mapped[int | None] = mapped_column(Integer, nullable=True)  # None: the global setting
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    history: Mapped[list] = mapped_column(JsonType, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+
+class CostUsage(Base):
+    """What a customer used on one day (the last reading of that day): vCPUs, memory and disk given to
+    their VMs and containers, machines with the agent per type, licensed Microsoft 365 users and licences.
+    The monthly statement bills the average (or the peak) of the days of the month."""
+
+    __tablename__ = "cost_usage"
+    __table_args__ = (UniqueConstraint("customer_id", "day", name="uq_cost_usage_day"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("environments.id", ondelete="CASCADE"), index=True)
+    day: Mapped[date] = mapped_column(Date, index=True)
+    cpu: Mapped[int] = mapped_column(Integer, default=0)
+    ram_gb: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal(0))
+    storage_gb: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal(0))
+    guests: Mapped[int] = mapped_column(Integer, default=0)
+    devices: Mapped[dict] = mapped_column(JsonType, default=dict)  # {"server": n, "workstation": n, "proxmox": n}
+    m365_users: Mapped[int] = mapped_column(Integer, default=0)
+    m365: Mapped[dict] = mapped_column(JsonType, default=dict)  # {sku: {"name", "enabled", "consumed"}}
+    detail: Mapped[dict] = mapped_column(JsonType, default=dict)  # {"guests": [...]} of that day
+    taken_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class CostStatement(Base):
+    """A monthly statement that was made final: the lines and totals are frozen, so the invoice made from
+    it does not change when prices, items or usage change later. Months without one are worked out live."""
+
+    __tablename__ = "cost_statements"
+    __table_args__ = (UniqueConstraint("customer_id", "period", name="uq_cost_statement"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("environments.id", ondelete="CASCADE"), index=True)
+    period: Mapped[str] = mapped_column(String(7))  # YYYY-MM
+    data: Mapped[dict] = mapped_column(JsonType, default=dict)
+    note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_by: Mapped[str | None] = mapped_column(String(100), nullable=True)

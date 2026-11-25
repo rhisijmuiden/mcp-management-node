@@ -113,7 +113,7 @@ function SettingsCard({ customer, settings, admin }: { customer: Customer; setti
   useEffect(() => { setS(settings); setRcpt(settings.recipients.join("\n")); }, [settings]);
   const save = useMutation({
     mutationFn: () => put<ReportSettings>(`api/customers/${customer.id}/reports/settings`, {
-      enabled: s.enabled, day: s.day, lang: s.lang, include_ai: s.include_ai,
+      enabled: s.enabled, day: s.day, lang: s.lang, include_ai: s.include_ai, include_costs: !!s.include_costs,
       recipients: rcpt.split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean),
     }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["customer", customer.id, "reports"] }); toast.success(t("common.saved")); },
@@ -136,6 +136,7 @@ function SettingsCard({ customer, settings, admin }: { customer: Customer; setti
             </Select>
           </Field>
         </div>
+        <Switch checked={!!s.include_costs} onCheckedChange={(v) => setS({ ...s, include_costs: v })} disabled={!admin} label={t("rep.include_costs")} description={t("rep.include_costs_desc")} />
         <Field label={t("rep.recipients")} htmlFor="rep-rcpt" hint={settings.default_recipients?.length && !rcpt.trim() ? t("rep.recipients_default", { email: settings.default_recipients.join(", ") }) : t("rep.recipients_hint")}>
           <Textarea id="rep-rcpt" value={rcpt} onChange={(e) => setRcpt(e.target.value)} disabled={!admin} className="min-h-20" placeholder="it@customer.nl" />
         </Field>

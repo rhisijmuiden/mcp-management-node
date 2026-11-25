@@ -117,7 +117,8 @@
     "security": "Certificaten & firewall",
     "sec_certs": "Certificaten",
     "sec_fw": "Firewallwijzigingen",
-    "sec_vpn": "VPN-tunnels"
+    "sec_vpn": "VPN-tunnels",
+    "costs": "Kosten & licenties"
   },
   "roles": {
     "admin": "Beheerder",
@@ -232,7 +233,11 @@
     "m365_admin": "Microsoft 365-acties",
     "m365_admin_desc": "Vragen om gebruikers te blokkeren of deblokkeren, af te melden, MFA of wachtwoord te resetten en risicovolle gebruikers af te handelen. Elke actie vereist goedkeuring van een beheerder.",
     "netsec": "Certificaten, firewall & VPN",
-    "netsec_desc": "Certificaatadressen beheren, certificaten negeren, firewallwijzigingen als beoordeeld markeren en kiezen welke VPN-tunnels bewaakt worden."
+    "netsec_desc": "Certificaatadressen beheren, certificaten negeren, firewallwijzigingen als beoordeeld markeren en kiezen welke VPN-tunnels bewaakt worden.",
+    "costs": "Kosten & licenties",
+    "costs_desc": "De prijslijst, contracten, licenties, hardware, het resourcegebruik en de maandoverzichten van klanten lezen.",
+    "costs_admin": "Kosten & licenties wijzigen",
+    "costs_admin_desc": "De prijslijst en de contracten, licenties en hardware van klanten wijzigen, en een maand definitief maken."
   },
   "dashboard": {
     "morning": "Goedemorgen",
@@ -1791,7 +1796,8 @@
     "kind_m365": "Microsoft 365",
     "kind_cert": "Certificaat",
     "kind_firewall": "Firewall",
-    "kind_vpn": "VPN"
+    "kind_vpn": "VPN",
+    "kind_contract": "Contract"
   },
   "dep": {
     "title": "Deployments",
@@ -3152,7 +3158,9 @@
     "recipients_default": "Leeg: gaat naar het hoofdcontact ({{email}}).",
     "send_title": "Rapport mailen",
     "send_hint": "De pdf en de HTML-versie gaan als bijlage mee.",
-    "sent_to": "Gemaild naar {{to}}"
+    "sent_to": "Gemaild naar {{to}}",
+    "include_costs": "Kosten opnemen",
+    "include_costs_desc": "Voegt het kostenoverzicht van de maand en wat binnenkort afloopt toe (uit Kosten & licenties)."
   },
   "opt": {
     "node_offline": {
@@ -3415,6 +3423,38 @@
     "vpn_flapping": {
       "f": "VPN-tunnel {{tunnel}} ging {{count}} keer down en weer up in 24 uur.",
       "s": "Zoek naar een instabiele internetlijn, afwijkende DPD- of rekey-instellingen, of een MTU-probleem."
+    },
+    "contract_expired": {
+      "f": "Contract {{name}} is afgelopen op {{date}}.",
+      "s": "Verleng het en vul de nieuwe einddatum in, of zet het onderdeel op inactief als het bewust is gestopt."
+    },
+    "licence_expired": {
+      "f": "Licentie {{name}} is afgelopen op {{date}}.",
+      "s": "Verleng hem en vul de nieuwe einddatum in, of zet het onderdeel op inactief als hij bewust is gestopt."
+    },
+    "warranty_expired": {
+      "f": "De garantie van {{name}} is afgelopen op {{date}}.",
+      "s": "Vervang de hardware, verleng de garantie, of accepteer het risico en zet het onderdeel op inactief."
+    },
+    "contract_notice": {
+      "f": "{{name}}: de opzegtermijn eindigt op {{date}} (over {{days}} dag(en)); daarna loopt het door tot {{end}}.",
+      "s": "Overleg met de klant of het doorgaat, en zeg vóór die datum op als dat niet zo is."
+    },
+    "contract_expiring": {
+      "f": "Contract {{name}} loopt over {{days}} dag(en) af, op {{date}}.",
+      "s": "Verleng het op tijd en vul de nieuwe einddatum in."
+    },
+    "licence_expiring": {
+      "f": "Licentie {{name}} loopt over {{days}} dag(en) af, op {{date}}.",
+      "s": "Verleng hem op tijd en vul de nieuwe einddatum in."
+    },
+    "warranty_expiring": {
+      "f": "De garantie van {{name}} loopt over {{days}} dag(en) af, op {{date}}.",
+      "s": "Verleng de garantie op tijd of plan de vervanging."
+    },
+    "cost_price_missing": {
+      "f": "{{count}} regel(s) van het kostenoverzicht van deze maand hebben geen prijs: {{names}}.",
+      "s": "Vul de prijs in bij Kosten & licenties (prijslijst of het onderdeel) voordat je factureert."
     }
   },
   "prot": {
@@ -3651,7 +3691,8 @@
       "backups": "Back-ups",
       "other": "Overig",
       "identity": "Microsoft 365",
-      "netsec": "Firewall & VPN"
+      "netsec": "Firewall & VPN",
+      "contracts": "Contracten & licenties"
     },
     "cat_hint": {
       "updates": "Openstaande updates en herstarts, oude agents, firmware",
@@ -3661,7 +3702,8 @@
       "backups": "Mislukte, ontbrekende en oude back-ups",
       "other": "De rest van de optimalisatiescan: offline machines, mislukte services, netwerk",
       "identity": "Risicovolle gebruikers, MFA, inactieve accounts, licenties en aanmeldingen van de gekoppelde tenants",
-      "netsec": "Firewallwijzigingen die niemand beoordeelde, Windows Firewall-profielen die uit staan, VPN-tunnels die down of instabiel zijn"
+      "netsec": "Firewallwijzigingen die niemand beoordeelde, Windows Firewall-profielen die uit staan, VPN-tunnels die down of instabiel zijn",
+      "contracts": "Contracten, licenties en garanties die aflopen of opgezegd moeten worden, regels zonder prijs"
     },
     "v_all": "Alles",
     "v_new": "Nieuw",
@@ -5363,5 +5405,272 @@
     "set_wg_hint": "Voor peers met persistent keepalive, zonder handshake zo lang.",
     "set_alert_vpn": "Melding als een bewaakte tunnel down is",
     "settings_saved": "Instellingen opgeslagen"
+  },
+  "costs": {
+    "title": "Kosten & licenties",
+    "desc": "Wat elke klant per maand kost, als basis voor de facturatie: resources volgens de prijslijst, beheerde machines, Microsoft 365, licenties, contracten en hardware, met waarschuwingen voordat iets afloopt.",
+    "tab": {
+      "overview": "Maandoverzicht",
+      "items": "Licenties & contracten",
+      "rates": "Prijslijst",
+      "settings": "Instellingen"
+    },
+    "period": "Maand",
+    "prev_month": "Vorige maand",
+    "next_month": "Volgende maand",
+    "export_all": "Alles exporteren (CSV)",
+    "k_net": "Totaal deze maand",
+    "k_net_hint": "Excl. btw, te factureren klanten ({{total}} incl. btw)",
+    "k_mrr": "Maandelijks terugkerend",
+    "k_mrr_hint": "Terugkerende omzet per maand (jaarposten / 12)",
+    "k_final": "Definitief",
+    "k_final_hint": "Klanten waarvan het overzicht van deze maand definitief is",
+    "k_expiring": "Loopt binnenkort af",
+    "k_expiring_hint": "Contracten, licenties en garanties om op te letten",
+    "per_customer": "Per klant",
+    "per_customer_desc": "Klik op een klant voor de regels. Een maand blijft live tot je hem definitief maakt.",
+    "no_customers": "Nog geen klanten",
+    "col_customer": "Klant",
+    "col_status": "Status",
+    "col_net": "Excl. btw",
+    "col_mrr": "Per maand",
+    "col_margin": "Marge",
+    "col_attention": "Aandacht",
+    "debtor": "Debiteur",
+    "n_lines": "{{count}} regel(s)",
+    "st_draft": "Concept",
+    "st_final": "Definitief",
+    "not_billable": "Niet gefactureerd",
+    "missing_n": "{{count}} zonder prijs",
+    "expiring_n": "{{count}} loopt af",
+    "estimated": "Huidig gebruik",
+    "final_desc": "Definitief gemaakt op {{date}} door {{by}}. Latere wijzigingen in prijzen of gebruik veranderen het niet.",
+    "draft_desc": "Live berekend uit de prijslijst, het gebruik en de onderdelen. Maak hem definitief als je factureert.",
+    "customer_settings": "Facturatie-instellingen",
+    "customer_settings_desc": "Hoe deze klant wordt gefactureerd.",
+    "reopen": "Heropenen",
+    "reopened": "De maand staat weer open",
+    "finalize": "Definitief maken",
+    "finalized": "Het overzicht is definitief",
+    "finalize_title": "{{period}} definitief maken",
+    "finalize_desc": "De regels en totalen ({{net}} excl. btw) worden vastgezet als basis voor de factuur.",
+    "final_note": "Opmerking",
+    "final_note_hint": "Bijvoorbeeld het factuurnummer. Staat op de pdf.",
+    "final_note_ph": "Factuur 2026-118",
+    "missing_alert": "{{count}} regel(s) hebben geen prijs en tellen niet mee. Vul de prijs in de prijslijst of bij het onderdeel in.",
+    "no_lines": "Deze maand valt er niets te factureren",
+    "no_lines_hint": "Vul prijzen in de prijslijst in, of voeg licenties en contracten toe onder Licenties & contracten.",
+    "col_description": "Omschrijving",
+    "col_quantity": "Aantal",
+    "col_price": "Prijs",
+    "col_amount": "Bedrag",
+    "no_price": "geen prijs",
+    "subtotal": "Subtotaal",
+    "discount": "Korting ({{pct}}%)",
+    "net": "Totaal excl. btw",
+    "vat": "Btw ({{pct}}%)",
+    "total": "Totaal incl. btw",
+    "margin": "Marge",
+    "purchase": "inkoop",
+    "mrr": "Maandelijks terugkerend",
+    "usage_title": "Resourcegebruik",
+    "usage_desc": "{{basis}} van {{count}} dagmeting(en) deze maand.",
+    "usage_estimated": "Nog geen dagmetingen voor deze maand: dit is het huidige gebruik.",
+    "show_guests": "Toon {{count}} VM('s) en container(s)",
+    "hide_guests": "Verbergen",
+    "u_cpu": "vCPU",
+    "u_ram": "Geheugen",
+    "u_storage": "Schijf",
+    "u_guests": "VM's & containers",
+    "u_servers": "Servers",
+    "u_workstations": "Werkplekken",
+    "u_nodes": "Proxmox VE-nodes",
+    "u_m365": "Microsoft 365-gebruikers",
+    "col_guest": "VM / container",
+    "col_node": "Node",
+    "cs_billable": "Deze klant factureren",
+    "cs_billable_hint": "Uit voor je eigen omgeving: die telt dan niet mee in de totalen en de export.",
+    "cs_debtor": "Debiteurnummer",
+    "cs_debtor_hint": "Zoals in je boekhouding; komt in de CSV.",
+    "cs_discount": "Korting (%)",
+    "cs_resources": "Resources factureren",
+    "cs_resources_hint": "vCPU, geheugen en schijf van de VM's en containers, volgens de prijslijst.",
+    "cs_devices": "Beheerde machines factureren",
+    "cs_m365": "Microsoft 365-gebruikers en -licenties factureren",
+    "cs_note": "Opmerking op het overzicht",
+    "cs_note_hint": "Bijvoorbeeld betalingsvoorwaarden.",
+    "k_items": "Onderdelen",
+    "k_items_mrr": "Per maand",
+    "k_items_mrr_hint": "Terugkerende onderdelen, jaarposten / 12",
+    "k_notice": "Nu opzeggen",
+    "k_notice_hint": "De opzegtermijn eindigt binnenkort",
+    "k_ended": "Loopt af",
+    "k_ended_hint": "{{expired}} afgelopen, de rest binnen {{days}} dagen",
+    "items_title": "Licenties, contracten en hardware",
+    "items_desc": "Alles met een prijs of een einddatum: softwarelicenties, contracten, hardware met garantie, diensten en eenmalige kosten.",
+    "import_hw": "Hardware importeren",
+    "import_hw_hint": "Maakt een onderdeel voor elke machine met een model of serienummer in de inventaris",
+    "imported": "{{count}} hardwareonderdeel/-onderdelen aangemaakt",
+    "add_item": "Onderdeel toevoegen",
+    "edit_item": "Onderdeel bewerken",
+    "all_kinds": "Alle soorten",
+    "all_statuses": "Alle statussen",
+    "soon": "Loopt af binnen {{days}} dagen",
+    "no_items": "Nog geen licenties of contracten",
+    "no_items_hint": "Voeg de licenties, contracten en hardware van je klanten toe om gewaarschuwd te worden voordat ze aflopen.",
+    "col_item": "Onderdeel",
+    "col_kind": "Soort",
+    "col_end": "Loopt af",
+    "days_left": "nog {{count}} dag(en)",
+    "ended_ago": "{{count}} dag(en) geleden afgelopen",
+    "notice_by": "opzeggen vóór {{date}}",
+    "delete": "Verwijderen",
+    "item_dialog_desc": "Prijzen excl. btw. Licentiesleutels en wachtwoorden horen in de wachtwoordkluis, niet hier.",
+    "f_kind": "Soort",
+    "f_name": "Naam",
+    "f_vendor": "Leverancier",
+    "f_reference": "Referentie",
+    "f_reference_hint": "Contract-, order- of licentienummer",
+    "f_serial": "Serienummer",
+    "f_machine": "Machine",
+    "f_no_machine": "Niet aan een machine gekoppeld",
+    "f_billing": "Facturatie",
+    "f_quantity": "Aantal",
+    "f_price": "Verkoopprijs",
+    "f_price_hint": "Per stuk, per facturatieperiode",
+    "f_cost": "Inkoopprijs",
+    "f_cost_hint": "Wat het jou kost, voor de marge",
+    "f_start": "Startdatum",
+    "f_start_once": "Wordt in deze maand gefactureerd",
+    "f_start_cycle": "Wordt in deze maand en elke periode daarna gefactureerd",
+    "f_end": "Einddatum",
+    "f_licence_end": "Licentie verloopt op",
+    "f_warranty_end": "Garantie tot",
+    "f_notice": "Opzegtermijn (dagen)",
+    "f_notice_hint": "Waarschuwing vóór de uiterste opzegdatum",
+    "f_warn": "Waarschuwen (dagen vooraf)",
+    "f_warn_hint": "Leeg: de algemene instelling",
+    "f_renew_months": "Verlengt met (maanden)",
+    "f_auto_renew": "Verlengt automatisch",
+    "f_auto_renew_hint": "De einddatum schuift vanzelf door als de termijn afloopt.",
+    "f_active": "Actief",
+    "f_active_hint": "Inactieve onderdelen worden niet gefactureerd en er komt geen waarschuwing.",
+    "f_notes": "Notities",
+    "f_notes_hint": "Staan niet op het overzicht.",
+    "history": "Verlengingen",
+    "history_line": "{{from}} → {{to}} ({{by}})",
+    "rates_title": "Prijslijst",
+    "rates_desc": "Maandprijzen voor elke klant. Iets zonder prijs wordt niet gefactureerd; Microsoft 365-licenties zonder prijs verschijnen als 'geen prijs'.",
+    "rates_desc_customer": "Standaardprijzen en de eigen prijzen van {{name}}, die voorgaan.",
+    "rates_hint": "Resources worden gefactureerd op het gemiddelde van de dagmetingen van de maand (zie Instellingen). Prijzen excl. btw.",
+    "col_rate": "Wat",
+    "col_default": "Standaardprijs",
+    "col_own": "Prijs voor {{name}}",
+    "col_purchase": "Inkoop",
+    "per_unit": "per {{unit}} per maand",
+    "uses_default": "standaard",
+    "not_billed": "niet gefactureerd",
+    "edit_price": "Prijs bewerken",
+    "rate_default_desc": "De maandprijs voor elke klant, tenzij een klant een eigen prijs heeft.",
+    "rate_customer_desc": "De eigen maandprijs van deze klant.",
+    "use_default": "Standaard gebruiken",
+    "stop_billing": "Niet meer factureren",
+    "f_price_month": "Prijs per maand",
+    "f_rate_name": "Naam op het overzicht",
+    "f_rate_name_hint": "Leeg: de standaardnaam",
+    "set_invoice": "Facturatie",
+    "set_currency": "Valuta",
+    "set_currency_hint": "ISO-code, bijv. EUR",
+    "set_vat": "Btw (%)",
+    "set_m365": "Gefactureerde Microsoft 365-licenties",
+    "set_m365_enabled": "Gekocht (in het abonnement)",
+    "set_m365_consumed": "Toegewezen aan gebruikers",
+    "set_usage": "Resourcegebruik",
+    "set_usage_desc": "Elk uur gemeten; een maand factureert het gemiddelde of de piek van zijn dagen.",
+    "sample_now": "Nu meten",
+    "sampled": "Gebruik van {{count}} klant(en) gemeten",
+    "set_basis": "Basis per maand",
+    "set_stopped": "Gestopte VM's en containers meetellen",
+    "set_stopped_hint": "Hun CPU, geheugen en schijf blijven gereserveerd.",
+    "set_warnings": "Waarschuwingen",
+    "set_warn_days": "Dagen vooraf waarschuwen",
+    "set_warn_days_hint": "Vóór de einddatum of de uiterste opzegdatum.",
+    "set_alert": "Monitoringmelding",
+    "set_alert_hint": "Een melding zolang een contract, licentie of garantie afloopt of opgezegd moet worden.",
+    "set_auto_renew": "Automatisch verlengen",
+    "set_auto_renew_hint": "Onderdelen die automatisch verlengen krijgen hun volgende einddatum als de termijn afloopt.",
+    "basis": {
+      "average": "Gemiddelde",
+      "peak": "Piek"
+    },
+    "billing": {
+      "monthly": "per maand",
+      "quarterly": "per kwartaal",
+      "yearly": "per jaar",
+      "once": "eenmalig",
+      "none": "niet gefactureerd"
+    },
+    "group": {
+      "resources": "Resources",
+      "devices": "Beheerde machines",
+      "m365": "Microsoft 365",
+      "licence": "Licenties",
+      "contract": "Contracten",
+      "service": "Diensten",
+      "hardware": "Hardware",
+      "other": "Overig"
+    },
+    "kind": {
+      "licence": "Licentie",
+      "contract": "Contract",
+      "hardware": "Hardware",
+      "service": "Dienst",
+      "other": "Overig"
+    },
+    "ph": {
+      "licence": "ESET Protect Advanced",
+      "contract": "Beheercontract",
+      "hardware": "Dell PowerEdge R650",
+      "service": "Offsite back-up",
+      "other": "Installatie"
+    },
+    "status": {
+      "ok": "OK",
+      "notice": "Opzeggen",
+      "expiring": "Loopt af",
+      "expired": "Afgelopen",
+      "renews": "Verlengt",
+      "none": "Geen einddatum",
+      "inactive": "Inactief"
+    },
+    "std": {
+      "resource": {
+        "cpu": "vCPU",
+        "ram": "Geheugen (GB)",
+        "storage": "Schijfruimte (GB)"
+      },
+      "device": {
+        "server": "Beheerde server",
+        "workstation": "Beheerde werkplek",
+        "proxmox": "Proxmox VE-node"
+      },
+      "m365": {
+        "user": "Microsoft 365-gebruiker (met licentie)"
+      }
+    },
+    "unit": {
+      "vcpu": "vCPU",
+      "gb": "GB",
+      "device": "machine(s)",
+      "user": "gebruiker(s)",
+      "licence": "licentie(s)"
+    },
+    "unit1": {
+      "vcpu": "vCPU",
+      "gb": "GB",
+      "device": "machine",
+      "user": "gebruiker",
+      "licence": "licentie"
+    }
   }
 }

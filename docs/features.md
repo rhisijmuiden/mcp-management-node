@@ -541,6 +541,41 @@ Over MCP: `list_certificates`, `list_firewall_changes`, `get_firewall_change` an
 scope `netsec` also `save_cert_endpoint`, `delete_cert_endpoint`, `set_certificate_ignored`,
 `acknowledge_firewall_change`, `set_vpn_watch` and `refresh_netsec`.
 
+### Costs & licences
+
+Operations → **Costs & licences**: what every customer costs per month, as the basis for invoicing, and everything
+with a price or an end date in one place.
+
+- **Price list.** Monthly prices per vCPU, per GB of memory and per GB of disk given to a customer's VMs and
+  containers, per managed machine (server, workstation, Proxmox VE node), per licensed Microsoft 365 user and per
+  Microsoft 365 licence (SKU). A customer can have its own price for any of them, which wins over the default; an
+  optional purchase price gives the margin. Microsoft 365 licences that a tenant has but that have no price are
+  listed, so nothing is forgotten.
+- **Resource use.** Every hour Stackpilot writes what each customer uses that day: the vCPUs, memory and disk of
+  their VMs and containers (templates left out, guests of a cluster counted once, stopped guests optional), the
+  machines with the agent per type and the Microsoft 365 users and licences (bought or assigned, a setting). A
+  month bills the average of its days, or the peak.
+- **Licences & contracts.** Software licences, contracts (support, internet, hosting, lease), hardware with its
+  warranty, services and one-off charges, each with vendor, reference, serial number, the machine it belongs to,
+  quantity, sale and purchase price and how it is billed (per month, quarter or year, once, or only tracked).
+  End date, notice period and automatic renewal: Stackpilot warns before the end date and before the last date to
+  give notice (default 60 days ahead), and moves the end date on when a contract renews by itself. *Import
+  hardware* creates an item for every machine with a model or serial number in its inventory.
+- **Monthly overview.** Per customer the lines of the month (resources, machines, Microsoft 365, then the items
+  charged that month), discount, VAT and totals, the monthly recurring amount and the margin. A month is worked out
+  live until you make it **final**: then the lines are frozen, so the invoice does not change when prices change
+  later (you can reopen it). Export per customer as **PDF** (house style) or **CSV**, or every customer of a month in
+  one CSV for the bookkeeping (Dutch: semicolons and decimal commas). Per customer: billable or not (your own
+  environment), debtor number, discount, which parts are billed and a note on the statement.
+- **Warnings.** Monitoring alerts (kind `contract`) for contracts and licences that run out or must be cancelled
+  soon, and for warranties that run out; a morning-summary category "Contracts & licences" that also lists statement
+  lines without a price. The monthly customer report can include the statement and what runs out soon (switch
+  *Include costs* in the report settings, off by default).
+
+Over MCP, with the scope `costs`: `get_cost_overview`, `get_cost_statement`, `list_cost_items`,
+`list_expiring_contracts`, `get_resource_usage` and `list_cost_rates`; with `costs_admin` also `save_cost_item`,
+`delete_cost_item`, `set_cost_rate` and `finalize_cost_statement`. Prices are not visible with the read scope alone.
+
 ### Tickets & customer portal
 
 Operations → **Tickets**: the problems and questions of every customer, and the portal they report them in.

@@ -229,4 +229,13 @@ alerts of kinds `cert`, `firewall` and `vpn`, a new morning-summary category, th
 `set_certificate_ignored`, `acknowledge_firewall_change`, `set_vpn_watch` and `refresh_netsec`, and the token scope
 `netsec`. No agent update is needed: everything runs through the existing command channel.
 
+**Phase 21** added costs and licences per customer (Operations → **Costs & licences**), as the basis for invoicing.
+A price list with monthly prices per vCPU, GB of memory and disk, managed machine, Microsoft 365 user and Microsoft
+365 licence (default and per customer); hourly readings of what each customer uses, billed as the average or peak
+of the month; licences, contracts, hardware with warranty, services and one-off charges with billing period, end
+date, notice period and automatic renewal; a monthly statement per customer with discount, VAT, margin and monthly
+recurring amount, live until made final, with PDF and CSV export (also every customer in one CSV). Alerts of kind
+`contract`, a morning-summary category for contracts and licences, an optional costs section in the monthly report,
+ten MCP tools and the token scopes `costs` and `costs_admin`. No agent update is needed.
+
 Bug fix releases in between (v0.2.1, v0.6.1, v0.6.2, v0.7.1) are listed on the releases page.
