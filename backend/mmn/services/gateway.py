@@ -60,6 +60,8 @@ OPERATE_TOOLS = {
     "restart_network_adapter",
     # Phase 19: reading a Microsoft 365 tenant again.
     "refresh_m365",
+    # Phase 20: reading certificates, firewalls and VPN tunnels of a customer again.
+    "refresh_netsec",
 }
 
 # Phase 18: tools that use a secret from the password vault always need an admin's approval, whatever the

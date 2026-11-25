@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CloudCog,
   Archive, ArrowUpCircle, Award, CalendarClock, CheckCheck, CheckCircle2, ChevronDown, Clock, HardDrive, Hand, HeartPulse,
-  Info as InfoIcon, Mail, Play, Save, Settings2, ShieldAlert, Sparkles, Sunrise, XCircle,
+  Info as InfoIcon, Mail, Play, Save, Settings2, ShieldAlert, Sparkles, Sunrise, XCircle, Flame,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -23,8 +23,8 @@ import { ApprovalDialog } from "@/pages/Gateway";
 
 /* ------------------------------------------------------------------ types */
 type Severity = "high" | "medium" | "low" | "info";
-type Category = "updates" | "cves" | "disks" | "certificates" | "backups" | "identity" | "other";
-const CATEGORIES: Category[] = ["updates", "cves", "disks", "certificates", "backups", "identity", "other"];
+type Category = "updates" | "cves" | "disks" | "certificates" | "backups" | "identity" | "netsec" | "other";
+const CATEGORIES: Category[] = ["updates", "cves", "disks", "certificates", "backups", "identity", "netsec", "other"];
 const SEVERITIES: Severity[] = ["high", "medium", "low", "info"];
 type PropStatus = "pending" | "scheduled" | "approved" | "running" | "executed" | "failed" | "rejected" | "expired" | "missing";
 
@@ -112,7 +112,7 @@ interface CustomerCfg { id: string; name: string; kind: string; enabled: boolean
 
 const SEV_TONE = { high: "offline", medium: "warning", low: "info", info: "neutral" } as const;
 const CAT_ICON: Record<Category, ReactNode> = {
-  updates: <ArrowUpCircle />, cves: <ShieldAlert />, disks: <HardDrive />, certificates: <Award />, backups: <Archive />, identity: <CloudCog />, other: <Sparkles />,
+  updates: <ArrowUpCircle />, cves: <ShieldAlert />, disks: <HardDrive />, certificates: <Award />, backups: <Archive />, identity: <CloudCog />, netsec: <Flame />, other: <Sparkles />,
 };
 const PROP_TONE: Record<PropStatus, "online" | "warning" | "offline" | "info" | "neutral"> = {
   pending: "warning", scheduled: "info", approved: "info", running: "info", executed: "online", failed: "offline",

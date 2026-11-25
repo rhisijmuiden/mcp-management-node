@@ -21,6 +21,7 @@ from mmn.api import (
     library,
     m365,
     monitoring,
+    netsec,
     network,
     nightly,
     oauth,
@@ -183,7 +184,7 @@ def create_app() -> FastAPI:
               cluster.router, monitoring.router, deploy.router, servers.router, unifi.router, customers.router,
               gateway.router, hub.router, workstations.router, reports.router, protection.router, nightly.router,
               runbooks.router, remediation.router, uptime.router, tickets.router, portal.router,
-              documents.router, vault.router, m365.router):
+              documents.router, vault.router, m365.router, netsec.router):
         app.include_router(r)
     app.mount("/mcp", mcp_app)
     return app

@@ -217,4 +217,16 @@ goes into the vault) and confirm or dismiss risk. New MCP tools `list_m365_tenan
 `get_m365_user`, `list_m365_licences`, `list_m365_signins`, `refresh_m365` and `m365_user_action` (always needs an
 admin's approval), new token scopes `m365` and `m365_admin`, and `get_customer_context` includes the tenant summary.
 
+**Phase 20** added certificate, firewall and VPN monitoring per customer (Operations → **Certificates &
+firewall**). Certificates come from TLS endpoints (manual, every HTTPS and SSL VPN uptime check, and the nightly
+endpoints, checked from Stackpilot or a machine at the customer, with STARTTLS) and from the certificate stores on
+Linux servers, Proxmox nodes and Windows (cert store, IIS and RDP bindings), with warnings before expiry, trust and
+name checks and renewal tracking. Firewall configurations (Proxmox VE, nftables/iptables, Windows Firewall, UniFi
+zones and policies) are versioned with diffs; changes made outside Stackpilot are an alert until acknowledged. VPN
+tunnels (WireGuard, IPsec, OpenVPN, Windows RRAS and UniFi) are watched and alert when they stay down. Monitoring
+alerts of kinds `cert`, `firewall` and `vpn`, a new morning-summary category, the MCP tools `list_certificates`,
+`list_firewall_changes`, `get_firewall_change`, `list_vpn_tunnels`, `save_cert_endpoint`, `delete_cert_endpoint`,
+`set_certificate_ignored`, `acknowledge_firewall_change`, `set_vpn_watch` and `refresh_netsec`, and the token scope
+`netsec`. No agent update is needed: everything runs through the existing command channel.
+
 Bug fix releases in between (v0.2.1, v0.6.1, v0.6.2, v0.7.1) are listed on the releases page.

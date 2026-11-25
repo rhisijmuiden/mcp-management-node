@@ -48,7 +48,7 @@ import {
   ShieldHalf,
   Wrench,
   Sunrise,
-  BookOpenCheck, HeartPulse, Radar, CloudCog, LifeBuoy, BookText, LockKeyhole,
+  BookOpenCheck, HeartPulse, Radar, CloudCog, LifeBuoy, BookText, LockKeyhole, Award, Flame, Waypoints,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -93,6 +93,7 @@ function NavItem({ item, onClick, isAdmin, nested }: { item: Item; onClick?: () 
           className={cn(base, "w-full cursor-pointer text-left", childActive && !open ? "bg-sunken text-ink" : "text-ink hover:bg-sunken")}>
           {item.icon}
           <span className="flex-1 truncate">{item.label}</span>
+          {!open && kids.some((k) => k.badge) && <span className="min-w-5 rounded-full bg-koraal px-1.5 py-px text-center text-[11px] font-bold text-nacht">{kids.reduce((a, k) => a + (k.badge ?? 0), 0)}</span>}
           <ChevronRight className={cn("!size-4 text-muted transition-transform", open && "rotate-90")} />
         </button>
         {open && (
@@ -232,6 +233,13 @@ export function Layout() {
     refetchInterval: 120_000,
   });
 
+  const netsec = useQuery({
+    queryKey: ["netsec", "overview", "menu"],
+    queryFn: () => get<{ certificates: Record<string, number>; firewall: { unacknowledged: number }; vpn: { watched_down: number } }>("api/netsec/overview"),
+    refetchInterval: 120_000,
+  });
+  const certBadge = (netsec.data?.certificates.expired ?? 0) + (netsec.data?.certificates.critical ?? 0);
+
   const ticketCounts = useQuery({
     queryKey: ["ticket-counts"],
     queryFn: () => get<{ needs_reply: number }>("api/tickets/counts"),
@@ -297,6 +305,13 @@ export function Layout() {
         { to: "/vault", icon: <LockKeyhole />, label: t("nav.vault") },
         { to: "/monitoring", icon: <Activity />, label: t("nav.monitoring") },
         { to: "/uptime", icon: <Radar />, label: t("nav.uptime"), badge: uptimeDown.data || undefined },
+        {
+          icon: <ShieldCheck />, label: t("nav.security"), children: [
+            { to: "/security/certificates", icon: <Award />, label: t("nav.sec_certs"), badge: certBadge || undefined },
+            { to: "/security/firewall", icon: <Flame />, label: t("nav.sec_fw"), badge: netsec.data?.firewall.unacknowledged || undefined },
+            { to: "/security/vpn", icon: <Waypoints />, label: t("nav.sec_vpn"), badge: netsec.data?.vpn.watched_down || undefined },
+          ],
+        },
         { to: "/backups", icon: <Archive />, label: t("nav.protection") },
         { to: "/proxmox/updates", icon: <ArrowUpCircle />, label: t("nav.updates") },
         { to: "/servers/software", icon: <ShieldCheck />, label: t("nav.srv_software"), admin: true },

@@ -345,6 +345,11 @@ async def _conditions(db: AsyncSession, cfg: MonitoringSettings) -> dict[str, di
     from mmn.services import m365
 
     want.update(await m365.conditions(db, now))
+    # Phase 20: certificates that expire or are not trusted, firewall changes not reviewed, VPN tunnels down.
+    from mmn.services import certs, netsec
+
+    want.update(await certs.conditions(db, now))
+    want.update(await netsec.conditions(db, now))
     return want
 
 

@@ -506,6 +506,41 @@ Operations → **Uptime & SLA**: external checks of each customer's services, an
 Over MCP: `list_uptime_checks`, `get_uptime_check`, `run_uptime_check`, `get_sla_report`, and with the scope
 `monitoring` also `save_uptime_check`, `delete_uptime_check` and `set_uptime_sla`.
 
+### Certificates, firewall & VPN
+
+Operations → **Certificates & firewall**: three pages per customer (or all customers) that watch what usually only
+breaks once it has expired or changed.
+
+- **Certificates.** Two sources. *Endpoints*: TLS services Stackpilot connects to (host, port, optional SNI and
+  STARTTLS for SMTP, IMAP, POP3 or FTP), checked from Stackpilot or from the agent of a machine at the customer for
+  internal addresses. Every HTTPS website check and SSL VPN check of *Uptime & SLA* becomes an endpoint by itself,
+  and so do the endpoints from the nightly-check settings. *Certificate stores*: the agent lists the certificates on
+  every Linux server and Proxmox node (`/etc/ssl`, Let's Encrypt, `/etc/pve`, nginx/apache/postfix and extra paths
+  you add) and on Windows (LocalMachine\My and WebHosting, with IIS bindings and the RDP certificate marked as in
+  use). Per certificate: subject, names, issuer, expiry, trusted or not, the name matches or not, and when it was
+  renewed. Warnings and critical alerts a configurable number of days before expiry (default 30 and 7); a
+  certificate you do not care about can be ignored with a note. Old auto-enrolled Windows certificates that are not
+  in use do not alert.
+- **Firewall changes.** Stackpilot keeps a copy of every firewall configuration: the Proxmox VE firewall (cluster,
+  host and guests, read once per cluster), nftables/iptables on Linux servers, Windows Firewall (profiles and enabled
+  rules) and UniFi zones and policies. Every change becomes a new version with a diff, who made it when it was done
+  through Stackpilot (those are acknowledged automatically) and lines added/removed. Unacknowledged changes are an
+  alert until an admin acknowledges them with an optional note. Noise from Docker, fail2ban, CrowdSec and counters
+  is filtered out, and you can add your own ignore patterns.
+- **VPN tunnels.** WireGuard (peers and last handshake), strongSwan/IPsec, OpenVPN services, Windows RRAS
+  site-to-site and VPN connections, and UniFi site-to-site tunnels and VPN servers (UniFi Network 9.3 or newer). A
+  tunnel is watched automatically once it has been up; you can turn watching on or off per tunnel. A watched tunnel
+  that stays down longer than the limit (default 10 minutes) while its machine is online is an alert; flapping and
+  tunnels that disappeared are in the morning summary.
+- **Morning summary.** New category "Certificates & firewall": expired and expiring certificates (with a proposal
+  to renew through certbot or the Proxmox ACME client where possible), untrusted certificates, name mismatches,
+  endpoints that do not answer, unacknowledged firewall changes, a firewall that is turned off, tunnels down and
+  tunnels that flap.
+
+Over MCP: `list_certificates`, `list_firewall_changes`, `get_firewall_change` and `list_vpn_tunnels`, and with the
+scope `netsec` also `save_cert_endpoint`, `delete_cert_endpoint`, `set_certificate_ignored`,
+`acknowledge_firewall_change`, `set_vpn_watch` and `refresh_netsec`.
+
 ### Tickets & customer portal
 
 Operations → **Tickets**: the problems and questions of every customer, and the portal they report them in.

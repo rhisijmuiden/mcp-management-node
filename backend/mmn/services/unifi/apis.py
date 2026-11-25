@@ -85,6 +85,13 @@ class NetworkApi:
     async def wans(self, site: str) -> list[dict]:
         return await self._list(f"v1/sites/{_q(site)}/wans")
 
+    # Phase 20: VPN (Network 9.3+ / 10; older consoles answer 404 and are skipped).
+    async def vpn_tunnels(self, site: str) -> list[dict]:
+        return await self._list(f"v1/sites/{_q(site)}/vpn/site-to-site-tunnels")
+
+    async def vpn_servers(self, site: str) -> list[dict]:
+        return await self._list(f"v1/sites/{_q(site)}/vpn/servers")
+
     # actions
     async def device_action(self, site: str, device_id: str, action: str) -> Any:
         return await request(self.t, "POST", f"v1/sites/{_q(site)}/devices/{_q(device_id)}/actions",

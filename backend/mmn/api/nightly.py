@@ -122,6 +122,7 @@ class ChecksIn(BaseModel):
     certificates: bool = True
     backups: bool = True
     identity: bool = True
+    netsec: bool = True
     other: bool = True
 
 
@@ -200,6 +201,9 @@ async def put_customer(cid: str, body: CustomerIn, request: Request, db: AsyncSe
     except nodes.NodeError as ex:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(ex)) from ex
     e.nightly = {**(e.nightly or {}), "enabled": body.enabled, "cert_endpoints": body.cert_endpoints}
+    from mmn.services import certs
+
+    await certs.sync_nightly_endpoints(db, e.id, body.cert_endpoints)  # phase 20: watched as endpoints
     await audit(db, "nightly.customer", user=admin, target=e.name, ip=client_ip(request), enabled=body.enabled,
                 endpoints=len(body.cert_endpoints))
     await db.commit()

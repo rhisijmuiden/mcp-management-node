@@ -31,7 +31,7 @@ from mmn.services.settings_store import get_setting
 
 log = logging.getLogger("mmn.nightly")
 
-CATEGORIES = ("updates", "cves", "disks", "certificates", "backups", "identity", "other")
+CATEGORIES = ("updates", "cves", "disks", "certificates", "backups", "identity", "netsec", "other")
 SEVERITIES = ("high", "medium", "low", "info")
 _SEV_ORDER = {s: i for i, s in enumerate(SEVERITIES)}
 SOURCE = "nightly"
@@ -44,6 +44,7 @@ _CODE_CATEGORY = {
     "disk_full": "disks", "storage_full": "disks", "guest_disk_full": "disks", "smart_bad": "disks",
     "pbs_full": "disks",
     "cert_expired": "certificates", "cert_expiring": "certificates", "cert_endpoint_error": "certificates",
+    "cert_untrusted": "certificates", "cert_name_mismatch": "certificates",
 }
 
 
@@ -55,6 +56,8 @@ def category_of(f: dict[str, Any]) -> str:
         return "backups"
     if f.get("area") == "identity" or code.startswith("m365_"):
         return "identity"
+    if f.get("area") in ("firewall", "vpn") or code.startswith(("fw_", "vpn_")):
+        return "netsec"
     return "other"
 
 
@@ -495,6 +498,17 @@ async def _refresh(e: Environment, cfg: dict[str, Any]) -> None:
         from mmn.services import m365
 
         await m365.refresh_customer(e.id)
+    # Phase 20: certificates (endpoints and certificate stores), firewall configurations and VPN tunnels.
+    from mmn.services import netsec
+
+    for what, on in (("certificates", checks.get("certificates")), ("firewall", checks.get("netsec")),
+                     ("vpn", checks.get("netsec"))):
+        if not on:
+            continue
+        try:
+            await asyncio.wait_for(netsec.refresh(e.id, what), timeout=300)
+        except Exception as ex:  # noqa: BLE001
+            log.info("%s of %s: %s", what, e.name, ex)
     if e.nodes and checks.get("backups"):
         try:
             await asyncio.wait_for(protection.collect(e.id), timeout=600)
@@ -529,15 +543,21 @@ async def check_customer(run_id: str, env_id: str, cfg: dict[str, Any], cache: d
                 except Exception as ex:  # noqa: BLE001
                     errors.append(f"{n.name}: CVE check failed ({ex})"[:300])
         if checks.get("certificates"):
+            # Phase 20: from the certificate inventory (endpoints, uptime checks and certificate stores).
+            from mmn.services import certs as certmon
+
             warn = max(1, min(int(cfg.get("cert_warn_days") or 21), 120))
-            certs = await asyncio.gather(*(machine_cert_findings(n, warn, now, finding) for n in ns),
-                                         return_exceptions=True)
-            for n, res in zip(ns, certs, strict=True):
-                if isinstance(res, BaseException):
-                    errors.append(f"{n.name}: certificate check failed ({res})"[:300])
-                else:
-                    found += res
-            found += await endpoint_findings(list((e.nightly or {}).get("cert_endpoints") or []), warn, now, finding)
+            try:
+                found += await certmon.findings(db, e, now, finding, warn_days=warn)
+            except Exception as ex:  # noqa: BLE001
+                errors.append(f"certificate check failed ({ex})"[:300])
+        if checks.get("netsec"):
+            from mmn.services import netsec
+
+            try:
+                found += await netsec.findings(db, e, now, finding)
+            except Exception as ex:  # noqa: BLE001
+                errors.append(f"firewall and VPN check failed ({ex})"[:300])
         if checks.get("identity"):
             from mmn.services import m365
 

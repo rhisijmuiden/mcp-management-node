@@ -65,6 +65,8 @@ def _criteria(ids: list[str]):
     from mmn.models import (
         Alert,
         BackupCoverage,
+        CertEndpoint,
+        Certificate,
         ConfigBackup,
         CustomerReport,
         Deployment,
@@ -73,6 +75,8 @@ def _criteria(ids: list[str]):
         DocumentAttachment,
         DocumentRevision,
         Environment,
+        FirewallSource,
+        FirewallVersion,
         M365SignIn,
         M365Tenant,
         MetricSample,
@@ -95,6 +99,7 @@ def _criteria(ids: list[str]):
         VaultGrant,
         VaultItem,
         VaultItemHistory,
+        VpnTunnel,
     )
 
     node_ids = select(Node.id).where(Node.environment_id.in_(ids)).scalar_subquery()
@@ -105,6 +110,11 @@ def _criteria(ids: list[str]):
     ticket_ids = select(Ticket.id).where(Ticket.customer_id.in_(ids)).scalar_subquery()
     return [
         with_loader_criteria(Document, Document.customer_id.in_(ids), include_aliases=True),
+        with_loader_criteria(CertEndpoint, CertEndpoint.customer_id.in_(ids), include_aliases=True),
+        with_loader_criteria(Certificate, Certificate.customer_id.in_(ids), include_aliases=True),
+        with_loader_criteria(FirewallSource, FirewallSource.customer_id.in_(ids), include_aliases=True),
+        with_loader_criteria(FirewallVersion, FirewallVersion.customer_id.in_(ids), include_aliases=True),
+        with_loader_criteria(VpnTunnel, VpnTunnel.customer_id.in_(ids), include_aliases=True),
         with_loader_criteria(M365Tenant, M365Tenant.customer_id.in_(ids), include_aliases=True),
         with_loader_criteria(M365SignIn, M365SignIn.customer_id.in_(ids), include_aliases=True),
         with_loader_criteria(DocumentRevision, DocumentRevision.customer_id.in_(ids), include_aliases=True),
