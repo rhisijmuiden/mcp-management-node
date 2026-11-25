@@ -30,6 +30,7 @@ Stackpilot is built in phases. Each phase is one pull request and one minor rele
 | 20 | v0.20.0 | Certificate, firewall and VPN monitoring |
 | 21 | v0.21.0 | Costs and licences per customer |
 | 22 | v0.22.0 | Change calendar with notices to the customer |
+| – | v0.22.1 | Fix: numeric weekdays in cron schedules follow standard cron (0 and 7 = Sunday, 6 = Saturday) |
 
 ## What each phase added
 
