@@ -28,8 +28,9 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import object_session
 
 from mmn.db import sessionmaker
 from mmn.models import AiApproval, AiPolicy, ApiToken, Environment
@@ -572,10 +573,17 @@ async def expire_old(db: AsyncSession) -> int:
 def _runbook_kick(a: AiApproval) -> None:
     """A step of a runbook waits for this approval: let the run go on now that it is decided."""
     run_id = (a.client or {}).get("runbook_run")
-    if run_id:
-        from mmn.services import runbooks
+    if not run_id:
+        return
+    from mmn.services import runbooks
 
+    # The run reads the decision from the database, so it may only go on once the decision is
+    # committed; kicking it right away raced the caller's commit and left the run waiting.
+    session = object_session(a)
+    if session is None or not session.in_transaction():
         runbooks.kick(run_id)
+        return
+    event.listen(session, "after_commit", lambda _s: runbooks.kick(run_id), once=True)
 
 
 async def create_approval(db: AsyncSession, *, tool: str, risk: str, args: dict[str, Any], args_view: dict[str, Any],
