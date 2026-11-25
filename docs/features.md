@@ -541,6 +541,39 @@ Over MCP: `list_certificates`, `list_firewall_changes`, `get_firewall_change` an
 scope `netsec` also `save_cert_endpoint`, `delete_cert_endpoint`, `set_certificate_ignored`,
 `acknowledge_firewall_change`, `set_vpn_watch` and `refresh_netsec`.
 
+### Change calendar
+
+Operations → **Change calendar**: planned maintenance and changes of every customer in one calendar, and the
+notices that keep the customer informed.
+
+- **Plan a change.** Title, kind (maintenance, updates, change, migration, other), expected impact (none, short
+  interruptions, slower, unavailable), start and length, the customer's machines it touches, a message for the
+  customer (shown in the notices, the portal and the calendar feed) and internal notes for staff. Optionally link the
+  scheduled task that carries it out and a runbook, which can start by itself when the change begins. A *draft* is
+  only visible for staff and sends nothing. Every change gets a number (CHG-1001, …).
+- **Checks while you plan.** Stackpilot checks the time against the customer's maintenance window (Contacts &
+  notes, for example `Sat 22:00-02:00`), other changes of the same customer (a warning when they share machines),
+  the scheduled tasks that run on the customer's machines in that period, whether the linked task actually runs
+  during the change, and whether the customer still gets the usual notice. It suggests the next free slot inside the
+  window that fits the length, which you take over with one click. Planned changes with a warning show as a badge in
+  the menu.
+- **Notices to the customer.** Through the app's own mail server, to the customer's contacts with an email address
+  and its portal users (or one of them, or only extra addresses), one mail each, in Dutch or English: by default
+  3 days and 1 hour before the start (other times per customer or per change; planned at short notice, only the
+  closest one goes out), a *new time* mail when an announced change moves, a cancellation when it is called off and a
+  notice afterwards with the outcome. Every notice is logged on the change, with how many recipients got it.
+- **Status.** Planned → in progress at the start → completed at the end, by the clock (a setting); with a linked
+  runbook the run decides whether it completed or failed. Finish by hand with a note for the customer.
+- **Calendar.** A month view with every change (and, optionally, the scheduled task runs), the coming changes and the
+  maintenance window of every customer; on a phone an agenda.
+- **Customer portal and iCal.** Customers see their planned and recent maintenance under *Maintenance* in the
+  portal. A secret iCal link per customer (also shown in their portal) and one for staff with every customer can be
+  subscribed to in Outlook, Google or Apple Calendar; drafts and internal notes never appear in them, cancelled
+  changes disappear from the calendar.
+
+Over MCP, with the scope `changes`: `list_changes`, `get_change`, `get_change_calendar` and `check_change_slot`;
+with `changes_admin` also `save_change`, `set_change_status` and `send_change_notice`.
+
 ### Costs & licences
 
 Operations → **Costs & licences**: what every customer costs per month, as the basis for invoicing, and everything

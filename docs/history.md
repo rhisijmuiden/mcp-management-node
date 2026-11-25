@@ -27,6 +27,9 @@ Stackpilot is built in phases. Each phase is one pull request and one minor rele
 | 17 | v0.17.0 | Customer portal with tickets |
 | 18 | v0.18.0 | Documentation and password vault per customer |
 | 19 | v0.19.0 | Microsoft 365 and Entra ID per customer |
+| 20 | v0.20.0 | Certificate, firewall and VPN monitoring |
+| 21 | v0.21.0 | Costs and licences per customer |
+| 22 | v0.22.0 | Change calendar with notices to the customer |
 
 ## What each phase added
 
@@ -237,5 +240,15 @@ date, notice period and automatic renewal; a monthly statement per customer with
 recurring amount, live until made final, with PDF and CSV export (also every customer in one CSV). Alerts of kind
 `contract`, a morning-summary category for contracts and licences, an optional costs section in the monthly report,
 ten MCP tools and the token scopes `costs` and `costs_admin`. No agent update is needed.
+
+**Phase 22** added the change calendar per customer (Operations → **Change calendar**). Planned maintenance and
+changes (CHG-numbers) with kind, expected impact, machines and a message for the customer, optionally linked to a
+scheduled task and a runbook that starts when the change begins. Every change is checked against the customer's
+maintenance window, other changes and the scheduled tasks in the same period, and the next free slot in the window
+is suggested. Notices go to the customer's contacts and portal users through the app's own mail server (default 3
+days and 1 hour before, again when it moves or is cancelled, and afterwards with the outcome), per customer in
+Dutch or English. The status follows the clock or the linked runbook run. The customer portal shows the planned
+maintenance, and there are secret iCal feeds per customer and for staff. Seven MCP tools and the token scopes
+`changes` and `changes_admin`. No agent update is needed.
 
 Bug fix releases in between (v0.2.1, v0.6.1, v0.6.2, v0.7.1) are listed on the releases page.

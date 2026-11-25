@@ -250,6 +250,9 @@ class Environment(Base):
     # Phase 21: costs and invoicing {"discount_pct", "debtor", "bill_resources", "bill_devices", "bill_m365",
     # "note"} (see services/costs.py CUSTOMER_DEFAULTS).
     costs: Mapped[dict] = mapped_column(JsonType, default=dict)
+    # Phase 22: change calendar {"notify_before": [minutes], "notify_after", "recipients", "extra": [emails],
+    # "lang", "ical_token"} (see services/changes.py CUSTOMER_DEFAULTS).
+    changes: Mapped[dict] = mapped_column(JsonType, default=dict)
 
     nodes: Mapped[list[Node]] = relationship(back_populates="environment", lazy="selectin")
 
@@ -1569,3 +1572,53 @@ class CostStatement(Base):
     note: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     created_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+
+# ------------------------------------------------------------------ phase 22: change calendar
+CHANGE_NUMBER_SEQ = Sequence("change_number_seq", start=1001)
+
+
+class Change(Base):
+    """A planned change or maintenance of a customer in the change calendar: updates, a migration, a
+    reboot... From ``starts_at`` to ``ends_at`` (UTC), on some of the customer's machines (``node_ids``),
+    optionally linked to a scheduled task and a runbook (``run_runbook``: start the runbook when the change
+    begins). ``description`` and ``outcome_note`` are written for the customer (notices, portal, iCal);
+    ``internal_notes`` stay with staff.
+
+    ``status``: draft (only staff, no notices) | planned | in_progress | completed | failed | cancelled.
+    ``notify``: send notices to the customer's contacts; ``notify_before`` minutes before the start
+    (None: the customer's or the global setting). ``notices``: what was sent [{"key", "at", "to", "ok"}],
+    with keys before:<minutes>, rescheduled, cancelled, after and announce. ``sequence`` goes up with every
+    change of time or status (iCal SEQUENCE)."""
+
+    __tablename__ = "changes"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    number: Mapped[int] = mapped_column(Integer, CHANGE_NUMBER_SEQ, unique=True)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("environments.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    internal_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    kind: Mapped[str] = mapped_column(String(16), default="maintenance")  # maintenance | update | change | migration | other
+    impact: Mapped[str] = mapped_column(String(16), default="minor")  # none | minor | degraded | outage
+    status: Mapped[str] = mapped_column(String(16), default="planned", index=True)
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    node_ids: Mapped[list[str]] = mapped_column(JsonType, default=list)
+    task_id: Mapped[str | None] = mapped_column(ForeignKey("scheduled_tasks.id", ondelete="SET NULL"), nullable=True)
+    runbook_id: Mapped[str | None] = mapped_column(ForeignKey("runbooks.id", ondelete="SET NULL"), nullable=True)
+    run_runbook: Mapped[bool] = mapped_column(Boolean, default=False)
+    runbook_run_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    notify: Mapped[bool] = mapped_column(Boolean, default=True)
+    notify_before: Mapped[list | None] = mapped_column(JsonType, nullable=True)
+    notices: Mapped[list] = mapped_column(JsonType, default=list)
+    outcome_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sequence: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    customer: Mapped[Environment] = relationship(lazy="joined")

@@ -1,6 +1,6 @@
 import * as DM from "@radix-ui/react-dropdown-menu";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, Inbox, LifeBuoy, LogOut, Menu, Monitor, Moon, Plus, Sun, UserRound, X } from "lucide-react";
+import { CalendarRange, ChevronDown, Inbox, LifeBuoy, LogOut, Menu, Monitor, Moon, Plus, Sun, UserRound, X } from "lucide-react";
 import { createContext, useContext, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useSearchParams } from "react-router";
@@ -13,7 +13,7 @@ import { applyTheme, localStorageGet, localStorageSet } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { AuthShell } from "@/pages/AuthPages";
 import { pget, ppatch, ppost, setPortalUnauthorizedHandler, type PortalMe, type PortalStatus } from "./api";
-import { PortalAccountPage, PortalHomePage, PortalNewTicketPage, PortalTicketPage } from "./PortalPages";
+import { PortalAccountPage, PortalChangesPage, PortalHomePage, PortalNewTicketPage, PortalTicketPage } from "./PortalPages";
 
 /* ------------------------------------------------------------------ session */
 interface Ctx { status?: PortalStatus; me?: PortalMe | null; loading: boolean; lang: string; refresh: () => Promise<void> }
@@ -83,6 +83,7 @@ export default function PortalApp() {
           <Route index element={<PortalHomePage />} />
           <Route path="tickets/new" element={<PortalNewTicketPage />} />
           <Route path="tickets/:id" element={<PortalTicketPage />} />
+          <Route path="changes" element={<PortalChangesPage />} />
           <Route path="account" element={<PortalAccountPage />} />
           <Route path="*" element={<Navigate to="/portal" replace />} />
         </Route>
@@ -189,6 +190,7 @@ function PortalLayout() {
   const items = [
     { to: "/portal", icon: <Inbox />, label: t("portal.nav.tickets"), end: true },
     { to: "/portal/tickets/new", icon: <Plus />, label: t("portal.nav.new") },
+    { to: "/portal/changes", icon: <CalendarRange />, label: t("portal.nav.changes") },
     { to: "/portal/account", icon: <UserRound />, label: t("portal.nav.account") },
   ];
   const logout = async () => {

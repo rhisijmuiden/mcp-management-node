@@ -15,7 +15,7 @@
   <a href="https://github.com/rhisijmuiden/stackpilot/releases/latest"><img alt="Laatste release" src="https://img.shields.io/github/v/release/rhisijmuiden/stackpilot?label=release&color=14223D"></a>
   <a href="https://github.com/rhisijmuiden/stackpilot/actions/workflows/release.yml"><img alt="Release build" src="https://img.shields.io/github/actions/workflow/status/rhisijmuiden/stackpilot/release.yml?label=build"></a>
   <img alt="Debian 13" src="https://img.shields.io/badge/draait%20op-Debian%2013-FF6B57">
-  <img alt="MCP-tools" src="https://img.shields.io/badge/MCP--tools-223-9CC3FF">
+  <img alt="MCP-tools" src="https://img.shields.io/badge/MCP--tools-230-9CC3FF">
   <img alt="Engels en Nederlands" src="https://img.shields.io/badge/talen-EN%20%7C%20NL-F6F7FB">
 </p>
 
@@ -51,7 +51,7 @@ AI-acties.
 | | |
 | --- | --- |
 | 🤖 **AI-gateway** | Commandocentrum, goedkeuringen-inbox (app + mail), beleid per risiconiveau, klant en token, onderhoudsvensters, noodknop, AI-sessies en activiteitenlog. |
-| 🧰 **223 MCP-tools** | Logs lezen, services herstarten, commando's uitvoeren, patchen, VM's, netwerk, HA, deploys en UniFi beheren, alles via één endpoint met OAuth 2.1 of API-tokens. [Volledige lijst](docs/mcp-tools.md). |
+| 🧰 **230 MCP-tools** | Logs lezen, services herstarten, commando's uitvoeren, patchen, VM's, netwerk, HA, deploys en UniFi beheren, alles via één endpoint met OAuth 2.1 of API-tokens. [Volledige lijst](docs/mcp-tools.md). |
 | 💻 **Werkplekken** | Pc's en laptops per klant: hardware, OS, aangemelde gebruiker, geïnstalleerde software, schijven en SSD-slijtage, Windows Update-geschiedenis, Defender, BitLocker/LUKS, firewall, TPM, een beveiligingsstatus, en acties op afstand (Defender-scan, definities bijwerken, groepsbeleid vernieuwen, bericht, afmelden). |
 | 📄 **Maandrapporten** | Eén rapport per klant per maand (PDF en HTML): beschikbaarheid, incidenten, updates, Proxmox-back-ups, beveiliging van werkplekken, AI-acties en aanbevelingen, op een vaste dag gemaild naar de klant of op verzoek gemaakt. |
 | 🏢 **Klanten** | Klantkiezer, klantpagina met Proxmox, servers, werkplekken, netwerk en AI-toegang, contactpersonen, notities voor de AI, onderhoudsvenster, SLA en een optimalisatiescan. |
@@ -66,6 +66,7 @@ AI-acties.
 | 🎫 **Klantportaal & tickets** | Klanten loggen in op hun eigen portaal, melden problemen en vragen, koppelen die aan hun computers en servers en volgen de status. Stackpilot voert meteen een eerste diagnose uit op die machines; medewerkers antwoorden, maken interne notities, wijzen toe en lossen op, met mails via je eigen SMTP-server. De AI leest en beantwoordt tickets via MCP. |
 | 📡 **Uptime & SLA** | Externe controles per klant van websites (status, trefwoord, reactietijd, certificaat), TCP-poorten, ping, DNS-records en VPN-endpoints, vanaf Stackpilot of vanaf een machine bij de klant; storingen, meldingen en de gemeten SLA tegenover het doel van elke klant in het maandrapport. |
 | 🔐 **Certificaten, firewall & VPN** | Elk certificaat van een klant, van websites en mailservers tot de certificaatopslag op Linux, Proxmox en Windows, met waarschuwingen voordat het verloopt. Elke firewallwijziging (Proxmox, nftables/iptables, Windows Firewall, UniFi) als diff die iemand moet bevestigen, en VPN-tunnels (WireGuard, IPsec, OpenVPN, Windows RRAS, UniFi) die een melding geven als ze down blijven. |
+| 🗓️ **Wijzigingskalender** | Plan onderhoud en wijzigingen per klant, gecontroleerd tegen het onderhoudsvenster, andere wijzigingen en geplande taken, met het eerstvolgende vrije moment als voorstel. De klant krijgt vooraf een melding (standaard 3 dagen en 1 uur), bij verplaatsen of annuleren, en achteraf, ziet het in het portaal en kan zich abonneren op een iCal-feed. |
 | 💶 **Kosten & licenties** | Wat elke klant per maand kost als basis voor de facturatie: resources en machines volgens je prijslijst, Microsoft 365-licenties, contracten, licenties en hardware, met een pdf/csv-overzicht per maand en waarschuwingen voordat een contract, licentie of garantie afloopt of opgezegd moet worden. |
 | ⏱️ **Geplande taken** | Updates van containers en nodes, template-sync of een eigen commando op een cron-schema, met snapshot vooraf, rollback en mailrapport. |
 | 🚀 **Deploys vanuit GitHub** | Een repo uitrollen in een container (prod/test-branch), bij elke push via webhook of door te pollen, met snapshot vooraf en herstel bij fouten. |
@@ -163,7 +164,7 @@ zie **[installatie](docs/install.md)** (Engels).
 | Document | Inhoud |
 | --- | --- |
 | [Functiegids](docs/features.md) | Elk onderdeel van de app, pagina voor pagina |
-| [MCP-toolreferentie](docs/mcp-tools.md) | Alle 223 tools met risiconiveau, scope en parameters (gegenereerd uit de code) |
+| [MCP-toolreferentie](docs/mcp-tools.md) | Alle 230 tools met risiconiveau, scope en parameters (gegenereerd uit de code) |
 | [Installatie](docs/install.md) | Installeren, upgraden, reverse proxy (Zoraxy), agents, bestandslocaties, ontwikkelen |
 | [Architectuur](docs/architecture.md) | Onderdelen, agentprotocol, beveiligingsmodel |
 | [Releasegeschiedenis](docs/history.md) | Wat elke fase en release toevoegde |
@@ -189,7 +190,7 @@ zie **[installatie](docs/install.md)** (Engels).
 | 19 | **Microsoft 365 / Entra-beheer**: gebruikers, licenties, MFA-status en riskante aanmeldingen per klant | ✅ Klaar (v0.19.0) |
 | 20 | **Certificaat-, firewall- en VPN-bewaking**: verloopdatums, configuratiewijzigingen en tunnels die wegvallen | ✅ Klaar (v0.20.0) |
 | 21 | **Kosten en licenties per klant**: prijslijst, resourcegebruik, licenties, contracten en hardware met verlengdatums, maandoverzicht met CSV/PDF-export | ✅ Klaar (v0.21.0) |
-| 22 | **Wijzigingskalender per klant**: geplande wijzigingen en onderhoud, met een bericht aan de klant vóór elk onderhoudsvenster | 📋 Gepland |
+| 22 | **Wijzigingskalender per klant**: geplande wijzigingen en onderhoud, gecontroleerd tegen het onderhoudsvenster, met meldingen aan de klant vooraf en achteraf, het portaal en een iCal-feed | ✅ Klaar (v0.22.0) |
 
 ## Releases en kanalen
 

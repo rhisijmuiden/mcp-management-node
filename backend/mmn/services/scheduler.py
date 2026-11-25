@@ -381,6 +381,8 @@ async def start() -> None:
                       coalesce=True, max_instances=1, next_run_time=datetime.now(UTC) + timedelta(seconds=45))
     scheduler.add_job(_costs_job, "interval", hours=1, id="costs-tick", replace_existing=True,
                       coalesce=True, max_instances=1, next_run_time=datetime.now(UTC) + timedelta(seconds=105))
+    scheduler.add_job(_changes_job, "interval", minutes=1, id="changes-tick", replace_existing=True,
+                      coalesce=True, max_instances=1, next_run_time=datetime.now(UTC) + timedelta(seconds=50))
     scheduler.add_job(_netsec_job, "interval", minutes=1, id="netsec-tick", replace_existing=True,
                       coalesce=True, max_instances=1, next_run_time=datetime.now(UTC) + timedelta(seconds=75))
     scheduler.add_job(_m365_prune_job, CronTrigger(hour=5, minute=17, timezone="UTC"), id="m365-prune",
@@ -520,6 +522,15 @@ async def _costs_job() -> None:
         await costs.tick()
     except Exception:  # noqa: BLE001
         log.exception("reading the usage of the customers for the costs failed")
+
+
+async def _changes_job() -> None:
+    from mmn.services import changes
+
+    try:
+        await changes.tick()
+    except Exception:  # noqa: BLE001
+        log.exception("change calendar tick failed")
 
 
 def stop() -> None:
