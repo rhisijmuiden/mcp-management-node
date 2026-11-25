@@ -80,13 +80,20 @@ def _criteria(ids: list[str]):
         Transfer,
         UnifiConnection,
         UnifiEvent,
+        UptimeCheck,
+        UptimeIncident,
+        UptimeResult,
     )
 
     node_ids = select(Node.id).where(Node.environment_id.in_(ids)).scalar_subquery()
     conn_ids = select(UnifiConnection.id).where(UnifiConnection.environment_id.in_(ids)).scalar_subquery()
     dep_ids = (select(Deployment.id).where(Deployment.node_id.in_(
         select(Node.id).where(Node.environment_id.in_(ids)))).scalar_subquery())
+    check_ids = select(UptimeCheck.id).where(UptimeCheck.customer_id.in_(ids)).scalar_subquery()
     return [
+        with_loader_criteria(UptimeCheck, UptimeCheck.customer_id.in_(ids), include_aliases=True),
+        with_loader_criteria(UptimeIncident, UptimeIncident.customer_id.in_(ids), include_aliases=True),
+        with_loader_criteria(UptimeResult, UptimeResult.check_id.in_(check_ids), include_aliases=True),
         with_loader_criteria(Environment, Environment.id.in_(ids), include_aliases=True),
         with_loader_criteria(Node, Node.environment_id.in_(ids), include_aliases=True),
         with_loader_criteria(BackupCoverage, BackupCoverage.environment_id.in_(ids), include_aliases=True),

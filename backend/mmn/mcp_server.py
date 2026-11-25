@@ -323,6 +323,13 @@ within the policy, with loop protection and an emergency stop. `get_remediation`
 was fixed; `save_remediation_rule` adds one, `pause_remediation` is the emergency stop. Repair tools:
 `cleanup_disk`, `recover_agent` and `restart_network_adapter` (see `list_network_adapters`). A Proxmox VE node is never rebooted automatically.
 
+Uptime and SLA: external checks per customer (websites with status, keyword and response time, TCP ports,
+ping, DNS records, VPN endpoints), run from Stackpilot or from a machine at the customer. "Is the website of X
+up", "what was down last night": `list_uptime_checks` (status=down), `get_uptime_check` (history and incidents),
+`run_uptime_check` (check now). `get_sla_report` gives the measured availability per customer and month against
+its uptime SLA target (`set_uptime_sla`). `save_uptime_check` adds or changes a check (show the user first),
+`delete_uptime_check` removes one.
+
 Nodes and servers can be named by id or by name. Every call is written to the audit log with your token's name.
 Destructive tools need `confirm` set to the exact node name, or are marked destructive: ask the user
 before calling them, and give a short `reason` for commands and service actions."""
@@ -3572,6 +3579,211 @@ async def pause_remediation(paused: bool, reason: str) -> dict:
     if paused:
         await remediation.notify_paused()
     return _jsonable({"paused": cfg["paused"], "cancelled": cfg.get("cancelled", 0)})
+
+
+# ------------------------------------------------------------------ uptime and SLA (phase 16)
+async def _uptime_customer(db, customer: str | None):
+    from mmn.services import nodes
+
+    if not customer:
+        return None
+    try:
+        return await nodes.get_environment(db, customer)
+    except nodes.NodeError as ex:
+        raise ToolDenied(str(ex)) from ex
+
+
+async def _uptime_check(db, check: str):
+    from mmn.services import uptime
+
+    try:
+        return await uptime.find_check(db, check)
+    except uptime.UptimeError as e:
+        raise ToolDenied(str(e)) from e
+
+
+async def _uptime_machine(db, customer_id: str, ref: str | None, what: str) -> str | None:
+    from mmn.services import nodes
+
+    if not ref:
+        return None
+    try:
+        n = await nodes.get_node(db, ref)
+    except nodes.NodeError as ex:
+        raise ToolDenied(f"{what}: {ex}") from ex
+    if n.environment_id != customer_id:
+        raise ToolDenied(f"{what} {n.name} does not belong to this customer")
+    return n.id
+
+
+@tool("read", RO)
+async def list_uptime_checks(customer: str | None = None, status: str | None = None) -> dict:
+    """The uptime checks (websites, TCP ports, ping, DNS records, VPN endpoints) with their status
+    (up, down, degraded = slower than its limit, unknown, paused), last response time and error,
+    availability over 24 hours, 7 and 30 days and the certificate expiry of HTTPS and SSL VPN checks.
+    `customer` limits to one customer; `status` to one status (for "is everything up": status=down)."""
+    from sqlalchemy import select
+
+    from mmn.models import UptimeCheck
+    from mmn.services import uptime
+
+    async with sessionmaker()() as db:
+        e = await _uptime_customer(db, customer)
+        q = select(UptimeCheck).order_by(UptimeCheck.name)
+        if e is not None:
+            q = q.where(UptimeCheck.customer_id == e.id)
+        rows = list((await db.execute(q)).scalars())
+        names = await uptime.names(db)
+        st = await uptime.stats(db, rows)
+        out = [uptime.check_out(c, names, st.get(c.id)) for c in rows]
+    if status:
+        out = [c for c in out if c["status"] == status]
+    counts: dict[str, int] = {}
+    for c in out:
+        counts[c["status"]] = counts.get(c["status"], 0) + 1
+    return _jsonable({"counts": counts, "checks": out})
+
+
+@tool("read", RO)
+async def get_uptime_check(check: str, range: str = "24h") -> dict:
+    """One uptime check (id or exact name) with its response times over `range` (24h, 7d, 30d), the
+    last 30 results with their errors and the incidents (when it was down and why)."""
+    from mmn.services import uptime
+
+    async with sessionmaker()() as db:
+        c = await _uptime_check(db, check)
+        try:
+            hist = await uptime.history(db, c, range)
+        except uptime.UptimeError as e:
+            raise ToolDenied(str(e)) from e
+        st = await uptime.stats(db, [c])
+        return _jsonable({**uptime.check_out(c, await uptime.names(db), st.get(c.id)), "history": hist})
+
+
+@tool("monitoring", WRITE)
+async def save_uptime_check(customer: str, name: str, kind: str, target: str, port: int | None = None,
+                            config: dict[str, Any] | None = None, check: str | None = None,
+                            probe: str | None = None, machine: str | None = None, enabled: bool = True,
+                            interval_seconds: int = 60, timeout_seconds: int = 10, fail_after: int = 2,
+                            slow_ms: int | None = None, cert_warn_days: int = 14, severity: str = "critical",
+                            in_sla: bool = True) -> dict:
+    """Create or change (`check` = its id or name) an uptime check for a customer. kind: http (target
+    a URL; config {"method": GET|HEAD, "expect_status": "200-399", "keyword": "text that must be on
+    the page", "keyword_absent": false, "verify_tls": true, "follow_redirects": true}), tcp (target a
+    host, `port`), ping (a host), dns (target the name; config {"record_type": A|AAAA|CNAME|MX|TXT|NS|
+    SOA|CAA|SRV|PTR, "expect": "value that must be in the answer", "server": "resolver IP"}) or vpn
+    (config {"mode": "ssl"} = the VPN portal answers TLS on `port` (443), {"mode": "tunnel"} = a host
+    behind the tunnel answers ping). `probe`: run the check from this machine's agent (name or id, at
+    the same customer) instead of from Stackpilot, for internal addresses and tunnels. `machine`: the
+    machine the service runs on, so alerts belong to it and automatic recovery can act on them. Down
+    after `fail_after` failed runs in a row; `slow_ms` makes it "degraded" (warning) above that time.
+    `in_sla`: counts towards the customer's uptime SLA. Show the user the check before saving."""
+    from mmn.models import UptimeCheck
+    from mmn.services import agent_hub, uptime
+
+    p = current_principal()
+    async with sessionmaker()() as db:
+        e = await _uptime_customer(db, customer)
+        c: UptimeCheck | None = await _uptime_check(db, check) if check else None
+        if c is not None and c.customer_id != e.id:
+            raise ToolDenied("this check belongs to another customer")
+        try:
+            c = await uptime.save_check(
+                db, c, by=p.token_name if p else None, customer_id=e.id, name=name, kind=kind, target=target, port=port,
+                config=config, probe_node_id=await _uptime_machine(db, e.id, probe, "probe"),
+                node_id=await _uptime_machine(db, e.id, machine, "machine"), enabled=enabled,
+                interval_seconds=interval_seconds, timeout_seconds=timeout_seconds, fail_after=fail_after,
+                slow_ms=slow_ms, cert_warn_days=cert_warn_days, severity=severity, in_sla=in_sla)
+        except uptime.UptimeError as ex:
+            raise ToolDenied(str(ex)) from ex
+        await db.commit()
+        out = uptime.check_out(c, await uptime.names(db))
+    if out["enabled"]:
+        agent_hub.spawn(uptime.run_check(out["id"]))
+    return _jsonable(out)
+
+
+@tool("monitoring", DESTRUCTIVE)
+async def delete_uptime_check(check: str, confirm: str) -> dict:
+    """Delete an uptime check with its history and incidents (they no longer count in the SLA). Set
+    `confirm` to the check's name. To stop checking for a while, save it with enabled=false instead."""
+    async with sessionmaker()() as db:
+        c = await _uptime_check(db, check)
+        if confirm != c.name:
+            raise ToolDenied(f"confirm must equal the check name '{c.name}'")
+        await db.delete(c)
+        await db.commit()
+    return {"ok": True, "deleted": confirm}
+
+
+@tool("read", RO)
+async def run_uptime_check(check: str) -> dict:
+    """Run an uptime check now (instead of waiting for its interval) and return the result: ok, the
+    response time, HTTP status, error and the new status of the check."""
+    from mmn.services import uptime
+
+    async with sessionmaker()() as db:
+        c = await _uptime_check(db, check)
+        cid = c.id
+    res = await uptime.run_check(cid)
+    if res is None:
+        raise ToolDenied("uptime check not found")
+    return _jsonable(res)
+
+
+@tool("read", RO)
+async def get_sla_report(customer: str | None = None, period: str | None = None) -> dict:
+    """The uptime SLA per customer for a month (period 'YYYY-MM', default: this month so far): the
+    measured availability of the checks that count in the SLA, the target (the customer's uptime SLA
+    setting, or a percentage in its SLA text), met or not, the downtime against the allowed downtime,
+    and per check its availability and incidents. Downtime inside the maintenance window does not
+    count unless the customer's setting says so. With `customer` also the incidents."""
+    from datetime import UTC, datetime
+
+    from sqlalchemy import select
+
+    from mmn.models import Environment
+    from mmn.services import nodes, reports, uptime
+
+    async with sessionmaker()() as db:
+        e = await _uptime_customer(db, customer)
+        tz = await reports.timezone(db)
+        now = datetime.now(UTC)
+        p = period or reports.current_period(now, tz)
+        try:
+            start, end = reports.month_bounds(p, tz)
+        except nodes.NodeError as ex:
+            raise ToolDenied(str(ex)) from ex
+        envs = [e] if e is not None else list((await db.execute(select(Environment).order_by(Environment.name))).scalars())
+        out = []
+        for env in envs:
+            s = await uptime.customer_sla(db, env, start, end, now=now, with_incidents=e is not None)
+            if e is None and not s["checks"]:
+                continue
+            out.append(s)
+    return _jsonable({"period": p, "customers": out})
+
+
+@tool("monitoring", WRITE)
+async def set_uptime_sla(customer: str, target_pct: float | None = None, exclude_maintenance: bool | None = None,
+                         alert_breach: bool | None = None, recipients: list[str] | None = None,
+                         clear_target: bool = False) -> dict:
+    """Set the uptime SLA of a customer: `target_pct` (for example 99.9; clear_target=true removes it,
+    then a percentage in the customer's SLA text is used), `exclude_maintenance` (downtime inside the
+    maintenance window does not count, default true), `alert_breach` (an alert when this month falls
+    below the target, default true) and `recipients` (extra addresses for this customer's uptime
+    alerts). Leave a field out to keep it."""
+    from mmn.services import uptime
+
+    async with sessionmaker()() as db:
+        e = await _uptime_customer(db, customer)
+        try:
+            cfg = uptime.save_sla(e, target_pct=target_pct, exclude_maintenance=exclude_maintenance,
+                                  alert_breach=alert_breach, recipients=recipients, clear_target=clear_target)
+        except uptime.UptimeError as ex:
+            raise ToolDenied(str(ex)) from ex
+        await db.commit()
+    return _jsonable({"customer": e.name, **cfg})
 
 
 # ------------------------------------------------------------------ AI gateway: approvals and guardrails

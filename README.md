@@ -14,7 +14,7 @@
   <a href="https://github.com/rhisijmuiden/stackpilot/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/rhisijmuiden/stackpilot?label=release&color=14213D"></a>
   <a href="https://github.com/rhisijmuiden/stackpilot/actions/workflows/release.yml"><img alt="Release build" src="https://img.shields.io/github/actions/workflow/status/rhisijmuiden/stackpilot/release.yml?label=build"></a>
   <img alt="Debian 13" src="https://img.shields.io/badge/runs%20on-Debian%2013-FF6B57">
-  <img alt="MCP tools" src="https://img.shields.io/badge/MCP%20tools-176-9CC3FF">
+  <img alt="MCP tools" src="https://img.shields.io/badge/MCP%20tools-183-9CC3FF">
   <img alt="English and Dutch" src="https://img.shields.io/badge/languages-EN%20%7C%20NL-F6F7FB">
 </p>
 
@@ -50,7 +50,7 @@ pauses all AI actions.
 | | |
 | --- | --- |
 | 🤖 **AI gateway** | Command center, approvals inbox (app + mail), policies per risk level, customer and token, maintenance windows, kill switch, AI sessions and activity log. |
-| 🧰 **176 MCP tools** | Read logs, restart services, run commands, patch, manage VMs, network, HA, deployments and UniFi, all through one endpoint with OAuth 2.1 or API tokens. [Full list](docs/mcp-tools.md). |
+| 🧰 **183 MCP tools** | Read logs, restart services, run commands, patch, manage VMs, network, HA, deployments and UniFi, all through one endpoint with OAuth 2.1 or API tokens. [Full list](docs/mcp-tools.md). |
 | 🏢 **Customers** | Customer switcher, customer page with Proxmox, servers, workstations, network and AI access, contacts, notes for the AI, maintenance window, SLA and an optimisation scan. |
 | 💻 **Workstations** | PCs and laptops per customer: hardware, OS, logged-in user, installed software, disks and SSD wear, Windows Update history, Defender, BitLocker/LUKS, firewall, TPM, a security status, and remote actions (Defender scan, signature update, Group Policy refresh, message, log off). |
 | 🌅 **Nightly checks & morning summary** | Every night every customer is checked: updates, security updates with the CVEs they fix, full disks, certificates that expire, failed or missing backups and the optimisation scan. In the morning one summary in the app and by mail, with what is new and resolved, and proposals you approve with one click; changes wait for the customer's maintenance window. |
@@ -64,6 +64,7 @@ pauses all AI actions.
 | 🔎 **Troubleshooting** | Log search across many servers, error overviews, software and CVE inventory, data copy between servers. |
 | 📶 **UniFi** | UniFi Network, Site Manager and Access: devices, clients, WiFi troubleshooter, guest isolation check, firmware, events, doors and access log. |
 | 📈 **Monitoring** | One sample per node per minute for 30 days, trends, SMART and wearout, alerts by mail. |
+| 📡 **Uptime & SLA** | External checks per customer of websites (status, keyword, response time, certificate), TCP ports, ping, DNS records and VPN endpoints, from Stackpilot or from a machine at the customer; outages, alerts and the measured SLA against each customer's target in the monthly report. |
 | ⏱️ **Scheduled tasks** | Container and node updates, template sync or your own command on a cron schedule, with snapshot, rollback and a mailed report. |
 | 🚀 **Deployments from GitHub** | Deploy a repository into a container (prod/test branch), on push via webhook or by polling, snapshot first and restore on failure. |
 | 💾 **App backups** | Full and incremental, encrypted (AES-256-GCM), to FTP, FTPS, SFTP or SCP, scheduled, with restore from the remote location. |
@@ -163,7 +164,7 @@ see **[installation](docs/install.md)**.
 | Document | What's in it |
 | --- | --- |
 | [Feature guide](docs/features.md) | Every part of the app, page by page |
-| [MCP tool reference](docs/mcp-tools.md) | All 176 tools with risk level, scope and parameters (generated from the code) |
+| [MCP tool reference](docs/mcp-tools.md) | All 183 tools with risk level, scope and parameters (generated from the code) |
 | [Installation](docs/install.md) | Install, upgrade, reverse proxy (Zoraxy), agents, file locations, development |
 | [Architecture](docs/architecture.md) | Components, agent protocol, security model |
 | [Release history](docs/history.md) | What each phase and release added |
@@ -183,7 +184,7 @@ see **[installation](docs/install.md)**.
 | 13 | **Runbooks**: fixed procedures run step by step through Stackpilot's tools, with approval per step, the maintenance window and the audit log, editable in the app and available as MCP tools | ✅ Done (v0.13.0) |
 | 14 | **Automatic recovery**: rules that link alerts and nightly findings to repair runbooks, run within the policy with verification, loop protection, a circuit breaker and an emergency stop | ✅ Done (v0.14.0) |
 | 15 | **Network recovery and Windows scripts**: a network card or uplink without link is restarted (also by the agent itself when it cannot reach Stackpilot), and scheduled tasks run PowerShell scripts on Windows machines | ✅ Done (v0.15.0) |
-| 16 | **Uptime and SLA monitoring**: external checks of websites, VPNs and ports, SLA percentage per customer in the monthly report | 📋 Planned |
+| 16 | **Uptime and SLA monitoring**: external checks of websites, VPNs and ports, SLA percentage per customer in the monthly report | ✅ Done (v0.16.0) |
 | 17 | **Customer portal with tickets**: customers report problems in their own portal, tickets linked to machines, with a first diagnosis by the AI | 📋 Planned |
 | 18 | **Documentation and password vault per customer**: the AI only uses secrets after approval, every use in the audit log | 📋 Planned |
 | 19 | **Microsoft 365 / Entra management**: users, licences, MFA status and risky sign-ins per customer | 📋 Planned |

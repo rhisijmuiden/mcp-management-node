@@ -78,6 +78,15 @@ TEXT: dict[str, dict[str, str]] = {
         "mail_button": "Open the report",
         "sev_high": "High", "sev_medium": "Medium", "sev_low": "Low", "sev_info": "Info",
         "sev_critical": "Critical", "sev_warning": "Warning",
+        "uptime_title": "Service availability (SLA)", "k_sla": "Uptime SLA",
+        "uptime_line": "Measured availability of the monitored services: {pct}% against an SLA target of {target}%.",
+        "uptime_line_nt": "Measured availability of the monitored services: {pct}%. No SLA target has been agreed.",
+        "sla_met": "The SLA target was met.", "sla_missed": "The SLA target was not met.",
+        "sla_allowed": "Downtime {down} min of {allowed} min allowed.",
+        "maint_excluded": "Downtime inside the maintenance window ({window}) does not count towards the SLA.",
+        "none_uptime": "No services of this customer are monitored with uptime checks.",
+        "check": "Service", "checked": "Checked", "not_in_sla": "not in SLA", "outage_list": "Outages",
+        "k_http": "Website", "k_tcp": "TCP port", "k_ping": "Ping", "k_dns": "DNS", "k_vpn": "VPN",
     },
     "nl": {
         "title": "Maandelijks IT-rapport", "period": "Periode", "generated": "Gemaakt", "customer": "Klant",
@@ -121,6 +130,15 @@ TEXT: dict[str, dict[str, str]] = {
         "mail_button": "Rapport openen",
         "sev_high": "Hoog", "sev_medium": "Middel", "sev_low": "Laag", "sev_info": "Info",
         "sev_critical": "Kritiek", "sev_warning": "Waarschuwing",
+        "uptime_title": "Beschikbaarheid diensten (SLA)", "k_sla": "Uptime-SLA",
+        "uptime_line": "Gemeten beschikbaarheid van de bewaakte diensten: {pct}% tegenover een SLA-doel van {target}%.",
+        "uptime_line_nt": "Gemeten beschikbaarheid van de bewaakte diensten: {pct}%. Er is geen SLA-doel afgesproken.",
+        "sla_met": "Het SLA-doel is gehaald.", "sla_missed": "Het SLA-doel is niet gehaald.",
+        "sla_allowed": "Uitval {down} min van {allowed} min toegestaan.",
+        "maint_excluded": "Uitval binnen het onderhoudsvenster ({window}) telt niet mee voor de SLA.",
+        "none_uptime": "Er worden geen diensten van deze klant bewaakt met uptime-controles.",
+        "check": "Dienst", "checked": "Controle", "not_in_sla": "niet in SLA", "outage_list": "Storingen",
+        "k_http": "Website", "k_tcp": "TCP-poort", "k_ping": "Ping", "k_dns": "DNS", "k_vpn": "VPN",
     },
 }
 MONTHS = {"en": ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
@@ -544,8 +562,14 @@ async def build(db: AsyncSession, e: Environment, period: str, lang: str = "en",
                            "rule": a["rule_name"], "status": a["status"]}
                           for a in reversed(rec["items"]) if a["status"] not in ("notified",)]}
 
+    # Uptime checks and the uptime SLA (phase 16).
+    from mmn.services import uptime as uptime_svc
+
+    sla = await uptime_svc.customer_sla(db, e, start, end, now=now, with_incidents=True)
+    sla["incidents"] = list(reversed(sla.get("incidents") or []))[-40:]
+
     crit = sum(1 for s in sec if s["severity"] == "high") + backups["failed"]
-    status = "critical" if crit else ("warning" if sec or recs or inc else "ok")
+    status = "critical" if crit else ("warning" if sec or recs or inc or sla["met"] is False else "ok")
     general = await get_setting(db, "general")
     return {
         "version": 1, "lang": lang, "period": period, "period_label": period_label(period, lang),
@@ -558,8 +582,10 @@ async def build(db: AsyncSession, e: Environment, period: str, lang: str = "en",
                                  "workstations": len(ws)},
                     "availability": avg_avail, "incidents": len(inc), "updates_installed": total_installed,
                     "backups_ok": backups["ok"], "backups_failed": backups["failed"], "security": len(sec),
-                    "ai_calls": total_calls, "ai_changes": len(ai_rows)},
+                    "ai_calls": total_calls, "ai_changes": len(ai_rows), "uptime_sla": sla["availability"],
+                    "uptime_target": sla["target_pct"], "uptime_met": sla["met"]},
         "availability": avail,
+        "uptime": sla,
         "incidents": {"items": inc[-40:], "by_kind": by_kind, "total": len(inc)},
         "updates": {"machines": upd_rows, "installed": total_installed},
         "backups": backups,
@@ -715,7 +741,9 @@ def render_pdf(data: dict[str, Any], tz: ZoneInfo) -> bytes:
         (T["k_backups"], f"{s['backups_ok']} / {s['backups_failed']}"),
         (T["k_security"], str(s["security"])),
     ]
-    w = (186 - 5 * 4) / 6
+    if s.get("uptime_sla") is not None:
+        tiles.insert(2, (T["k_sla"], f"{s['uptime_sla']:.2f}%"))
+    w = (186 - (len(tiles) - 1) * 4) / len(tiles)
     y = pdf.get_y()
     for i, (label, value) in enumerate(tiles):
         x = 12 + i * (w + 4)
@@ -746,6 +774,35 @@ def render_pdf(data: dict[str, Any], tz: ZoneInfo) -> bytes:
                for a in data["availability"]], 2)
     else:
         para("–", muted=True)
+
+    up = data.get("uptime") or {}
+    h2(T["uptime_title"])
+    if up.get("checks"):
+        pct = f"{up['availability']:.2f}" if up.get("availability") is not None else "-"
+        if up.get("target_pct") is not None:
+            para(T["uptime_line"].format(pct=pct, target=f"{up['target_pct']:g}") + " "
+                 + (T["sla_met"] if up.get("met") else T["sla_missed"] if up.get("met") is False else ""))
+            if up.get("allowed_downtime_minutes") is not None:
+                para(T["sla_allowed"].format(down=up["downtime_minutes"], allowed=up["allowed_downtime_minutes"]),
+                     muted=True, size=9)
+        else:
+            para(T["uptime_line_nt"].format(pct=pct))
+        if up.get("exclude_maintenance") and up.get("maintenance_window"):
+            para(T["maint_excluded"].format(window=up["maintenance_window"]), muted=True, size=9)
+        table([T["check"], T["type"], T["uptime"], T["downtime"], T["count"]],
+              [[c["name"] + ("" if c["in_sla"] else f" ({T['not_in_sla']})"), T.get(f"k_{c['kind']}", c["kind"]),
+                f"{c['availability']:.2f}%" if c["availability"] is not None else "-",
+                f"{c['downtime_minutes']:g} {T['minutes']}", c["incidents"]] for c in up["checks"]],
+              [66, 30, 30, 32, 28],
+              [("ok" if (c["availability"] or 0) >= (up.get("target_pct") or 99.5) else
+                ("warning" if (c["availability"] or 0) >= 98 else "critical")) for c in up["checks"]], 2)
+        if up.get("incidents"):
+            pdf.ln(2)
+            table([T["when"], T["check"], T["what"], T["duration"]],
+                  [[_fmt_dt(i["started_at"], tz), i["check"], i.get("error") or "", f"{i['duration_minutes']:g} {T['minutes']}"]
+                   for i in up["incidents"]], [32, 46, 82, 26])
+    else:
+        para(T["none_uptime"], muted=True)
 
     h2(T["incidents"])
     inc = data["incidents"]

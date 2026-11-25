@@ -1,6 +1,6 @@
 [project]
 name = "mcp-management-node"
-version = "0.15.1"  # informational; the app reads mmn/VERSION or ../VERSION at runtime
+version = "0.16.0"  # informational; the app reads mmn/VERSION or ../VERSION at runtime
 description = "Stackpilot: one modern interface for Proxmox VE environments and managed servers, with an MCP endpoint for Claude"
 requires-python = ">=3.13"
 dependencies = [
@@ -23,6 +23,7 @@ dependencies = [
   "packaging>=24",
   "mcp>=2.3,<3",
   "fpdf2>=2.8",
+  "dnspython>=2.7",
 ]
 
 [project.optional-dependencies]

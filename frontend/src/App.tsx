@@ -10,6 +10,7 @@ import { BackupsPage } from "@/pages/Backups";
 import { ProtectionPage } from "@/pages/Protection";
 import { NightlyPage } from "@/pages/Nightly";
 import { RemediationPage } from "@/pages/Remediation";
+import { UptimePage } from "@/pages/Uptime";
 import { RunbookEditorPage, RunbookRunPage, RunbooksPage } from "@/pages/Runbooks";
 import { ApprovalsPage, CommandCenterPage, PoliciesPage, SessionsPage } from "@/pages/Gateway";
 import { HubPage, ToolCatalogPage } from "@/pages/Hub";
@@ -76,6 +77,7 @@ export default function App() {
         <Route path="ai/nightly" element={<NightlyPage />} />
         <Route path="runbooks" element={<RunbooksPage />} />
         <Route path="remediation" element={<RemediationPage />} />
+        <Route path="uptime" element={<UptimePage />} />
         <Route path="runbooks/new" element={<RequireAuth admin><RunbookEditorPage /></RequireAuth>} />
         <Route path="runbooks/runs/:id" element={<RunbookRunPage />} />
         <Route path="runbooks/:id" element={<RequireAuth admin><RunbookEditorPage /></RequireAuth>} />

@@ -23,6 +23,7 @@ Stackpilot is built in phases. Each phase is one pull request and one minor rele
 | 13 | v0.13.0 | Runbooks |
 | 14 | v0.14.0 | Automatic recovery (self-healing) |
 | 15 | v0.15.0 | Network recovery and PowerShell scripts on Windows |
+| 16 | v0.16.0 | Uptime and SLA monitoring |
 
 ## What each phase added
 
@@ -159,5 +160,16 @@ back after a switch reboot. Scheduled tasks with a custom command now also run o
 a PowerShell script next to the bash script, each machine runs the one of its OS (agent v0.15.0 runs it as a .ps1
 file under LocalSystem). The Windows agent now limits `%ProgramData%\mmn-agent` to SYSTEM and administrators. New
 MCP tools `list_network_adapters` and `restart_network_adapter`.
+
+**Phase 16** added uptime and SLA monitoring: external checks per customer of websites (status, keyword, response
+time, certificate expiry), TCP ports, ping, DNS records and VPN endpoints (an SSL VPN portal, or a host behind a
+tunnel), run by Stackpilot every 30 seconds to an hour or by the agent of a machine at the customer. A check is down
+after a number of failed checks in a row; outages are recorded from the first failure to the first good check.
+Down, slow and expiring checks become monitoring alerts (kind "uptime", also mailed to the customer's uptime
+recipients) and can trigger automatic recovery. Each customer gets an uptime SLA target (or the percentage in its
+SLA text); the measured availability per month, without downtime inside the maintenance window, is on the new page
+Operations → Uptime & SLA and in the monthly report, with an optional alert when the month falls below the target.
+New MCP tools `list_uptime_checks`, `get_uptime_check`, `run_uptime_check`, `get_sla_report`, `save_uptime_check`,
+`delete_uptime_check` and `set_uptime_sla`, and a new token scope `monitoring`. New dependency: dnspython.
 
 Bug fix releases in between (v0.2.1, v0.6.1, v0.6.2, v0.7.1) are listed on the releases page.

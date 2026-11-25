@@ -337,6 +337,10 @@ async def _conditions(db: AsyncSession, cfg: MonitoringSettings) -> dict[str, di
     from mmn.services import netwatch
 
     want.update(await netwatch.conditions(db, now))
+    # Phase 16: uptime checks (down, slow, certificate) and customers below their uptime SLA.
+    from mmn.services import uptime
+
+    want.update(await uptime.conditions(db, now))
     return want
 
 
@@ -406,20 +410,23 @@ async def evaluate() -> dict[str, int]:
 
 async def _mail_backup_contacts(db: AsyncSession, already: list[str], opened: list[Alert], resolved: list[Alert],
                                 names: dict[str, str]) -> None:
-    """Backup alerts also go to the extra recipients of the customer's backup policy."""
-    from mmn.services import protection
+    """Backup alerts also go to the extra recipients of the customer's backup policy, uptime and SLA
+    alerts to the uptime recipients of the customer."""
+    from mmn.services import protection, uptime
 
-    by_customer: dict[str, tuple[list[Alert], list[Alert]]] = {}
+    groups: dict[tuple[str, str], tuple[list[Alert], list[Alert]]] = {}
     for lst, idx in ((opened, 0), (resolved, 1)):
         for a in lst:
-            cid = (a.detail or {}).get("customer_id") if a.kind == "backup" else None
+            family = "backup" if a.kind == "backup" else ("uptime" if a.kind in ("uptime", "sla") else None)
+            cid = (a.detail or {}).get("customer_id") if family else None
             if cid:
-                by_customer.setdefault(cid, ([], []))[idx].append(a)
-    if not by_customer:
+                groups.setdefault((family, cid), ([], []))[idx].append(a)
+    if not groups:
         return
-    extra = await protection.extra_recipients(db, set(by_customer))
-    for cid, (op, res) in by_customer.items():
-        to = [x for x in extra.get(cid, []) if x.lower() not in {y.lower() for y in already}]
+    extra = {"backup": await protection.extra_recipients(db, {c for f, c in groups if f == "backup"}),
+             "uptime": await uptime.extra_recipients(db, {c for f, c in groups if f == "uptime"})}
+    for (family, cid), (op, res) in groups.items():
+        to = [x for x in extra[family].get(cid, []) if x.lower() not in {y.lower() for y in already}]
         if to:
             await _mail(db, to, op, res, names)
 
