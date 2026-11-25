@@ -470,6 +470,36 @@ Operations → **Uptime & SLA**: external checks of each customer's services, an
 Over MCP: `list_uptime_checks`, `get_uptime_check`, `run_uptime_check`, `get_sla_report`, and with the scope
 `monitoring` also `save_uptime_check`, `delete_uptime_check` and `set_uptime_sla`.
 
+### Tickets & customer portal
+
+Operations → **Tickets**: the problems and questions of every customer, and the portal they report them in.
+
+- **Customer portal.** At `https://<your address>/portal` people at a customer sign in with their own portal
+  account. Portal accounts are separate from the staff accounts: they have their own session, can only reach the
+  portal and only ever see their own organisation. A *member* sees the tickets they reported, a *manager* every
+  ticket of the organisation (optionally with a mail about each one). In the portal they report a problem, question
+  or request with a priority, pick the computers and servers it is about, follow the status, reply and close a ticket
+  themselves. English and Dutch, light and dark, on a phone too.
+- **Portal accounts.** Tab *Portal accounts*: add a contact person of a customer and they get an invitation to choose
+  a password (valid 7 days); resend it, send a password link, switch an account off or delete it.
+- **First diagnosis.** As soon as a ticket comes in, Stackpilot checks the linked machines with the same checks as
+  `diagnose_server` and `diagnose_workstation` (findings, failed services, recent errors, busiest processes), adds
+  the open alerts of those machines and the customer's uptime checks that are down, and suggests next steps. Machine
+  names in the text are linked automatically; with no machine at all every server of the customer is checked with
+  `find_errors`. Staff see the result on the ticket and as an internal note; the customer never does. **Run again**
+  repeats it.
+- **Handling tickets.** Status (new, open, waiting on customer, on hold, resolved, closed), priority, type,
+  assignment and the linked machines; replies to the customer and internal notes, optionally with a status change
+  ("ask and wait for the customer", "resolve"). The menu shows how many tickets wait for a reply. Staff can also open
+  a ticket for a customer who called.
+- **Mail.** Through the app's own SMTP server: new tickets and customer replies to the assignee, a fixed address or
+  every admin; a confirmation, replies and status changes (waiting for you, resolved, closed) to the customer in
+  their language. Resolved tickets close after a number of days without a reply.
+
+Over MCP: `list_tickets`, `get_ticket` (the conversation, customer context and the diagnosis), `diagnose_ticket`, and
+with the scope `tickets` also `reply_ticket` (to the customer or as an internal note), `update_ticket` and
+`create_ticket`.
+
 ### Package updates
 
 **Updates** shows the pending package updates of all nodes, installs them with a live log and reboots where needed.

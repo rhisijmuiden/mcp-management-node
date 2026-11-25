@@ -38,6 +38,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const user = status.data && !status.data.authenticated ? null : me.data;
 
   useEffect(() => {
+    // The customer portal sets its own language and theme (see portal/PortalApp.tsx).
+    if (/(^|\/)portal(\/|$)/.test(window.location.pathname)) return;
     const stored = localStorageGet("mmn-lang");
     const lang = user?.language || stored || status.data?.default_language || "en";
     if (i18n.language !== lang) i18n.changeLanguage(lang);

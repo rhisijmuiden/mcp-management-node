@@ -46,6 +46,11 @@ export function useLiveEvents() {
             if (msg.data.step === "finished") qc.invalidateQueries({ queryKey: ["dashboard"] });
           }
           if (msg.event === "maintenance") qc.invalidateQueries();
+          if (msg.event === "ticket.created" || msg.event === "ticket.updated") {
+            for (const k of ["tickets", "ticket-counts"]) qc.invalidateQueries({ queryKey: [k] });
+            qc.invalidateQueries({ queryKey: ["ticket", String(msg.data.id ?? "")] });
+            if (msg.event === "ticket.created") window.dispatchEvent(new CustomEvent("mmn:ticket", { detail: msg.data }));
+          }
           if (msg.event === "uptime.result" && msg.data.change) {
             qc.invalidateQueries({ queryKey: ["uptime-checks"] });
             qc.invalidateQueries({ queryKey: ["uptime-sla"] });

@@ -27,7 +27,9 @@ function LangSwitch() {
   );
 }
 
-export function AuthShell({ title, subtitle, children }: { title: ReactNode; subtitle?: ReactNode; children: ReactNode }) {
+export function AuthShell({ title, subtitle, children, heading, tagline, pill }: {
+  title: ReactNode; subtitle?: ReactNode; children: ReactNode; heading?: ReactNode; tagline?: ReactNode; pill?: ReactNode;
+}) {
   const { t } = useTranslation();
   return (
     <div className="grid min-h-full lg:grid-cols-[1fr_minmax(440px,560px)]">
@@ -38,10 +40,10 @@ export function AuthShell({ title, subtitle, children }: { title: ReactNode; sub
         </div>
         <div className="mt-auto max-w-lg">
           <div className="mb-5 inline-flex items-center gap-2 rounded-full bg-lucht/15 px-3 py-1 text-xs font-semibold text-lucht">
-            <Bot className="size-3.5" /> {t("auth.pill")}
+            <Bot className="size-3.5" /> {pill ?? t("auth.pill")}
           </div>
-          <h1 className="display text-[44px] leading-[48px]">Stackpilot</h1>
-          <p className="mt-4 text-lg text-white/75">{t("auth.tagline")}</p>
+          <h1 className="display text-[44px] leading-[48px]">{heading ?? "Stackpilot"}</h1>
+          <p className="mt-4 text-lg text-white/75">{tagline ?? t("auth.tagline")}</p>
         </div>
         <img src="brand/rhis-antenne.svg" alt="" className="pointer-events-none absolute -bottom-24 -right-24 size-[420px] opacity-[0.07]" />
       </div>

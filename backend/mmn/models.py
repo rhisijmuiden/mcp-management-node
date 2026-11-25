@@ -13,6 +13,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     LargeBinary,
+    Sequence,
     String,
     Text,
     UniqueConstraint,
@@ -1000,3 +1001,112 @@ class UptimeIncident(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+
+# ------------------------------------------------------------------ customer portal and tickets (phase 17)
+class PortalUser(Base):
+    """A person at a customer who signs in to the customer portal. Separate from ``User`` (the
+    staff of the app): a portal user has its own session cookie and can only reach /api/portal,
+    always limited to its own customer. role "member" sees the tickets they reported, "manager"
+    every ticket of the customer."""
+
+    __tablename__ = "portal_users"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("environments.id", ondelete="CASCADE"), index=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)  # stored lower case
+    full_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)  # None until the invite is used
+    role: Mapped[str] = mapped_column(String(16), default="member")  # member | manager
+    language: Mapped[str] = mapped_column(String(8), default="en")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    notify_all: Mapped[bool] = mapped_column(Boolean, default=False)  # managers: mail about every ticket
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    invited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    customer: Mapped[Environment] = relationship(lazy="joined")
+
+
+class PortalSession(Base):
+    __tablename__ = "portal_sessions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)  # sha256 of the cookie token
+    portal_user_id: Mapped[str] = mapped_column(ForeignKey("portal_users.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    remember: Mapped[bool] = mapped_column(Boolean, default=False)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    user: Mapped[PortalUser] = relationship(lazy="joined")
+
+
+class PortalToken(Base):
+    """One-time link to choose a password: an invitation (7 days) or a password reset (60 minutes)."""
+
+    __tablename__ = "portal_tokens"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)  # sha256 of the token
+    portal_user_id: Mapped[str] = mapped_column(ForeignKey("portal_users.id", ondelete="CASCADE"), index=True)
+    purpose: Mapped[str] = mapped_column(String(16))  # invite | reset
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+TICKET_NUMBER_SEQ = Sequence("ticket_number_seq", start=1001)
+
+
+class Ticket(Base):
+    """A problem or question of a customer, reported in the portal (or by staff on the customer's
+    behalf), linked to the customer's machines. ``diagnosis`` holds the first automatic diagnosis
+    that Stackpilot runs on the linked machines when the ticket comes in (staff only)."""
+
+    __tablename__ = "tickets"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    number: Mapped[int] = mapped_column(Integer, TICKET_NUMBER_SEQ, unique=True)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("environments.id", ondelete="CASCADE"), index=True)
+    subject: Mapped[str] = mapped_column(String(200))
+    category: Mapped[str] = mapped_column(String(16), default="problem")  # problem | question | request
+    priority: Mapped[str] = mapped_column(String(16), default="normal")  # low | normal | high | urgent
+    status: Mapped[str] = mapped_column(String(24), default="new", index=True)
+    node_ids: Mapped[list[str]] = mapped_column(JsonType, default=list)
+    reporter_id: Mapped[str | None] = mapped_column(ForeignKey("portal_users.id", ondelete="SET NULL"), nullable=True,
+                                                    index=True)
+    reporter_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    reporter_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)  # staff username or token name
+    assignee_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True,
+                                                    index=True)
+    diagnosis: Mapped[dict] = mapped_column(JsonType, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_customer_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_staff_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    first_response_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    customer: Mapped[Environment] = relationship(lazy="joined")
+
+
+class TicketMessage(Base):
+    """A message on a ticket. author_kind: customer, staff, ai (a reply or note of the AI through
+    MCP) or system (status changes, the automatic diagnosis). ``internal`` messages are never shown
+    in the portal."""
+
+    __tablename__ = "ticket_messages"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    ticket_id: Mapped[str] = mapped_column(ForeignKey("tickets.id", ondelete="CASCADE"), index=True)
+    author_kind: Mapped[str] = mapped_column(String(16))
+    author_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    portal_user_id: Mapped[str | None] = mapped_column(ForeignKey("portal_users.id", ondelete="SET NULL"),
+                                                       nullable=True)
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    body: Mapped[str] = mapped_column(Text)
+    internal: Mapped[bool] = mapped_column(Boolean, default=False)
+    event: Mapped[dict] = mapped_column(JsonType, default=dict)  # system messages: {"kind": "status", ...}
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)

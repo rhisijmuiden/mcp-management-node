@@ -22,6 +22,7 @@ from mmn.api import (
     network,
     nightly,
     oauth,
+    portal,
     protection,
     proxmox,
     remediation,
@@ -30,6 +31,7 @@ from mmn.api import (
     servers,
     settings,
     system,
+    tickets,
     tokens,
     unifi,
     uptime,
@@ -149,7 +151,7 @@ def create_app() -> FastAPI:
         # Customer pages name their customer in the path, and the switcher needs the full list.
         if not cid or not path.startswith("/api/") or path.startswith((
                 "/api/customers", "/api/environments", "/api/auth/", "/api/agent/", "/api/tokens", "/api/oauth/",
-                "/api/users", "/api/system/")):
+                "/api/users", "/api/system/", "/api/portal/")):
             return await call_next(request)
         tok = tenancy.set_allowed([cid[:64]])
         try:
@@ -174,7 +176,7 @@ def create_app() -> FastAPI:
               oauth.router, ws.router, agent.router, proxmox.router, guests.router, library.router, network.router,
               cluster.router, monitoring.router, deploy.router, servers.router, unifi.router, customers.router,
               gateway.router, hub.router, workstations.router, reports.router, protection.router, nightly.router,
-              runbooks.router, remediation.router, uptime.router):
+              runbooks.router, remediation.router, uptime.router, tickets.router, portal.router):
         app.include_router(r)
     app.mount("/mcp", mcp_app)
     return app

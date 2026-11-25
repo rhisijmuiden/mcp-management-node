@@ -50,12 +50,13 @@ SCOPES: dict[str, str] = {
     "runbooks": "Start runbooks, confirm their AI steps and create or change runbooks (every step keeps "
                 "its own scope and guardrails)",
     "monitoring": "Create, change and delete uptime checks and set the uptime SLA of customers",
+    "tickets": "Reply on customer tickets (mailed to the customer), add internal notes, change and open tickets",
     "hub": "Use the tools of other MCP servers registered in the MCP hub (Keystone, GitHub, ...), within the guardrails",
 }
 ADMIN_ONLY_SCOPES = {"restore", "updates", "settings", "backups", "nodes", "node_updates", "logs", "services", "exec", "copy",
                      "guests", "guests_admin", "restore_guests", "templates", "tasks", "network", "cluster", "deploy",
                      "unifi", "unifi_admin", "doors", "hub",
-                     "workstations", "reports", "runbooks", "monitoring"}
+                     "workstations", "reports", "runbooks", "monitoring", "tickets"}
 
 
 async def clean_customer_ids(db: AsyncSession, ids: list[str] | None) -> list[str] | None:
