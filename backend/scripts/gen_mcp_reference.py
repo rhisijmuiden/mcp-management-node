@@ -46,6 +46,7 @@ SECTION_TITLES = {
     "documentation and password vault (phase 18)": "Documentation and password vault",
     "Microsoft 365 / Entra ID (phase 19)": "Microsoft 365 and Entra ID",
     "certificates, firewall and VPN (phase 20)": "Certificates, firewall and VPN",
+    "costs and licences (phase 21)": "Costs and licences",
     "MCP hub": "MCP hub (tools of other MCP servers appear as `<prefix>__<tool>`)",
 }
 SKIP_SECTIONS = {"ASGI wiring", "resources: customer context"}

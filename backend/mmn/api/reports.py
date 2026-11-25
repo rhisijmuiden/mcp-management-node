@@ -52,6 +52,7 @@ class ReportSettingsIn(BaseModel):
     recipients: list[EmailStr] = Field(default_factory=list, max_length=20)
     lang: str = Field(default="en", pattern=r"^(en|nl)$")
     include_ai: bool = True
+    include_costs: bool = False
 
 
 @router.put("/{cid}/reports/settings")

@@ -207,6 +207,30 @@
   {% else %}<p class="empty">{{ T.none_recovery }}</p>{% endif %}
   {% endif %}
 
+  {% if d.costs %}
+  <h2>{{ d.costs.labels.title }}</h2>
+  <p class="muted">{{ d.costs.labels.line }} ({{ d.costs.labels.status }})</p>
+  {% if d.costs.lines %}
+  <div class="card scroll"><table>
+    <tr><th>{{ d.costs.labels.description }}</th><th>{{ d.costs.labels.quantity }}</th><th>{{ d.costs.labels.unit_price }}</th><th>{{ d.costs.labels.amount }}</th></tr>
+    {% for x in d.costs.lines %}
+    <tr><td>{{ x.name }}{% if x.detail %} <span class="muted">{{ x.detail }}</span>{% endif %}</td><td>{{ x.quantity }}</td><td>{{ x.unit_price }}</td><td>{{ x.amount }}</td></tr>
+    {% endfor %}
+    <tr><td colspan="3"><strong>{{ d.costs.labels.net }}</strong></td><td><strong>{{ d.costs.net }}</strong></td></tr>
+    <tr><td colspan="3">{{ d.costs.labels.total }}</td><td>{{ d.costs.total }}</td></tr>
+  </table></div>
+  {% endif %}
+  {% if d.costs.expiring %}
+  <p class="muted">{{ d.costs.labels.expiring }}</p>
+  <div class="card scroll"><table>
+    <tr><th>{{ d.costs.labels.item }}</th><th>{{ d.costs.labels.kind }}</th><th>{{ d.costs.labels.ends }}</th><th>{{ d.costs.labels.notice_by }}</th></tr>
+    {% for x in d.costs.expiring %}
+    <tr><td>{{ x.name }}</td><td>{{ x.kind }}</td><td><span class="b {{ 'critical' if x.status == 'expired' else 'warning' }}">{{ x.end_date }}</span></td><td>{{ x.notice_by }}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% endif %}
+  {% endif %}
+
   <h2>{{ T.recommendations }}</h2>
   {% if d.recommendations %}
   <div class="card scroll"><table>

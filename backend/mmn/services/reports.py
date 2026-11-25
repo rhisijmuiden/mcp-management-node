@@ -30,7 +30,7 @@ from mmn.services.settings_store import get_setting
 log = logging.getLogger("mmn.reports")
 
 PERIOD_RE = re.compile(r"^(\d{4})-(0[1-9]|1[0-2])$")
-DEFAULTS = {"enabled": False, "day": 1, "recipients": [], "lang": "en", "include_ai": True}
+DEFAULTS = {"enabled": False, "day": 1, "recipients": [], "lang": "en", "include_ai": True, "include_costs": False}
 
 _jinja = JinjaEnv(loader=FileSystemLoader(Path(__file__).resolve().parent.parent / "report_templates"),
                   autoescape=select_autoescape(["html"]))
@@ -258,6 +258,23 @@ FINDING_NL = {
                  "Controleer de tunnel aan beide kanten (peer bereikbaar, sleutels of pre-shared key, fase 1/2-instellingen)."),
     "vpn_flapping": ("VPN-tunnel {tunnel} ging {count} keer down en weer up in 24 uur.",
                      "Zoek naar een instabiele internetlijn, afwijkende DPD- of rekey-instellingen, of een MTU-probleem."),
+    # Phase 21: contracts, licences and warranties.
+    "contract_expired": ("Contract {name} is afgelopen op {date}.",
+                         "Verleng het en vul de nieuwe einddatum in, of zet het onderdeel op inactief als het bewust is gestopt."),
+    "licence_expired": ("Licentie {name} is afgelopen op {date}.",
+                        "Verleng hem en vul de nieuwe einddatum in, of zet het onderdeel op inactief als hij bewust is gestopt."),
+    "warranty_expired": ("De garantie van {name} is afgelopen op {date}.",
+                         "Vervang de hardware, verleng de garantie, of accepteer het risico en zet het onderdeel op inactief."),
+    "contract_notice": ("{name}: de opzegtermijn eindigt op {date} (over {days} dag(en)); daarna loopt het door tot {end}.",
+                        "Overleg met de klant of het doorgaat, en zeg vóór die datum op als dat niet zo is."),
+    "contract_expiring": ("Contract {name} loopt over {days} dag(en) af, op {date}.",
+                          "Verleng het op tijd en vul de nieuwe einddatum in."),
+    "licence_expiring": ("Licentie {name} loopt over {days} dag(en) af, op {date}.",
+                         "Verleng hem op tijd en vul de nieuwe einddatum in."),
+    "warranty_expiring": ("De garantie van {name} loopt over {days} dag(en) af, op {date}.",
+                          "Verleng de garantie op tijd of plan de vervanging."),
+    "cost_price_missing": ("{count} regel(s) van het kostenoverzicht van deze maand hebben geen prijs: {names}.",
+                           "Vul de prijs in bij Kosten & licenties (prijslijst of het onderdeel) voordat je factureert."),
     # Phase 19: Microsoft 365.
     "m365_sync_error": ('Microsoft 365 {tenant} kon niet worden uitgelezen: {error}.',
                         'Controleer de app-registratie, het geheim of certificaat en de beheerderstoestemming.'),
@@ -614,6 +631,15 @@ async def build(db: AsyncSession, e: Environment, period: str, lang: str = "en",
     sla = await uptime_svc.customer_sla(db, e, start, end, now=now, with_incidents=True)
     sla["incidents"] = list(reversed(sla.get("incidents") or []))[-40:]
 
+    # Costs and licences of the month (phase 21), only when the report settings ask for it.
+    from mmn.services import costs as costs_svc
+
+    try:
+        cost_section = await costs_svc.report_section(db, e, period, lang)
+    except Exception:  # noqa: BLE001
+        log.exception("costs section of the report of %s", e.name)
+        cost_section = None
+
     crit = sum(1 for s in sec if s["severity"] == "high") + backups["failed"]
     status = "critical" if crit else ("warning" if sec or recs or inc or sla["met"] is False else "ok")
     general = await get_setting(db, "general")
@@ -639,6 +665,7 @@ async def build(db: AsyncSession, e: Environment, period: str, lang: str = "en",
         "security": sec[:40],
         "ai": {"calls": total_calls, "by_risk": by_risk, "changes": ai_rows[-40:], "approvals": approvals},
         "recovery": recovery,
+        "costs": cost_section,
         "recommendations": [dict(zip(("severity", "target", "finding", "suggestion"),
                                      (f["severity"], *finding_texts(f, lang)), strict=True)) for f in recs],
     }
@@ -931,6 +958,22 @@ def render_pdf(data: dict[str, Any], tz: ZoneInfo) -> bytes:
                    for x in rec["items"]], 3)
         else:
             para(T["none_recovery"], muted=True)
+
+    cs = data.get("costs")
+    if cs:
+        lb = cs["labels"]
+        h2(lb["title"])
+        para(f"{lb['line']} ({lb['status']})", size=9)
+        if cs["lines"]:
+            table([lb["description"], lb["quantity"], lb["unit_price"], lb["amount"]],
+                  [[x["name"] + (f" ({x['detail']})" if x.get("detail") else ""), x["quantity"], x["unit_price"].replace("€", "EUR"),
+                    x["amount"].replace("€", "EUR")] for x in cs["lines"]], [96, 30, 30, 30])
+        if cs["expiring"]:
+            pdf.ln(2)
+            para(lb["expiring"], size=9)
+            table([lb["item"], lb["kind"], lb["ends"], lb["notice_by"]],
+                  [[x["name"], x["kind"], x["end_date"], x["notice_by"]] for x in cs["expiring"]], [80, 36, 35, 35],
+                  ["critical" if x["status"] == "expired" else "warning" for x in cs["expiring"]], 2)
 
     h2(T["recommendations"])
     if data["recommendations"]:

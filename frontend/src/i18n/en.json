@@ -117,7 +117,8 @@
     "security": "Certificates & firewall",
     "sec_certs": "Certificates",
     "sec_fw": "Firewall changes",
-    "sec_vpn": "VPN tunnels"
+    "sec_vpn": "VPN tunnels",
+    "costs": "Costs & licences"
   },
   "roles": {
     "admin": "Admin",
@@ -232,7 +233,11 @@
     "m365_admin": "Microsoft 365 actions",
     "m365_admin_desc": "Ask to block or unblock users, sign them out, reset MFA or the password and handle risky users. Every action needs an admin's approval.",
     "netsec": "Certificates, firewall & VPN",
-    "netsec_desc": "Manage the certificate addresses, ignore certificates, acknowledge firewall changes and choose which VPN tunnels are watched."
+    "netsec_desc": "Manage the certificate addresses, ignore certificates, acknowledge firewall changes and choose which VPN tunnels are watched.",
+    "costs": "Costs & licences",
+    "costs_desc": "Read the price list, contracts, licences, hardware, resource use and monthly statements of customers.",
+    "costs_admin": "Change costs & licences",
+    "costs_admin_desc": "Change the price list and the contracts, licences and hardware of customers, and make a month final."
   },
   "dashboard": {
     "morning": "Good morning",
@@ -1791,7 +1796,8 @@
     "kind_m365": "Microsoft 365",
     "kind_cert": "Certificate",
     "kind_firewall": "Firewall",
-    "kind_vpn": "VPN"
+    "kind_vpn": "VPN",
+    "kind_contract": "Contract"
   },
   "dep": {
     "title": "Deployments",
@@ -3152,7 +3158,9 @@
     "recipients_default": "Empty: goes to the main contact ({{email}}).",
     "send_title": "Mail report",
     "send_hint": "The PDF and the HTML version are attached.",
-    "sent_to": "Mailed to {{to}}"
+    "sent_to": "Mailed to {{to}}",
+    "include_costs": "Include costs",
+    "include_costs_desc": "Adds this month's statement and what runs out soon (from Costs & licences)."
   },
   "opt": {
     "node_offline": {
@@ -3415,6 +3423,38 @@
     "vpn_flapping": {
       "f": "VPN tunnel {{tunnel}} went down and up {{count}} times in 24 hours.",
       "s": "Look for an unstable internet line, DPD or rekey settings that differ, or an MTU problem."
+    },
+    "contract_expired": {
+      "f": "Contract {{name}} ended on {{date}}.",
+      "s": "Renew it and enter the new end date, or mark the item inactive if it was stopped on purpose."
+    },
+    "licence_expired": {
+      "f": "Licence {{name}} ended on {{date}}.",
+      "s": "Renew it and enter the new end date, or mark the item inactive if it was stopped on purpose."
+    },
+    "warranty_expired": {
+      "f": "The warranty of {{name}} ended on {{date}}.",
+      "s": "Replace the hardware, extend the warranty, or accept the risk and mark it inactive."
+    },
+    "contract_notice": {
+      "f": "{{name}}: the notice period ends on {{date}} ({{days}} day(s)); after that it continues until {{end}}.",
+      "s": "Decide with the customer whether to continue, and cancel before that date if not."
+    },
+    "contract_expiring": {
+      "f": "Contract {{name}} ends in {{days}} day(s), on {{date}}.",
+      "s": "Renew it in time and enter the new end date."
+    },
+    "licence_expiring": {
+      "f": "Licence {{name}} ends in {{days}} day(s), on {{date}}.",
+      "s": "Renew it in time and enter the new end date."
+    },
+    "warranty_expiring": {
+      "f": "The warranty of {{name}} ends in {{days}} day(s), on {{date}}.",
+      "s": "Extend the warranty in time or plan the replacement."
+    },
+    "cost_price_missing": {
+      "f": "{{count}} line(s) of this month's statement have no price: {{names}}.",
+      "s": "Add the price in Costs & licences (price list or the item) before invoicing."
     }
   },
   "prot": {
@@ -3651,7 +3691,8 @@
       "backups": "Backups",
       "other": "Other",
       "identity": "Microsoft 365",
-      "netsec": "Firewall & VPN"
+      "netsec": "Firewall & VPN",
+      "contracts": "Contracts & licences"
     },
     "cat_hint": {
       "updates": "Pending updates and reboots, old agents, firmware",
@@ -3661,7 +3702,8 @@
       "backups": "Failed, missing and old backups",
       "other": "The rest of the optimisation scan: offline machines, failed services, network",
       "identity": "Risky users, MFA, inactive accounts, licences and sign-ins of the connected tenants",
-      "netsec": "Firewall changes nobody reviewed, Windows Firewall profiles that are off, VPN tunnels down or unstable"
+      "netsec": "Firewall changes nobody reviewed, Windows Firewall profiles that are off, VPN tunnels down or unstable",
+      "contracts": "Contracts, licences and warranties that run out or must be cancelled, statement lines without a price"
     },
     "v_all": "All",
     "v_new": "New",
@@ -5363,5 +5405,272 @@
     "set_wg_hint": "For peers with persistent keepalive, without a handshake for this long.",
     "set_alert_vpn": "Alert when a watched tunnel is down",
     "settings_saved": "Settings saved"
+  },
+  "costs": {
+    "title": "Costs & licences",
+    "desc": "What every customer costs per month, as the basis for invoicing: resources from the price list, managed machines, Microsoft 365, licences, contracts and hardware, with warnings before anything runs out.",
+    "tab": {
+      "overview": "Monthly overview",
+      "items": "Licences & contracts",
+      "rates": "Price list",
+      "settings": "Settings"
+    },
+    "period": "Month",
+    "prev_month": "Previous month",
+    "next_month": "Next month",
+    "export_all": "Export all (CSV)",
+    "k_net": "Total this month",
+    "k_net_hint": "Excl. VAT, billable customers ({{total}} incl. VAT)",
+    "k_mrr": "Monthly recurring",
+    "k_mrr_hint": "Recurring revenue per month (yearly items / 12)",
+    "k_final": "Final",
+    "k_final_hint": "Customers whose statement of this month is final",
+    "k_expiring": "Runs out soon",
+    "k_expiring_hint": "Contracts, licences and warranties to act on",
+    "per_customer": "Per customer",
+    "per_customer_desc": "Click a customer for the lines. A month stays live until you make it final.",
+    "no_customers": "No customers yet",
+    "col_customer": "Customer",
+    "col_status": "Status",
+    "col_net": "Excl. VAT",
+    "col_mrr": "Per month",
+    "col_margin": "Margin",
+    "col_attention": "Attention",
+    "debtor": "Debtor",
+    "n_lines": "{{count}} line(s)",
+    "st_draft": "Draft",
+    "st_final": "Final",
+    "not_billable": "Not billed",
+    "missing_n": "{{count}} without price",
+    "expiring_n": "{{count}} running out",
+    "estimated": "Current use",
+    "final_desc": "Made final on {{date}} by {{by}}. Later changes to prices or use do not change it.",
+    "draft_desc": "Worked out live from the price list, the use and the items. Make it final when you invoice.",
+    "customer_settings": "Invoicing settings",
+    "customer_settings_desc": "How this customer is billed.",
+    "reopen": "Reopen",
+    "reopened": "The month is open again",
+    "finalize": "Make final",
+    "finalized": "The statement is final",
+    "finalize_title": "Make {{period}} final",
+    "finalize_desc": "The lines and totals ({{net}} excl. VAT) are frozen as the basis for the invoice.",
+    "final_note": "Note",
+    "final_note_hint": "For example the invoice number. Printed on the PDF.",
+    "final_note_ph": "Invoice 2026-118",
+    "missing_alert": "{{count}} line(s) have no price and are not counted. Add the price in the price list or on the item.",
+    "no_lines": "Nothing to charge this month",
+    "no_lines_hint": "Add prices in the price list, or licences and contracts under Licences & contracts.",
+    "col_description": "Description",
+    "col_quantity": "Quantity",
+    "col_price": "Price",
+    "col_amount": "Amount",
+    "no_price": "no price",
+    "subtotal": "Subtotal",
+    "discount": "Discount ({{pct}}%)",
+    "net": "Total excl. VAT",
+    "vat": "VAT ({{pct}}%)",
+    "total": "Total incl. VAT",
+    "margin": "Margin",
+    "purchase": "purchase",
+    "mrr": "Monthly recurring",
+    "usage_title": "Resource use",
+    "usage_desc": "{{basis}} of {{count}} daily reading(s) this month.",
+    "usage_estimated": "No daily readings for this month yet: this is the current use.",
+    "show_guests": "Show {{count}} VM(s) and container(s)",
+    "hide_guests": "Hide",
+    "u_cpu": "vCPU",
+    "u_ram": "Memory",
+    "u_storage": "Disk",
+    "u_guests": "VMs & containers",
+    "u_servers": "Servers",
+    "u_workstations": "Workstations",
+    "u_nodes": "Proxmox VE nodes",
+    "u_m365": "Microsoft 365 users",
+    "col_guest": "VM / container",
+    "col_node": "Node",
+    "cs_billable": "Bill this customer",
+    "cs_billable_hint": "Off for your own environment: it is left out of the totals and the export.",
+    "cs_debtor": "Debtor number",
+    "cs_debtor_hint": "As in your bookkeeping; goes into the CSV.",
+    "cs_discount": "Discount (%)",
+    "cs_resources": "Bill resources",
+    "cs_resources_hint": "vCPU, memory and disk of the VMs and containers, at the price list.",
+    "cs_devices": "Bill managed machines",
+    "cs_m365": "Bill Microsoft 365 users and licences",
+    "cs_note": "Note on the statement",
+    "cs_note_hint": "For example payment terms.",
+    "k_items": "Items",
+    "k_items_mrr": "Per month",
+    "k_items_mrr_hint": "Recurring items, yearly items / 12",
+    "k_notice": "Give notice now",
+    "k_notice_hint": "The notice period ends soon",
+    "k_ended": "Running out",
+    "k_ended_hint": "{{expired}} ran out, the rest within {{days}} days",
+    "items_title": "Licences, contracts and hardware",
+    "items_desc": "Everything with a price or an end date: software licences, contracts, hardware with warranty, services and one-off charges.",
+    "import_hw": "Import hardware",
+    "import_hw_hint": "Creates an item for every machine with a model or serial number in its inventory",
+    "imported": "{{count}} hardware item(s) created",
+    "add_item": "Add item",
+    "edit_item": "Edit item",
+    "all_kinds": "All types",
+    "all_statuses": "All statuses",
+    "soon": "Runs out within {{days}} days",
+    "no_items": "No licences or contracts yet",
+    "no_items_hint": "Add the licences, contracts and hardware of your customers to get warned before they run out.",
+    "col_item": "Item",
+    "col_kind": "Type",
+    "col_end": "Ends",
+    "days_left": "{{count}} day(s) left",
+    "ended_ago": "ended {{count}} day(s) ago",
+    "notice_by": "notice by {{date}}",
+    "delete": "Delete",
+    "item_dialog_desc": "Prices excl. VAT. Licence keys and passwords belong in the password vault, not here.",
+    "f_kind": "Type",
+    "f_name": "Name",
+    "f_vendor": "Vendor",
+    "f_reference": "Reference",
+    "f_reference_hint": "Contract, order or licence number",
+    "f_serial": "Serial number",
+    "f_machine": "Machine",
+    "f_no_machine": "Not tied to a machine",
+    "f_billing": "Billing",
+    "f_quantity": "Quantity",
+    "f_price": "Sale price",
+    "f_price_hint": "Per unit, per billing period",
+    "f_cost": "Purchase price",
+    "f_cost_hint": "What it costs you, for the margin",
+    "f_start": "Start date",
+    "f_start_once": "Charged in this month",
+    "f_start_cycle": "Charged in this month and every period after",
+    "f_end": "End date",
+    "f_licence_end": "Licence expiry",
+    "f_warranty_end": "Warranty until",
+    "f_notice": "Notice period (days)",
+    "f_notice_hint": "Warned before the date to give notice",
+    "f_warn": "Warn (days before)",
+    "f_warn_hint": "Empty: the general setting",
+    "f_renew_months": "Renews for (months)",
+    "f_auto_renew": "Renews automatically",
+    "f_auto_renew_hint": "The end date moves on by itself when the term ends.",
+    "f_active": "Active",
+    "f_active_hint": "Inactive items are not billed and not warned about.",
+    "f_notes": "Notes",
+    "f_notes_hint": "Not printed on the statement.",
+    "history": "Renewals",
+    "history_line": "{{from}} → {{to}} ({{by}})",
+    "rates_title": "Price list",
+    "rates_desc": "Monthly prices for every customer. A key without a price is not billed; Microsoft 365 licences without a price show up as 'no price'.",
+    "rates_desc_customer": "Default prices and the own prices of {{name}}, which win.",
+    "rates_hint": "Resources are billed on the average of the daily readings of the month (see Settings). Prices excl. VAT.",
+    "col_rate": "What",
+    "col_default": "Default price",
+    "col_own": "Price for {{name}}",
+    "col_purchase": "Purchase",
+    "per_unit": "per {{unit}} per month",
+    "uses_default": "default",
+    "not_billed": "not billed",
+    "edit_price": "Edit price",
+    "rate_default_desc": "The monthly price for every customer, unless a customer has its own.",
+    "rate_customer_desc": "This customer's own monthly price.",
+    "use_default": "Use the default",
+    "stop_billing": "Stop billing",
+    "f_price_month": "Price per month",
+    "f_rate_name": "Name on the statement",
+    "f_rate_name_hint": "Empty: the standard name",
+    "set_invoice": "Invoicing",
+    "set_currency": "Currency",
+    "set_currency_hint": "ISO code, e.g. EUR",
+    "set_vat": "VAT (%)",
+    "set_m365": "Microsoft 365 licences billed",
+    "set_m365_enabled": "Bought (in the subscription)",
+    "set_m365_consumed": "Assigned to users",
+    "set_usage": "Resource use",
+    "set_usage_desc": "Read every hour; a month bills the average or the peak of its days.",
+    "sample_now": "Read now",
+    "sampled": "Use of {{count}} customer(s) read",
+    "set_basis": "Monthly basis",
+    "set_stopped": "Count stopped VMs and containers",
+    "set_stopped_hint": "Their CPU, memory and disk stay reserved.",
+    "set_warnings": "Warnings",
+    "set_warn_days": "Warn days before",
+    "set_warn_days_hint": "Before the end date or the date to give notice.",
+    "set_alert": "Monitoring alert",
+    "set_alert_hint": "An alert while a contract, licence or warranty runs out or must be cancelled.",
+    "set_auto_renew": "Renew automatically",
+    "set_auto_renew_hint": "Items that renew automatically get their next end date when the term ends.",
+    "basis": {
+      "average": "Average",
+      "peak": "Peak"
+    },
+    "billing": {
+      "monthly": "per month",
+      "quarterly": "per quarter",
+      "yearly": "per year",
+      "once": "once",
+      "none": "not billed"
+    },
+    "group": {
+      "resources": "Resources",
+      "devices": "Managed machines",
+      "m365": "Microsoft 365",
+      "licence": "Licences",
+      "contract": "Contracts",
+      "service": "Services",
+      "hardware": "Hardware",
+      "other": "Other"
+    },
+    "kind": {
+      "licence": "Licence",
+      "contract": "Contract",
+      "hardware": "Hardware",
+      "service": "Service",
+      "other": "Other"
+    },
+    "ph": {
+      "licence": "ESET Protect Advanced",
+      "contract": "Managed service agreement",
+      "hardware": "Dell PowerEdge R650",
+      "service": "Backup offsite",
+      "other": "Installation"
+    },
+    "status": {
+      "ok": "OK",
+      "notice": "Give notice",
+      "expiring": "Runs out",
+      "expired": "Ran out",
+      "renews": "Renews",
+      "none": "No end date",
+      "inactive": "Inactive"
+    },
+    "std": {
+      "resource": {
+        "cpu": "vCPU",
+        "ram": "Memory (GB)",
+        "storage": "Disk space (GB)"
+      },
+      "device": {
+        "server": "Managed server",
+        "workstation": "Managed workstation",
+        "proxmox": "Proxmox VE node"
+      },
+      "m365": {
+        "user": "Microsoft 365 user (licensed)"
+      }
+    },
+    "unit": {
+      "vcpu": "vCPU",
+      "gb": "GB",
+      "device": "machine(s)",
+      "user": "user(s)",
+      "licence": "licence(s)"
+    },
+    "unit1": {
+      "vcpu": "vCPU",
+      "gb": "GB",
+      "device": "machine",
+      "user": "user",
+      "licence": "licence"
+    }
   }
 }

@@ -1254,6 +1254,7 @@ export interface ReportSettings {
   recipients: string[];
   lang: "en" | "nl";
   include_ai: boolean;
+  include_costs?: boolean;
   default_recipients?: string[];
 }
 

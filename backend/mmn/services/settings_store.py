@@ -93,7 +93,7 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "notify_mail": True,
         "mail_to": "",  # empty: every admin with an email address
         "checks": {"updates": True, "cves": True, "disks": True, "certificates": True, "backups": True,
-                   "identity": True, "netsec": True, "other": True},
+                   "identity": True, "netsec": True, "contracts": True, "other": True},
         "cert_warn_days": 21,
         "cve_lookup": True,  # look up the CVE numbers that pending security updates fix (OSV.dev)
         "proposals": True,  # turn findings into approval requests that run with one click
@@ -152,6 +152,17 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "vpn_down_minutes": 10,  # a watched tunnel down this long is an alert
         "alert_vpn": True,
         "wg_handshake_seconds": 300,  # WireGuard peer with keepalive: down after this long without handshake
+    },
+    "costs": {
+        # Phase 21: costs and licences per customer (see services/costs.py).
+        "currency": "EUR",
+        "vat_pct": 21,
+        "warn_days": 60,  # warn this many days before an end date or the date to give notice
+        "alert_expiring": True,  # monitoring alert for contracts, licences and warranties that run out
+        "auto_renew": True,  # move the end date of items with automatic renewal on when their term ends
+        "usage_basis": "average",  # average | peak of the daily readings of a month
+        "include_stopped": True,  # stopped VMs and containers still count (their resources stay reserved)
+        "m365_quantity": "enabled",  # enabled (bought) | consumed (assigned) Microsoft 365 licences are billed
     },
     "m365": {
         # Phase 19: Microsoft 365 / Entra ID tenants per customer (see services/m365.py).

@@ -350,6 +350,10 @@ async def _conditions(db: AsyncSession, cfg: MonitoringSettings) -> dict[str, di
 
     want.update(await certs.conditions(db, now))
     want.update(await netsec.conditions(db, now))
+    # Phase 21: contracts, licences and warranties that run out.
+    from mmn.services import costs
+
+    want.update(await costs.conditions(db, now))
     return want
 
 

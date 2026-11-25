@@ -368,6 +368,12 @@ diff and `acknowledge_firewall_change` marks it reviewed (only after the user co
 `list_vpn_tunnels` shows WireGuard, IPsec, OpenVPN, Windows (RRAS) and UniFi tunnels with their status;
 `set_vpn_watch` chooses which ones raise an alert. `refresh_netsec` reads everything of a customer again.
 
+Costs and licences: `get_cost_overview` shows what every customer costs in a month (the basis for invoicing);
+`get_cost_statement` shows one customer's lines and totals, `get_resource_usage` the vCPUs, memory, disk, machines
+and Microsoft 365 licences it is based on. `list_cost_items` lists licences, contracts, hardware with warranty and
+services, `list_expiring_contracts` what runs out or must be cancelled soon. `save_cost_item`, `set_cost_rate` and
+`finalize_cost_statement` change them (scope costs_admin); finalise a month only when the user asks.
+
 Nodes and servers can be named by id or by name. Every call is written to the audit log with your token's name.
 Destructive tools need `confirm` set to the exact node name, or are marked destructive: ask the user
 before calling them, and give a short `reason` for commands and service actions."""
@@ -4824,6 +4830,204 @@ async def refresh_netsec(customer: str, what: str = "all") -> dict:
         e = await _netsec_required(db, customer)
         eid = e.id
     return _jsonable(await asyncio.wait_for(netsec.refresh(eid, what), timeout=600))
+
+
+# ------------------------------------------------------------------ costs and licences (phase 21)
+async def _cost_period(db, period: str | None) -> str:
+    from datetime import UTC, datetime
+
+    from mmn.services import costs, reports
+
+    if period:
+        try:
+            costs.parse_period(period)
+        except costs.CostError as ex:
+            raise ToolDenied(str(ex)) from ex
+        return period
+    return reports.current_period(datetime.now(UTC), await costs.tz_of(db))
+
+
+@tool("costs", RO)
+async def get_cost_overview(period: str | None = None) -> dict:
+    """What every customer costs in a month (`period` YYYY-MM, default this month): total excl. and incl. VAT,
+    monthly recurring amount, margin (when purchase prices are known), lines without a price, whether the month is
+    final, and how many contracts or licences run out soon. Start here for "what do I invoice this month"."""
+    from mmn.services import costs
+
+    async with sessionmaker()() as db:
+        p = await _cost_period(db, period)
+        return _jsonable(await costs.overview(db, p))
+
+
+@tool("costs", RO)
+async def get_cost_statement(customer: str, period: str | None = None) -> dict:
+    """The statement of one customer for a month (default this month): every line (resources from the price list
+    x average use, managed machines, Microsoft 365 users and licences, licences, contracts, services, hardware and
+    one-off charges), discount, VAT and totals, the resource use it is based on and whether it is final. Lines with
+    `missing_price` have no price yet."""
+    from mmn.services import costs
+
+    async with sessionmaker()() as db:
+        e = await _netsec_required(db, customer)
+        p = await _cost_period(db, period)
+        s = await costs.statement(db, e, p)
+    s.pop("guests", None)
+    for x in s["lines"]:
+        x["name"] = costs.line_name(x, "en")
+    return _jsonable(s)
+
+
+@tool("costs", RO)
+async def list_cost_items(customer: str | None = None, kind: str | None = None, status: str | None = None,
+                          within_days: int | None = None) -> dict:
+    """Licences, contracts, hardware (with warranty), services and one-off charges of the customers, with price,
+    billing period, monthly amount, end date, notice period and status: ok, notice (give notice now or it renews),
+    renews, expiring, expired, none (no end date), inactive. `kind`: licence, contract, hardware, service, other.
+    `within_days`: only items that end, or whose notice date comes, within that many days."""
+    from mmn.services import costs
+
+    if kind and kind not in costs.KINDS:
+        raise ToolDenied(f"kind must be one of {', '.join(costs.KINDS)}")
+    if status and status not in costs.STATUSES:
+        raise ToolDenied(f"status must be one of {', '.join(costs.STATUSES)}")
+    async with sessionmaker()() as db:
+        e = await _netsec_customer(db, customer)
+        res = await costs.list_items(db, e.id if e else None, kind=kind, status=status, within_days=within_days)
+    for r in res["items"]:
+        r.pop("history", None)
+    return _jsonable(res)
+
+
+@tool("costs", RO)
+async def list_expiring_contracts(within_days: int | None = None, customer: str | None = None) -> dict:
+    """Contracts, licences and hardware warranties that run out, or whose date to give notice comes, within
+    `within_days` (default the warning setting, 60 days), and the ones that already ran out, soonest first."""
+    from mmn.services import costs
+
+    async with sessionmaker()() as db:
+        e = await _netsec_customer(db, customer)
+        rows = await costs.expiring(db, e.id if e else None, within_days)
+    keep = ("id", "customer_name", "kind", "name", "vendor", "reference", "end_date", "days_left", "notice_by",
+            "notice_days_left", "auto_renew", "status", "monthly")
+    return _jsonable({"items": [{k: r[k] for k in keep} for r in rows]})
+
+
+@tool("costs", RO)
+async def get_resource_usage(customer: str, period: str | None = None) -> dict:
+    """Resource use of a customer: vCPUs, memory and disk given to their VMs and containers (per guest), managed
+    machines per type and Microsoft 365 users and licences, now and as billed for the month (average or peak of the
+    daily readings)."""
+    from mmn.services import costs
+
+    async with sessionmaker()() as db:
+        e = await _netsec_required(db, customer)
+        p = await _cost_period(db, period)
+        live = await costs.live_usage(db, e)
+        month = await costs.period_usage(db, e, p)
+    month.pop("guest_detail", None)
+    return _jsonable({"period": p, "now": live, "month": month})
+
+
+@tool("costs", RO)
+async def list_cost_rates(customer: str | None = None) -> dict:
+    """The price list: default monthly prices per key (resource.cpu per vCPU, resource.ram and resource.storage per
+    GB, device.server / device.workstation / device.proxmox per machine, m365.user per licensed user,
+    m365.sku.<SKU> per Microsoft 365 licence) and, with `customer`, that customer's own prices. Also lists the
+    Microsoft 365 licences seen that have no price yet."""
+    from mmn.services import costs
+
+    async with sessionmaker()() as db:
+        e = await _netsec_customer(db, customer)
+        return _jsonable(await costs.list_rates(db, e.id if e else None))
+
+
+@tool("costs_admin", WRITE)
+async def set_cost_rate(key: str, price: float, customer: str | None = None, name: str | None = None,
+                        unit: str | None = None, cost: float | None = None) -> dict:
+    """Set a monthly price in the price list (see list_cost_rates for the keys). Without `customer` it is the
+    default price; with `customer` that customer's own price. `cost` is what it costs you (for the margin)."""
+    from mmn.services import costs
+
+    async with sessionmaker()() as db:
+        e = await _netsec_customer(db, customer)
+        try:
+            r = await costs.save_rate(db, key=key, price=price, customer_id=e.id if e else None, name=name, unit=unit,
+                                      cost=cost, by=_actor())
+        except costs.CostError as ex:
+            raise ToolDenied(str(ex)) from ex
+        await db.commit()
+        return _jsonable(costs.rate_out(r))
+
+
+@tool("costs_admin", WRITE)
+async def save_cost_item(customer: str, name: str | None = None, item: str | None = None, kind: str | None = None,
+                         vendor: str | None = None, reference: str | None = None, serial: str | None = None,
+                         machine: str | None = None, quantity: float | None = None, unit_price: float | None = None,
+                         cost_price: float | None = None, billing: str | None = None, start_date: str | None = None,
+                         end_date: str | None = None, auto_renew: bool | None = None, renew_months: int | None = None,
+                         notice_days: int | None = None, active: bool | None = None, notes: str | None = None) -> dict:
+    """Add a licence, contract, hardware item, service or one-off charge to a customer, or change one (give `item`:
+    its id or name; only the fields you give change). `kind`: licence, contract, hardware, service, other.
+    `unit_price` is the sale price per `billing` period: monthly, quarterly, yearly, once (charged in the month of
+    `start_date`) or none (only tracked). `end_date` (YYYY-MM-DD) is the end of the contract or licence or of the
+    warranty; `notice_days` the notice period; `auto_renew` with `renew_months` moves the end date on by itself.
+    `machine`: the customer's machine this belongs to (name or id). Never put licence keys or passwords here: those
+    go into the password vault."""
+    from mmn.services import costs
+
+    fields: dict[str, Any] = {k: v for k, v in {
+        "name": name, "kind": kind, "vendor": vendor, "reference": reference, "serial": serial, "quantity": quantity,
+        "unit_price": unit_price, "cost_price": cost_price, "billing": billing, "start_date": start_date,
+        "end_date": end_date, "auto_renew": auto_renew, "renew_months": renew_months, "notice_days": notice_days,
+        "active": active, "notes": notes}.items() if v is not None}
+    async with sessionmaker()() as db:
+        e = await _netsec_required(db, customer)
+        if machine:
+            fields["node_id"] = await _uptime_machine(db, e.id, machine, "machine")
+        try:
+            it = await costs.find_item(db, item, e.id) if item else None
+            it = await costs.save_item(db, it, customer_id=e.id, by=_actor(), **fields)
+        except costs.CostError as ex:
+            raise ToolDenied(str(ex)) from ex
+        await db.commit()
+        cfg = await costs.settings(db)
+        return _jsonable(costs.item_out(it, await costs.today(db), int(cfg["warn_days"])))
+
+
+@tool("costs_admin", DESTRUCTIVE)
+async def delete_cost_item(customer: str, item: str) -> dict:
+    """Delete a cost item of a customer (its id or name). To stop billing it but keep it, set active=false with
+    save_cost_item instead."""
+    from mmn.services import costs
+
+    async with sessionmaker()() as db:
+        e = await _netsec_required(db, customer)
+        try:
+            it = await costs.find_item(db, item, e.id)
+        except costs.CostError as ex:
+            raise ToolDenied(str(ex)) from ex
+        name = it.name
+        await db.delete(it)
+        await db.commit()
+    return {"deleted": name}
+
+
+@tool("costs_admin", WRITE)
+async def finalize_cost_statement(customer: str, period: str, note: str | None = None) -> dict:
+    """Make a customer's statement of a month final (YYYY-MM): the lines and totals are frozen as the basis for the
+    invoice, later price or usage changes do not change it. Only do this when the user asks to."""
+    from mmn.services import costs
+
+    async with sessionmaker()() as db:
+        e = await _netsec_required(db, customer)
+        p = await _cost_period(db, period)
+        try:
+            await costs.finalize(db, e, p, by=_actor(), note=note)
+        except costs.CostError as ex:
+            raise ToolDenied(str(ex)) from ex
+        await db.commit()
+        s = await costs.statement(db, e, p)
+    return _jsonable({"customer": e.name, "period": p, "status": s["status"], "totals": s["totals"]})
 
 
 # ------------------------------------------------------------------ MCP hub
