@@ -48,7 +48,7 @@ import {
   ShieldHalf,
   Wrench,
   Sunrise,
-  BookOpenCheck, HeartPulse, Radar, LifeBuoy, BookText, LockKeyhole,
+  BookOpenCheck, HeartPulse, Radar, CloudCog, LifeBuoy, BookText, LockKeyhole,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -223,6 +223,15 @@ export function Layout() {
     refetchInterval: 60_000,
   });
 
+  const m365Risk = useQuery({
+    queryKey: ["m365", "menu"],
+    queryFn: async () => {
+      const o = await get<{ totals: { risky?: number; admins_no_mfa?: number } }>("api/m365/overview");
+      return (o.totals.risky ?? 0) + (o.totals.admins_no_mfa ?? 0);
+    },
+    refetchInterval: 120_000,
+  });
+
   const ticketCounts = useQuery({
     queryKey: ["ticket-counts"],
     queryFn: () => get<{ needs_reply: number }>("api/tickets/counts"),
@@ -277,6 +286,7 @@ export function Layout() {
             { to: "/unifi/connections", icon: <Cable />, label: t("nav.unifi_connections") },
           ],
         },
+        { to: "/m365", icon: <CloudCog />, label: t("nav.m365"), badge: m365Risk.data || undefined },
       ],
     },
     {

@@ -112,7 +112,8 @@
     "uptime": "Uptime & SLA",
     "tickets": "Tickets",
     "docs": "Documentatie",
-    "vault": "Wachtwoordkluis"
+    "vault": "Wachtwoordkluis",
+    "m365": "Microsoft 365"
   },
   "roles": {
     "admin": "Beheerder",
@@ -221,7 +222,11 @@
     "docs": "Documentatie",
     "docs_desc": "Klantdocumentatie schrijven. Lezen kan al met de leesrechten.",
     "vault": "Wachtwoordkluis",
-    "vault_desc": "De kluis zien (namen, geen geheimen) en vragen om een inlog te gebruiken. Elk gebruik moet een beheerder goedkeuren en komt in het toegangslog."
+    "vault_desc": "De kluis zien (namen, geen geheimen) en vragen om een inlog te gebruiken. Elk gebruik moet een beheerder goedkeuren en komt in het toegangslog.",
+    "m365": "Microsoft 365",
+    "m365_desc": "Microsoft 365 / Entra ID van klanten lezen: gebruikers, licenties, MFA, risicovolle gebruikers en aanmeldingen.",
+    "m365_admin": "Microsoft 365-acties",
+    "m365_admin_desc": "Vragen om gebruikers te blokkeren of deblokkeren, af te melden, MFA of wachtwoord te resetten en risicovolle gebruikers af te handelen. Elke actie vereist goedkeuring van een beheerder."
   },
   "dashboard": {
     "morning": "Goedemorgen",
@@ -1776,7 +1781,8 @@
     "kind_service": "Service",
     "kind_network": "Netwerk",
     "kind_uptime": "Uptime",
-    "kind_sla": "SLA"
+    "kind_sla": "SLA",
+    "kind_m365": "Microsoft 365"
   },
   "dep": {
     "title": "Deployments",
@@ -2548,7 +2554,8 @@
       "nightly": "Voorgesteld door de nachtelijke controle",
       "runbook": "Stap {{step}} van runbook {{runbook}}",
       "recovery": "Automatisch herstel ({{recovery}}): stap {{step}} van runbook {{runbook}}",
-      "vault": "Gebruikt een geheim uit de wachtwoordkluis: altijd goedkeuring nodig"
+      "vault": "Gebruikt een geheim uit de wachtwoordkluis: altijd goedkeuring nodig",
+      "m365": "Wijzigt een Microsoft 365-gebruiker: altijd goedkeuring nodig"
     },
     "toast": {
       "new": "{{who}} vraagt goedkeuring: {{tool}}",
@@ -3315,6 +3322,62 @@
     "cert_endpoint_error": {
       "f": "Het certificaat van {{endpoint}} kon niet worden gecontroleerd: {{error}}.",
       "s": "Controleer of Stackpilot het adres kan bereiken, of haal het uit de lijst."
+    },
+    "m365_sync_error": {
+      "f": "Microsoft 365 {{tenant}} kon niet worden uitgelezen: {{error}}.",
+      "s": "Controleer de app-registratie, het geheim of certificaat en de beheerderstoestemming."
+    },
+    "m365_risky_user": {
+      "f": "{{user}} heeft risiconiveau {{level}} in Entra ID.",
+      "s": "Meld de gebruiker overal af en reset het wachtwoord; blokkeer het account als het risico bevestigd is."
+    },
+    "m365_admin_no_mfa": {
+      "f": "Beheerder {{user}} ({{roles}}) heeft geen MFA.",
+      "s": "Laat de beheerder nu MFA registreren, of dwing het af met standaardbeveiliging of voorwaardelijke toegang."
+    },
+    "m365_no_mfa": {
+      "f": "{{count}} gebruiker(s) zonder MFA: {{names}}.",
+      "s": "Vraag ze de Microsoft Authenticator-app te registreren (aka.ms/mfasetup)."
+    },
+    "m365_no_mfa_policy": {
+      "f": "{{tenant}} heeft geen standaardbeveiliging en geen actief beleid voor voorwaardelijke toegang.",
+      "s": "Zet standaardbeveiliging aan (Entra-beheercentrum > Overzicht > Eigenschappen), of dwing MFA af met voorwaardelijke toegang."
+    },
+    "m365_stale_users": {
+      "f": "{{count}} account(s) met licentie zonder aanmelding in {{days}} dagen: {{names}}.",
+      "s": "Blokkeer of verwijder accounts die niemand gebruikt en geef hun licenties vrij."
+    },
+    "m365_disabled_licensed": {
+      "f": "{{count}} geblokkeerd(e) account(s) hebben nog een licentie: {{names}}.",
+      "s": "Haal de licenties weg (of zet postvakken om naar gedeelde postvakken) om kosten te besparen."
+    },
+    "m365_licence_short": {
+      "f": "Licentie {{licence}}: {{consumed}} toegewezen maar maar {{enabled}} gekocht.",
+      "s": "Koop licenties bij of haal toewijzingen weg voordat Microsoft ze uitzet."
+    },
+    "m365_licence_unused": {
+      "f": "Licentie {{licence}}: {{available}} van {{enabled}} niet toegewezen.",
+      "s": "Verlaag het aantal licenties bij de volgende verlenging als ze ongebruikt blijven."
+    },
+    "m365_licence_status": {
+      "f": "Licentie {{licence}} heeft status {{status}} (abonnement verlopen of niet betaald).",
+      "s": "Verleng het abonnement in het Microsoft 365-beheercentrum."
+    },
+    "m365_secret_expiring": {
+      "f": "Het geheim of certificaat van de Stackpilot-app in {{tenant}} verloopt over {{days}} dag(en).",
+      "s": "Maak een nieuw clientgeheim of certificaat in Entra en sla het op in Stackpilot."
+    },
+    "m365_failed_signins": {
+      "f": "Veel mislukte aanmeldingen in 24 uur voor: {{names}}.",
+      "s": "Controleer of dit wachtwoordaanvallen zijn; zorg dat MFA aan staat voor deze accounts."
+    },
+    "m365_foreign_signins": {
+      "f": "Aanmeldingen vanuit een ander land in 24 uur: {{names}}.",
+      "s": "Overleg met de gebruikers; meld ze af en reset het wachtwoord als zij het niet waren."
+    },
+    "m365_missing_permissions": {
+      "f": "Stackpilot kan een deel van {{tenant}} niet lezen: {{parts}}.",
+      "s": "Geef de app de ontbrekende Microsoft Graph-machtigingen met beheerderstoestemming."
     }
   },
   "prot": {
@@ -3549,7 +3612,8 @@
       "disks": "Schijven & opslag",
       "certificates": "Certificaten",
       "backups": "Back-ups",
-      "other": "Overig"
+      "other": "Overig",
+      "identity": "Microsoft 365"
     },
     "cat_hint": {
       "updates": "Openstaande updates en herstarts, oude agents, firmware",
@@ -3557,7 +3621,8 @@
       "disks": "Volle schijven en opslag, SMART-status",
       "certificates": "Certificaten op servers en nodes, plus de adressen die je per klant opgeeft",
       "backups": "Mislukte, ontbrekende en oude back-ups",
-      "other": "De rest van de optimalisatiescan: offline machines, mislukte services, netwerk"
+      "other": "De rest van de optimalisatiescan: offline machines, mislukte services, netwerk",
+      "identity": "Risicovolle gebruikers, MFA, inactieve accounts, licenties en aanmeldingen van de gekoppelde tenants"
     },
     "v_all": "Alles",
     "v_new": "Nieuw",
@@ -3593,7 +3658,9 @@
       "reboot": "Herstarten",
       "update_agent": "Agent bijwerken",
       "cleanup_disk": "Schijfruimte vrijmaken",
-      "renew_cert": "Certificaat vernieuwen"
+      "renew_cert": "Certificaat vernieuwen",
+      "m365_block": "Gebruiker blokkeren",
+      "m365_revoke": "Gebruiker overal afmelden"
     },
     "pst": {
       "pending": "Wacht",
@@ -4674,7 +4741,8 @@
       "ai_approved": "Goedgekeurd voor AI",
       "ai_reveal": "Gelezen door AI",
       "ai_use": "Gebruikt door AI",
-      "ai_denied": "Geweigerd voor AI"
+      "ai_denied": "Geweigerd voor AI",
+      "integration_use": "Gebruikt door koppeling"
     },
     "no_access": "Nog niets gelogd.",
     "when": "Wanneer",
@@ -4727,5 +4795,302 @@
       "all": "alles",
       "history": "eerder wachtwoord"
     }
+  },
+  "m365": {
+    "title": "Microsoft 365",
+    "desc": "Microsoft 365 en Entra ID van elke klant: gebruikers, licenties, MFA, risicovolle gebruikers en verdachte aanmeldingen, met meldingen, de ochtendsamenvatting en acties die de AI pas na goedkeuring uitvoert.",
+    "connect": "Tenant koppelen",
+    "empty": "Nog geen Microsoft 365-tenant gekoppeld",
+    "empty_hint": "Koppel de tenant van een klant met een app-registratie in Entra ID. Stackpilot leest dan elke 15 minuten gebruikers, licenties, MFA en aanmeldingen.",
+    "k_users": "Actieve gebruikers",
+    "k_users_hint": "{{admins}} beheerder(s), {{guests}} gast(en)",
+    "k_mfa": "MFA geregistreerd",
+    "k_mfa_hint": "{{count}} gebruiker(s) zonder MFA",
+    "k_mfa_admins": "{{count}} beheerder(s) zonder MFA!",
+    "k_risky": "Risicovolle gebruikers",
+    "k_risky_hint": "24 u: {{foreign}} buitenland, {{failed}} mislukte aanmeldingen",
+    "k_licences": "Licenties in gebruik",
+    "k_licences_hint": "Toegewezen / gekocht (betaalde licenties)",
+    "tab_tenants": "Tenants",
+    "tab_users": "Gebruikers",
+    "tab_risk": "Risico & MFA",
+    "tab_signins": "Aanmeldingen",
+    "tab_licences": "Licenties",
+    "status": {
+      "ok": "OK",
+      "partial": "Deels leesbaar",
+      "error": "Fout",
+      "unknown": "Nog niet gelezen"
+    },
+    "paused": "Gepauzeerd",
+    "sync": "Nu lezen",
+    "sync_ok": "Tenant gelezen",
+    "sync_partial": "Tenant gelezen; sommige onderdelen zijn niet beschikbaar",
+    "sync_error": "De tenant kon niet worden gelezen",
+    "test": "Verbinding testen",
+    "test_ok": "Verbonden met {{org}}",
+    "test_failed": "Verbinding mislukt: {{error}}",
+    "edit": "Bewerken",
+    "delete": "Verwijderen",
+    "deleted": "Tenant verwijderd",
+    "delete_title": "{{name}} verwijderen?",
+    "delete_desc": "Stackpilot stopt met het lezen van deze tenant.",
+    "delete_hint": "Opgeslagen aanmeldingen van deze tenant worden verwijderd. De referentie blijft in de wachtwoordkluis en de app-registratie blijft in Entra ID; verwijder die zelf als je ze niet meer nodig hebt.",
+    "error_title": "De tenant kan niet worden gelezen",
+    "c_users": "Gebruikers",
+    "c_admins": "Beheerders",
+    "c_admins_no_mfa": "{{count}} zonder MFA",
+    "c_no_mfa": "Zonder MFA",
+    "c_risky": "Risicovol",
+    "security_defaults": "Standaardbeveiliging",
+    "ca_policies": "Voorwaardelijke toegang",
+    "ca_count": "{{enabled}} van {{total}} aan",
+    "mfa_source": "MFA gelezen uit",
+    "mfa_src": {
+      "registration": "Registratierapport",
+      "methods": "Methoden per gebruiker"
+    },
+    "credential": "Aanmelding van de app",
+    "auth": {
+      "secret": "Clientgeheim",
+      "certificate": "Certificaat"
+    },
+    "cred_days": "verloopt over {{count}} dag(en)",
+    "cred_expired": "verlopen",
+    "vault_item": "In de kluis",
+    "no_vault_item": "ontbreekt",
+    "last_sync": "Laatst gelezen",
+    "never": "nooit",
+    "missing_title": "Niet alles kan worden gelezen",
+    "feature": {
+      "organization": "Organisatie",
+      "users": "Gebruikers",
+      "last_signin": "Laatste aanmelding",
+      "roles": "Beheerdersrollen",
+      "licences": "Licenties",
+      "mfa": "MFA",
+      "risky_users": "Risicovolle gebruikers",
+      "risk_detections": "Risicodetecties",
+      "security_defaults": "Standaardbeveiliging",
+      "conditional_access": "Voorwaardelijke toegang",
+      "app_credentials": "Verloopdatum van het app-geheim",
+      "signins": "Aanmeldlogboek"
+    },
+    "reason": {
+      "no_permission": "de app mist de machtiging {{permission}} (of beheerderstoestemming)",
+      "needs_p1": "vereist Microsoft Entra ID P1 (bijv. Business Premium)",
+      "needs_p2": "vereist Microsoft Entra ID P2",
+      "not_found": "niet gevonden",
+      "error": "fout bij het lezen"
+    },
+    "download_cert": "Certificaat downloaden (.cer)",
+    "users_title": "Gebruikers",
+    "users_desc": "Iedereen in de gekoppelde tenants met licenties, MFA, risico en laatste aanmelding.",
+    "search": "Zoek naam, adres, afdeling…",
+    "filter": {
+      "all": "Alle gebruikers",
+      "admins": "Beheerders",
+      "no_mfa": "Zonder MFA",
+      "risky": "Risicovol",
+      "stale": "Inactief (met licentie)",
+      "disabled_licensed": "Geblokkeerd maar met licentie",
+      "guests": "Gasten",
+      "disabled": "Geblokkeerd",
+      "unlicensed": "Zonder licentie"
+    },
+    "no_users": "Geen gebruikers gevonden",
+    "col_user": "Gebruiker",
+    "col_mfa": "MFA",
+    "col_licences": "Licenties",
+    "col_last": "Laatst actief",
+    "col_status": "Status",
+    "admin": "Beheerder",
+    "guest": "Gast",
+    "stale": "Inactief",
+    "enabled": "Actief",
+    "blocked": "Geblokkeerd",
+    "more_users": "Nog {{count}}: verfijn de zoekopdracht.",
+    "mfa_on": "MFA",
+    "mfa_off": "Geen MFA",
+    "mfa_unknown": "MFA onbekend",
+    "risk": {
+      "high": "Hoog risico",
+      "medium": "Gemiddeld risico",
+      "low": "Laag risico",
+      "hidden": "Risico verborgen"
+    },
+    "risk_state": {
+      "atRisk": "Risico",
+      "confirmedCompromised": "Bevestigd gecompromitteerd",
+      "remediated": "Opgelost",
+      "dismissed": "Genegeerd"
+    },
+    "user": "Gebruiker",
+    "synced": "Gesynchroniseerd uit AD",
+    "roles": "Beheerdersrollen",
+    "mfa_methods": "MFA-methoden",
+    "last_sign_in": "Laatste aanmelding",
+    "department": "Functie en afdeling",
+    "created": "Aangemaakt",
+    "risk_title": "{{level}} in Entra ID Protection",
+    "actions": "Acties",
+    "no_permission_hint": "De app heeft geen machtiging voor deze actie",
+    "actions_hint": "Grijze acties vereisen een extra toepassingsmachtiging op de app-registratie (zie de tenantkaart).",
+    "action": {
+      "block": "Aanmelden blokkeren",
+      "unblock": "Deblokkeren",
+      "revoke_sessions": "Overal afmelden",
+      "reset_mfa": "MFA resetten",
+      "reset_password": "Wachtwoord resetten",
+      "confirm_compromised": "Gecompromitteerd bevestigen",
+      "dismiss_risk": "Risico negeren"
+    },
+    "explain": {
+      "block": "De gebruiker kan zich niet meer aanmelden en wordt op elk apparaat afgemeld. Mail blijft binnenkomen.",
+      "unblock": "De gebruiker kan zich weer aanmelden.",
+      "revoke_sessions": "Alle sessies en vernieuwingstokens worden ingetrokken: de gebruiker moet zich overal opnieuw aanmelden (in sommige apps binnen ongeveer een uur).",
+      "reset_mfa": "Alle MFA-methoden (Authenticator-app, telefoon, sleutels) worden verwijderd. De gebruiker registreert MFA opnieuw bij de volgende aanmelding. Het wachtwoord blijft.",
+      "reset_password": "Stackpilot stelt een willekeurig tijdelijk wachtwoord in dat bij de volgende aanmelding gewijzigd moet worden en meldt de gebruiker af. Het tijdelijke wachtwoord komt in de wachtwoordkluis van de klant.",
+      "confirm_compromised": "Markeert het account als gecompromitteerd in Entra ID Protection (hoog risico). Risicobeleid treedt dan in werking.",
+      "dismiss_risk": "Wist het risico van de gebruiker in Entra ID Protection, bijvoorbeeld na een vals alarm."
+    },
+    "reason_label": "Reden (optioneel)",
+    "reason_hint": "Komt in het auditlogboek en het toegangslogboek van de kluis.",
+    "done": {
+      "block": "{{user}} is geblokkeerd en afgemeld",
+      "unblock": "{{user}} kan zich weer aanmelden",
+      "revoke_sessions": "{{user}} is overal afgemeld",
+      "reset_mfa": "MFA van {{user}} is gereset",
+      "reset_password": "Wachtwoord gereset",
+      "confirm_compromised": "{{user}} is gemarkeerd als gecompromitteerd",
+      "dismiss_risk": "Risico van {{user}} genegeerd"
+    },
+    "done_password": "Wachtwoord gereset. Het tijdelijke wachtwoord staat in de kluis: {{item}}",
+    "signins_title": "Opvallende aanmeldingen",
+    "signins_desc": "Risicovolle en mislukte aanmeldingen, vanuit een ander land of met oude protocollen. Gewone aanmeldingen worden niet opgeslagen.",
+    "no_signins_user": "Geen opvallende aanmeldingen in de laatste 30 dagen.",
+    "no_signins": "Niets opvallends",
+    "no_signin_log": "Het aanmeldlogboek vereist Entra ID P1 en de machtiging AuditLog.Read.All; niet beschikbaar voor: {{tenants}}.",
+    "hours_24": "Laatste 24 uur",
+    "hours_168": "Laatste 7 dagen",
+    "hours_720": "Laatste 30 dagen",
+    "flag": {
+      "all": "Alles",
+      "risky": "Risicovol",
+      "foreign": "Buitenland",
+      "failed": "Mislukt",
+      "legacy": "Oud protocol"
+    },
+    "col_when": "Wanneer",
+    "col_where": "Waar",
+    "col_app": "App",
+    "col_result": "Resultaat",
+    "success": "Gelukt",
+    "failed": "Mislukt",
+    "detections": "Risicodetecties",
+    "detections_desc": "Wat Entra ID Protection de laatste 7 dagen zag (vereist Entra ID P2).",
+    "no_detections": "Geen risicodetecties",
+    "col_detection": "Detectie",
+    "col_risk": "Risico",
+    "det": {
+      "unfamiliarFeatures": "Onbekende aanmeldeigenschappen",
+      "anonymizedIPAddress": "Anoniem IP-adres",
+      "maliciousIPAddress": "Kwaadaardig IP-adres",
+      "impossibleTravel": "Onmogelijke reis",
+      "leakedCredentials": "Gelekte inloggegevens",
+      "passwordSpray": "Wachtwoordspray",
+      "unlikelyTravel": "Atypische reis",
+      "mcasSuspiciousInboxManipulationRules": "Verdachte postvakregels",
+      "suspiciousBrowser": "Verdachte browser",
+      "newCountry": "Nieuw land",
+      "tokenIssuerAnomaly": "Afwijkende tokenuitgever",
+      "anomalousToken": "Afwijkend token",
+      "adminConfirmedUserCompromised": "Door beheerder bevestigd gecompromitteerd",
+      "investigationsThreatIntelligence": "Dreigingsinformatie"
+    },
+    "risky_title": "Risicovolle gebruikers",
+    "risky_desc": "Gebruikers die Entra ID Protection als risicovol of gecompromitteerd ziet.",
+    "no_risky": "Geen risicovolle gebruikers",
+    "admins_no_mfa_title": "Beheerders zonder MFA",
+    "admins_no_mfa_desc": "Accounts met een beheerdersrol zonder tweede factor.",
+    "all_admins_mfa": "Elke beheerder heeft MFA",
+    "licences_title": "Licenties",
+    "licences_desc": "Abonnementen per tenant: gekocht, toegewezen en vrij.",
+    "show_free": "Gratis licenties tonen",
+    "no_licences": "Geen licenties",
+    "col_licence": "Licentie",
+    "col_tenant": "Tenant",
+    "col_bought": "Gekocht",
+    "col_assigned": "Toegewezen",
+    "col_free": "Vrij",
+    "lic_short": "Te weinig",
+    "lic_status": {
+      "Enabled": "Actief",
+      "Warning": "Verlopen (respijtperiode)",
+      "Suspended": "Opgeschort",
+      "LockedOut": "Vergrendeld",
+      "Deleted": "Verwijderd"
+    },
+    "connect_title": "Een Microsoft 365-tenant koppelen",
+    "edit_title": "{{name}} bewerken",
+    "connect_desc": "Stackpilot meldt zich aan als app-registratie in de tenant van de klant. Het geheim of certificaat komt in de wachtwoordkluis.",
+    "howto_title": "Zo maak je de app-registratie (5 minuten)",
+    "howto_1": "Meld je aan op entra.microsoft.com als globale beheerder van de klant.",
+    "howto_2": "Ga naar Toepassingen > App-registraties > Nieuwe registratie. Naam: Stackpilot. Ondersteunde accounttypen: alleen deze organisatie. Geen omleidings-URI. Registreren.",
+    "howto_3": "Kopieer de toepassings-id (client) en de map-id (tenant) uit het overzicht naar de velden hieronder.",
+    "howto_4": "API-machtigingen > Een machtiging toevoegen > Microsoft Graph > Toepassingsmachtigingen: voeg de machtigingen hieronder toe (lezen: allemaal; acties: alleen wat je wilt kunnen doen).",
+    "howto_5": "Klik op Beheerderstoestemming verlenen voor de organisatie en bevestig.",
+    "howto_6": "Certificaten en geheimen: maak een clientgeheim (kopieer de Waarde, niet de id) en plak het hieronder, of kies Certificaat en laat Stackpilot er een maken die je daar uploadt.",
+    "perm_read": "Lezen (nodig)",
+    "perm_write": "Acties (optioneel)",
+    "copy_permissions": "Machtigingen kopiëren",
+    "f_customer": "Klant",
+    "choose_customer": "Kies een klant…",
+    "f_name": "Naam",
+    "f_name_hint": "Bijvoorbeeld de bedrijfsnaam.",
+    "f_tenant": "Map-id (tenant)",
+    "f_tenant_hint": "De GUID, of een domein zoals contoso.onmicrosoft.com.",
+    "f_client": "Toepassings-id (client)",
+    "f_client_hint": "Uit het overzicht van de app-registratie.",
+    "f_method": "Aanmelding van de app",
+    "f_method_hint": "Een certificaat is veiliger en gaat langer mee; een clientgeheim is sneller ingesteld.",
+    "f_credential": "Referentie",
+    "f_credential_hint": "Versleuteld opgeslagen in de wachtwoordkluis van de klant; de AI krijgt hem nooit.",
+    "src": {
+      "new_secret": "Nieuw clientgeheim",
+      "vault": "Uit de kluis",
+      "generate": "Laat Stackpilot er een maken",
+      "paste": "PEM plakken"
+    },
+    "f_secret": "Clientgeheim (Waarde)",
+    "f_secret_hint": "De kolom Waarde bij Certificaten en geheimen, wordt maar één keer getoond.",
+    "f_secret_keep": "Laat leeg om het huidige geheim te houden. Een nieuw geheim vervangt het; het oude blijft in de kluisgeschiedenis.",
+    "f_pem": "Privésleutel en certificaat (PEM)",
+    "f_pem_hint": "Beide blokken in één tekst, zonder wachtwoordzin.",
+    "generate_hint": "Stackpilot maakt een certificaat dat 2 jaar geldig is en bewaart de privésleutel in de kluis. Na het opslaan download je het certificaat en upload je het bij Certificaten en geheimen > Certificaten.",
+    "f_vault": "Kluisitem",
+    "f_vault_hint": "Het wachtwoord (geheim) of de PEM in het wachtwoord, de notities of een veld.",
+    "choose_vault": "Kies een item…",
+    "settings_title": "Meldingen en controles",
+    "s_countries": "Toegestane landen",
+    "s_countries_hint": "Landcodes van twee letters, bijv. NL, BE. Aanmeldingen van elders vallen op. Leeg: geen landcontrole.",
+    "s_stale": "Inactief na (dagen)",
+    "s_failed": "Mislukte aanmeldingen voor een melding",
+    "s_failed_hint": "Per gebruiker, in 24 uur.",
+    "s_warn": "Waarschuwen voordat het app-geheim verloopt (dagen)",
+    "s_alert_risky": "Melding bij risicovolle gebruikers",
+    "s_alert_admin_mfa": "Melding bij beheerders zonder MFA",
+    "s_alert_signins": "Melding bij aanmeldingen uit het buitenland en veel mislukte pogingen",
+    "s_alert_licences": "Melding bij licentietekort en verlopen abonnementen",
+    "s_alert_secret": "Melding voordat het app-geheim verloopt",
+    "s_enabled": "Deze tenant lezen",
+    "s_enabled_hint": "Uit: Stackpilot stopt met lezen, zonder de tenant te verwijderen.",
+    "saved": "Opgeslagen",
+    "connected": "Tenant gekoppeld; hij wordt nu gelezen",
+    "cert_title": "Upload het certificaat in Entra",
+    "cert_desc": "De privésleutel blijft in de wachtwoordkluis; dit bestand bevat alleen het openbare certificaat.",
+    "cert_step1": "Download hieronder het certificaat.",
+    "cert_step2": "In Entra: App-registraties > Stackpilot > Certificaten en geheimen > Certificaten > Certificaat uploaden.",
+    "cert_step3": "Klik terug in Stackpilot op Verbinding testen bij de tenant."
   }
 }

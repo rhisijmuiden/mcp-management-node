@@ -1256,3 +1256,69 @@ class VaultAccess(Base):
     ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
     success: Mapped[bool] = mapped_column(Boolean, default=True)
     detail: Mapped[dict] = mapped_column(JsonType, default=dict)
+
+
+# ------------------------------------------------------------------ phase 19: Microsoft 365 / Entra ID
+class M365Tenant(Base):
+    """A Microsoft 365 tenant of a customer, read and managed through Microsoft Graph with an app
+    registration (application permissions). The client secret or certificate lives in the password vault
+    (``vault_item_id``); Stackpilot never stores it here.
+
+    ``snapshot``: what the last sync found (organisation, users with licences, admin roles, MFA and risk,
+    licences, risk detections, security defaults, app credential expiry, which parts could be read).
+    ``settings``: alert and finding options (see services/m365.py DEFAULT_SETTINGS)."""
+
+    __tablename__ = "m365_tenants"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("environments.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    tenant_id: Mapped[str] = mapped_column(String(100))  # directory (tenant) id or a verified domain
+    client_id: Mapped[str] = mapped_column(String(64))  # application (client) id
+    auth_method: Mapped[str] = mapped_column(String(16), default="secret")  # secret | certificate
+    vault_item_id: Mapped[str | None] = mapped_column(ForeignKey("vault_items.id", ondelete="SET NULL"), nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    status: Mapped[str] = mapped_column(String(16), default="unknown")  # unknown | ok | partial | error
+    last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_ok_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    signins_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    vault_logged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    snapshot: Mapped[dict] = mapped_column(JsonType, default=dict)
+    settings: Mapped[dict] = mapped_column(JsonType, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    customer: Mapped[Environment] = relationship(lazy="joined")
+
+
+class M365SignIn(Base):
+    """A sign-in that stood out: risky (Entra ID Protection), from a country outside the tenant's allowed
+    list, or with legacy authentication. Ordinary sign-ins are not stored; failed ones are counted per user
+    in the snapshot."""
+
+    __tablename__ = "m365_signins"
+    __table_args__ = (UniqueConstraint("tenant_id", "signin_id", name="uq_m365_signin"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("m365_tenants.id", ondelete="CASCADE"), index=True)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("environments.id", ondelete="CASCADE"), index=True)
+    signin_id: Mapped[str] = mapped_column(String(64))
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    upn: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    app: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    client_app: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    country: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    city: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    success: Mapped[bool] = mapped_column(Boolean, default=True)
+    error_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    failure_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    risk_level: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    risk_state: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    ca_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    flags: Mapped[list[str]] = mapped_column(JsonType, default=list)

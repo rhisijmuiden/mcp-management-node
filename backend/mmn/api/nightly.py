@@ -121,6 +121,7 @@ class ChecksIn(BaseModel):
     disks: bool = True
     certificates: bool = True
     backups: bool = True
+    identity: bool = True
     other: bool = True
 
 

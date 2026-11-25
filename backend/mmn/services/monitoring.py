@@ -341,6 +341,10 @@ async def _conditions(db: AsyncSession, cfg: MonitoringSettings) -> dict[str, di
     from mmn.services import uptime
 
     want.update(await uptime.conditions(db, now))
+    # Phase 19: Microsoft 365 tenants (risky users, admins without MFA, licences, app secret, sign-ins).
+    from mmn.services import m365
+
+    want.update(await m365.conditions(db, now))
     return want
 
 
