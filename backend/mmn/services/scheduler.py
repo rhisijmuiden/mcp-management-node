@@ -379,6 +379,8 @@ async def start() -> None:
                       replace_existing=True, coalesce=True)
     scheduler.add_job(_m365_job, "interval", minutes=1, id="m365-tick", replace_existing=True,
                       coalesce=True, max_instances=1, next_run_time=datetime.now(UTC) + timedelta(seconds=45))
+    scheduler.add_job(_netsec_job, "interval", minutes=1, id="netsec-tick", replace_existing=True,
+                      coalesce=True, max_instances=1, next_run_time=datetime.now(UTC) + timedelta(seconds=75))
     scheduler.add_job(_m365_prune_job, CronTrigger(hour=5, minute=17, timezone="UTC"), id="m365-prune",
                       replace_existing=True, coalesce=True)
     scheduler.add_job(_unifi_prune_job, CronTrigger(hour=4, minute=53, timezone="UTC"), id="unifi-prune",
@@ -498,6 +500,15 @@ async def _m365_prune_job() -> None:
         await m365.prune()
     except Exception:  # noqa: BLE001
         log.exception("pruning Microsoft 365 sign-ins failed")
+
+
+async def _netsec_job() -> None:
+    from mmn.services import netsec
+
+    try:
+        await netsec.tick()
+    except Exception:  # noqa: BLE001
+        log.exception("certificate, firewall and VPN checks failed")
 
 
 def stop() -> None:

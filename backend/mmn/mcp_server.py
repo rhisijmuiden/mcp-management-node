@@ -358,6 +358,16 @@ tenant again. `m365_user_action` blocks or unblocks a user, signs them out every
 (the temporary password goes into the customer's vault, never to you) or confirms or dismisses their risk: every
 action needs an admin's approval, so give a clear `reason`.
 
+Certificates, firewall and VPN: `list_certificates` shows every certificate Stackpilot watches per customer (TLS
+addresses incl. HTTPS uptime checks, and the certificate stores of servers and nodes) with days left, issuer, trust
+and name problems; start there for "which certificates expire". Add or change an address with
+`save_cert_endpoint` (STARTTLS for mail, or through a machine at the customer for internal addresses).
+`list_firewall_changes` lists changes to the firewall configurations (Proxmox VE cluster and hosts, Linux nftables
+or iptables, Windows Firewall, UniFi policies) with what was added and removed; `get_firewall_change` shows the
+diff and `acknowledge_firewall_change` marks it reviewed (only after the user confirmed it was expected).
+`list_vpn_tunnels` shows WireGuard, IPsec, OpenVPN, Windows (RRAS) and UniFi tunnels with their status;
+`set_vpn_watch` chooses which ones raise an alert. `refresh_netsec` reads everything of a customer again.
+
 Nodes and servers can be named by id or by name. Every call is written to the audit log with your token's name.
 Destructive tools need `confirm` set to the exact node name, or are marked destructive: ask the user
 before calling them, and give a short `reason` for commands and service actions."""
@@ -4577,6 +4587,243 @@ async def m365_user_action(customer: str, user: str, action: str, reason: str, c
         res["vault_item"] = {"name": res["vault_item"]["name"],
                              "note": "the temporary password is in the customer's vault; an admin can show it there"}
     return _jsonable(res)
+
+
+# ------------------------------------------------------------------ certificates, firewall and VPN (phase 20)
+async def _netsec_customer(db, customer: str | None):
+    return await _uptime_customer(db, customer) if customer else None
+
+
+async def _netsec_required(db, customer: str):
+    e = await _uptime_customer(db, customer)
+    if e is None:
+        raise ToolDenied("give the customer")
+    return e
+
+
+def _actor() -> str:
+    p = current_principal()
+    if p is None:
+        return "AI"
+    return f"{p.username or p.token_name or 'token'} (AI)"[:100]
+
+
+@tool("read", RO)
+async def list_certificates(customer: str | None = None, status: str | None = None, within_days: int | None = None,
+                            source: str | None = None, limit: int = 200) -> dict:
+    """Certificates Stackpilot watches: presented by TLS addresses (websites, mail servers with STARTTLS, SSL VPN
+    portals, HTTPS uptime checks) and found in the certificate stores of servers and Proxmox VE nodes (files on
+    Linux, LocalMachine store on Windows, with whether IIS/RDP uses it). Each with subject and names, issuer,
+    expiry and days left, key, trusted chain and name match (addresses), automatic renewal (certbot, Proxmox ACME,
+    Windows auto-enrolment) and status: ok, expiring, critical, expired, ignored. `status` filters on one status,
+    `within_days` on certificates that expire within that many days, `source` endpoint or machine. Also lists
+    addresses whose certificate could not be read."""
+    from mmn.services import certs
+
+    async with sessionmaker()() as db:
+        e = await _netsec_customer(db, customer)
+        if status and status not in certs.STATUSES:
+            raise ToolDenied(f"status must be one of {', '.join(certs.STATUSES)}")
+        res = await certs.listing(db, e.id if e else None, status, within_days, source)
+    keep = ("id", "customer_name", "source", "node_name", "endpoint_name", "location", "common_name", "sans",
+            "issuer_name", "not_after", "days_left", "key_info", "self_signed", "trusted", "trust_error",
+            "hostname_ok", "in_use", "renew", "status", "ignored_note", "renewed_at")
+    rows = [{k: c[k] for k in keep} for c in res["certificates"][:max(1, min(limit, 1000))]]
+    for r in rows:
+        r["sans"] = r["sans"][:10]
+    return _jsonable({"counts": res["counts"], "warn_days": res["warn_days"], "certificates": rows,
+                      "endpoint_errors": [{k: x[k] for k in ("id", "customer_name", "label", "last_error",
+                                                             "last_check_at")} for x in res["endpoint_errors"]]})
+
+
+@tool("netsec", WRITE)
+async def save_cert_endpoint(customer: str, host: str, port: int = 443, name: str | None = None,
+                             starttls: str = "none", sni: str | None = None, probe: str | None = None,
+                             warn_days: int | None = None, enabled: bool = True, endpoint: str | None = None) -> dict:
+    """Watch the certificate of a TLS address of a customer (or change one: give `endpoint`, its id or host:port).
+    `starttls`: none, smtp (port 25/587), imap (143), pop3 (110) or ftp (21). `sni`: the server name to ask for
+    (default the host). `probe`: a machine of the customer (name or id) that connects instead of Stackpilot, for
+    addresses only reachable inside the network. `warn_days`: warn this many days before expiry (default the global
+    setting). The certificate is read right away."""
+    from mmn.services import certs
+
+    async with sessionmaker()() as db:
+        e = await _netsec_required(db, customer)
+        probe_id = await _uptime_machine(db, e.id, probe, "probe") if probe else None
+        try:
+            ep = await certs.find_endpoint(db, endpoint, e.id) if endpoint else None
+            ep = await certs.save_endpoint(db, ep, customer_id=e.id, host=host, port=port, name=name, sni=sni,
+                                           starttls=starttls, probe_node_id=probe_id, warn_days=warn_days,
+                                           enabled=enabled, by=_actor())
+        except certs.CertError as ex:
+            raise ToolDenied(str(ex)) from ex
+        await db.commit()
+        eid = ep.id
+    res = await certs.check_endpoint(eid) if enabled else {"ok": None}
+    from mmn.models import CertEndpoint
+
+    async with sessionmaker()() as db:
+        ep = await db.get(CertEndpoint, eid)
+        return _jsonable({"endpoint": certs.endpoint_out(ep), "check": res})
+
+
+@tool("netsec", DESTRUCTIVE)
+async def delete_cert_endpoint(customer: str, endpoint: str) -> dict:
+    """Stop watching a TLS address (its id or host:port). Addresses that come from an uptime check go with that
+    check instead."""
+    from mmn.services import certs
+
+    async with sessionmaker()() as db:
+        e = await _netsec_required(db, customer)
+        try:
+            ep = await certs.find_endpoint(db, endpoint, e.id)
+        except certs.CertError as ex:
+            raise ToolDenied(str(ex)) from ex
+        if ep.source == "uptime":
+            raise ToolDenied("this address comes from an uptime check: change or delete the uptime check")
+        label = certs.endpoint_label(ep)
+        await db.delete(ep)
+        await db.commit()
+    return {"deleted": label}
+
+
+@tool("netsec", WRITE)
+async def set_certificate_ignored(customer: str, certificate: str, ignored: bool = True,
+                                  note: str | None = None) -> dict:
+    """Ignore a certificate (no alerts or findings), for example an old one that nothing uses, or watch it again.
+    `certificate`: its id, fingerprint or location. Give a short `note` why."""
+    from mmn.services import certs
+
+    async with sessionmaker()() as db:
+        e = await _netsec_required(db, customer)
+        try:
+            c = await certs.find_certificate(db, certificate, e.id)
+        except certs.CertError as ex:
+            raise ToolDenied(str(ex)) from ex
+        c.ignored, c.ignored_note = ignored, ((note or "").strip()[:300] or None) if ignored else None
+        await db.commit()
+        return _jsonable(certs.cert_out(c))
+
+
+@tool("read", RO)
+async def list_firewall_changes(customer: str | None = None, firewall: str | None = None,
+                                unacknowledged: bool = False, days: int = 30, limit: int = 100) -> dict:
+    """Firewall configurations Stackpilot keeps versions of (Proxmox VE cluster and host firewall, nftables or
+    iptables on Linux, Windows Firewall profiles and enabled rules, UniFi zones and policies) and their changes of
+    the last `days`: when, lines added and removed, whether it was made through Stackpilot, and whether an admin
+    reviewed (acknowledged) it. `unacknowledged` shows only changes nobody reviewed yet. Read the diff with
+    `get_firewall_change`."""
+    from mmn.services import netsec
+
+    async with sessionmaker()() as db:
+        e = await _netsec_customer(db, customer)
+        src = None
+        if firewall:
+            try:
+                src = await netsec.find_source(db, firewall, e.id if e else None)
+            except netsec.NetsecError as ex:
+                raise ToolDenied(str(ex)) from ex
+        srcs = await netsec.sources(db, e.id if e else None)
+        rows = await netsec.changes(db, customer_id=e.id if e else None, source_id=src.id if src else None,
+                                    unacknowledged=unacknowledged, days=days, limit=limit)
+    return _jsonable({"firewalls": [{k: s[k] for k in ("id", "customer_name", "label", "kind", "summary",
+                                                       "unacknowledged", "last_change_at", "last_check_at",
+                                                       "last_error", "enabled")}
+                                    for s in srcs if not src or s["id"] == src.id],
+                      "changes": rows})
+
+
+@tool("read", RO)
+async def get_firewall_change(change: str, full: bool = False) -> dict:
+    """One firewall change with its unified diff against the version before (lines with + were added, - removed).
+    `full` also returns the whole configuration after the change."""
+    from mmn.services import netsec
+
+    async with sessionmaker()() as db:
+        try:
+            v, s = await netsec.find_version(db, change)
+        except netsec.NetsecError as ex:
+            raise ToolDenied(str(ex)) from ex
+        return _jsonable(netsec.version_out(v, s, content=full))
+
+
+@tool("netsec", WRITE)
+async def acknowledge_firewall_change(customer: str, change: str | None = None, firewall: str | None = None,
+                                      all_open: bool = False, note: str | None = None) -> dict:
+    """Mark firewall changes as reviewed: one `change`, every open change of one `firewall`, or with
+    `all_open` every open change of the customer. Only do this after the user confirmed the change was
+    expected; add a `note` (who made it and why)."""
+    from mmn.services import netsec
+
+    async with sessionmaker()() as db:
+        e = await _netsec_required(db, customer)
+        try:
+            if change:
+                v, _ = await netsec.find_version(db, change)
+                if v.customer_id != e.id:
+                    raise ToolDenied("this change belongs to another customer")
+                n = await netsec.acknowledge(db, version_id=v.id, by=_actor(), note=note)
+            elif firewall:
+                s = await netsec.find_source(db, firewall, e.id)
+                n = await netsec.acknowledge(db, source_id=s.id, by=_actor(), note=note)
+            elif all_open:
+                n = await netsec.acknowledge(db, customer_id=e.id, by=_actor(), note=note)
+            else:
+                raise ToolDenied("give a change, a firewall, or all_open=true")
+        except netsec.NetsecError as ex:
+            raise ToolDenied(str(ex)) from ex
+        await db.commit()
+    return {"acknowledged": n}
+
+
+@tool("read", RO)
+async def list_vpn_tunnels(customer: str | None = None, status: str | None = None) -> dict:
+    """VPN tunnels and VPN servers Stackpilot found: WireGuard peers (with last handshake and traffic), IPsec
+    (strongSwan) connections, OpenVPN services, Windows site-to-site interfaces (RRAS), VPN connections and
+    WireGuard, and the site-to-site tunnels and VPN servers of UniFi gateways. Status up, down, idle (no traffic,
+    normal for a road warrior), missing (gone from the configuration) or unknown; whether it is watched (alert
+    when down), state changes in 24 hours, plus the VPN uptime checks. `status` filters on one status."""
+    from mmn.services import netsec
+
+    async with sessionmaker()() as db:
+        e = await _netsec_customer(db, customer)
+        res = await netsec.tunnels(db, e.id if e else None, status)
+    keep = ("id", "customer_name", "kind", "name", "node_name", "connection_name", "remote", "status", "status_since",
+            "watching", "watched", "last_up_at", "changes_24h", "detail")
+    return _jsonable({"counts": res["counts"], "tunnels": [{k: t[k] for k in keep} for t in res["tunnels"]],
+                      "uptime_checks": res["uptime_checks"]})
+
+
+@tool("netsec", WRITE)
+async def set_vpn_watch(customer: str, tunnel: str, watched: bool | None) -> dict:
+    """Choose whether a VPN tunnel raises an alert when it is down: true, false, or null for automatic
+    (site-to-site tunnels and WireGuard peers with keepalive are watched once they have been up)."""
+    from mmn.services import netsec
+
+    async with sessionmaker()() as db:
+        e = await _netsec_required(db, customer)
+        try:
+            t = await netsec.find_tunnel(db, tunnel, e.id)
+        except netsec.NetsecError as ex:
+            raise ToolDenied(str(ex)) from ex
+        t.watched = watched
+        await db.commit()
+        return _jsonable(netsec.tunnel_out(t))
+
+
+@tool("netsec", WRITE)
+async def refresh_netsec(customer: str, what: str = "all") -> dict:
+    """Read the certificates, firewall configurations and/or VPN tunnels of a customer again now (`what`: all,
+    certificates, firewall, vpn). Normally certificates are read every 6 hours, firewalls every 30 minutes and
+    VPN tunnels every 5 minutes."""
+    from mmn.services import netsec
+
+    if what not in ("all", "certificates", "firewall", "vpn"):
+        raise ToolDenied("what must be all, certificates, firewall or vpn")
+    async with sessionmaker()() as db:
+        e = await _netsec_required(db, customer)
+        eid = e.id
+    return _jsonable(await asyncio.wait_for(netsec.refresh(eid, what), timeout=600))
 
 
 # ------------------------------------------------------------------ MCP hub

@@ -241,6 +241,23 @@ FINDING_NL = {
                       "Vernieuw het certificaat voordat het verloopt."),
     "cert_endpoint_error": ("Het certificaat van {endpoint} kon niet worden gecontroleerd: {error}.",
                             "Controleer of Stackpilot het adres kan bereiken, of haal het uit de lijst."),
+    # Phase 20: certificates, firewall and VPN.
+    "cert_untrusted": ("Het certificaat van {endpoint} wordt niet vertrouwd: {error}.",
+                       "Installeer een certificaat van een publieke CA, of zet het ontbrekende tussencertificaat "
+                       "(volledige keten) op de server."),
+    "cert_name_mismatch": ("Het certificaat van {endpoint} is voor {name}, niet voor het adres dat is gecontroleerd.",
+                           "Installeer een certificaat waar deze hostnaam in staat."),
+    "fw_changed": ("De firewall van {source} is {count} keer gewijzigd sinds {date} UTC en nog niet beoordeeld.",
+                   "Bekijk de wijziging in Stackpilot (Beveiliging > Firewallwijzigingen): keur hem goed, of draai "
+                   "hem terug als niemand hem verwachtte."),
+    "fw_disabled": ("Windows Firewall staat uit voor profiel(en) {profiles}.",
+                    "Zet de firewall aan voor elk profiel en sta met regels toe wat nodig is."),
+    "fw_error": ("De firewall van {source} kon niet worden uitgelezen: {error}.",
+                 "Controleer de machine of koppeling; Stackpilot ziet geen wijzigingen tot hij weer leesbaar is."),
+    "vpn_down": ("VPN-tunnel {tunnel} is down sinds {since} UTC.",
+                 "Controleer de tunnel aan beide kanten (peer bereikbaar, sleutels of pre-shared key, fase 1/2-instellingen)."),
+    "vpn_flapping": ("VPN-tunnel {tunnel} ging {count} keer down en weer up in 24 uur.",
+                     "Zoek naar een instabiele internetlijn, afwijkende DPD- of rekey-instellingen, of een MTU-probleem."),
     # Phase 19: Microsoft 365.
     "m365_sync_error": ('Microsoft 365 {tenant} kon niet worden uitgelezen: {error}.',
                         'Controleer de app-registratie, het geheim of certificaat en de beheerderstoestemming.'),

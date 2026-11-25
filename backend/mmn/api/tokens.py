@@ -54,6 +54,8 @@ SCOPES: dict[str, str] = {
     "m365": "Read Microsoft 365 / Entra ID of customers: users, licences, MFA, risky users and sign-ins",
     "m365_admin": "Ask to block or unblock Microsoft 365 users, sign them out, reset their MFA or password and "
                   "confirm or dismiss their risk: every action needs an admin's approval",
+    "netsec": "Manage certificate monitoring (TLS addresses, ignore a certificate), acknowledge firewall changes, "
+              "choose which VPN tunnels are watched and read them again (reading needs only the read scope)",
     "docs": "Write customer documentation (pages are readable with the read scope)",
     "vault": "See the password vault (names, no secrets) and ask to use a credential: every use needs an admin's "
              "approval and is written to the vault's access log",
@@ -62,7 +64,7 @@ SCOPES: dict[str, str] = {
 ADMIN_ONLY_SCOPES = {"restore", "updates", "settings", "backups", "nodes", "node_updates", "logs", "services", "exec", "copy",
                      "guests", "guests_admin", "restore_guests", "templates", "tasks", "network", "cluster", "deploy",
                      "unifi", "unifi_admin", "doors", "hub",
-                     "workstations", "reports", "runbooks", "monitoring", "tickets", "docs", "vault", "m365", "m365_admin"}
+                     "workstations", "reports", "runbooks", "monitoring", "tickets", "docs", "vault", "m365", "m365_admin", "netsec"}
 
 
 async def clean_customer_ids(db: AsyncSession, ids: list[str] | None) -> list[str] | None:

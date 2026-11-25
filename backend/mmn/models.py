@@ -1322,3 +1322,146 @@ class M365SignIn(Base):
     risk_state: Mapped[str | None] = mapped_column(String(32), nullable=True)
     ca_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
     flags: Mapped[list[str]] = mapped_column(JsonType, default=list)
+
+
+# ------------------------------------------------------------------ phase 20: certificates, firewall and VPN
+class CertEndpoint(Base):
+    """A TLS address of a customer whose certificate Stackpilot watches: a website, a mail server
+    (STARTTLS), an SSL VPN portal, an RDP gateway. Checked from Stackpilot itself or from the agent of a
+    machine at the customer (``probe_node_id``) for addresses only reachable there. ``source`` "uptime":
+    taken over from an HTTPS uptime check (``uptime_check_id``) and kept in sync with it."""
+
+    __tablename__ = "cert_endpoints"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("environments.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    host: Mapped[str] = mapped_column(String(255))
+    port: Mapped[int] = mapped_column(Integer, default=443)
+    sni: Mapped[str | None] = mapped_column(String(255), nullable=True)  # server name to ask for (default: host)
+    starttls: Mapped[str] = mapped_column(String(8), default="none")  # none | smtp | imap | pop3 | ftp
+    probe_node_id: Mapped[str | None] = mapped_column(ForeignKey("nodes.id", ondelete="SET NULL"), nullable=True)
+    source: Mapped[str] = mapped_column(String(16), default="manual")  # manual | uptime | nightly
+    uptime_check_id: Mapped[str | None] = mapped_column(ForeignKey("uptime_checks.id", ondelete="CASCADE"),
+                                                        nullable=True, index=True)
+    warn_days: Mapped[int | None] = mapped_column(Integer, nullable=True)  # None: the global setting
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_check_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+
+class Certificate(Base):
+    """A certificate Stackpilot found: presented by a TLS endpoint, or in a certificate store of a machine
+    (files on Linux, the LocalMachine store on Windows). ``key`` is unique per place (endpoint, machine +
+    path or store + subject); a renewed certificate replaces the old one at the same place and the old
+    expiry is kept in ``previous_not_after``."""
+
+    __tablename__ = "certificates"
+    __table_args__ = (UniqueConstraint("customer_id", "key", name="uq_certificate_key"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("environments.id", ondelete="CASCADE"), index=True)
+    key: Mapped[str] = mapped_column(String(400))
+    source: Mapped[str] = mapped_column(String(16))  # endpoint | machine
+    endpoint_id: Mapped[str | None] = mapped_column(ForeignKey("cert_endpoints.id", ondelete="CASCADE"),
+                                                    nullable=True, index=True)
+    node_id: Mapped[str | None] = mapped_column(ForeignKey("nodes.id", ondelete="CASCADE"), nullable=True, index=True)
+    location: Mapped[str] = mapped_column(String(500))  # host:port, file path or Windows store
+    subject: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    common_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    sans: Mapped[list[str]] = mapped_column(JsonType, default=list)
+    issuer: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    serial: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    fingerprint: Mapped[str | None] = mapped_column(String(100), nullable=True)  # SHA-256 (SHA-1 thumbprint on Windows)
+    not_before: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    not_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    key_info: Mapped[str | None] = mapped_column(String(50), nullable=True)  # "RSA 2048", "EC 256"
+    self_signed: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Endpoints: is the chain trusted and does the name match (None: not checked).
+    trusted: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    trust_error: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    hostname_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    in_use: Mapped[bool | None] = mapped_column(Boolean, nullable=True)  # Windows: bound to IIS/HTTP.sys or RDP
+    renew: Mapped[str | None] = mapped_column(String(16), nullable=True)  # certbot | pve-acme | win-autoenroll
+    ignored: Mapped[bool] = mapped_column(Boolean, default=False)
+    ignored_note: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    previous_not_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    renewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class FirewallSource(Base):
+    """A firewall configuration Stackpilot keeps versions of: the Proxmox VE firewall of a cluster (or
+    standalone node), the firewall of a Linux or Windows server, or the firewall policies of a UniFi site."""
+
+    __tablename__ = "firewall_sources"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("environments.id", ondelete="CASCADE"), index=True)
+    key: Mapped[str] = mapped_column(String(300), unique=True)  # pve:<cluster|node id> | node:<id> | unifi:<conn>:<site>
+    kind: Mapped[str] = mapped_column(String(16))  # proxmox | linux | windows | unifi
+    label: Mapped[str] = mapped_column(String(255))
+    node_id: Mapped[str | None] = mapped_column(ForeignKey("nodes.id", ondelete="CASCADE"), nullable=True)
+    connection_id: Mapped[str | None] = mapped_column(ForeignKey("unifi_connections.id", ondelete="CASCADE"),
+                                                      nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    summary: Mapped[dict] = mapped_column(JsonType, default=dict)  # rules, enabled, policies, profiles
+    last_check_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_ok_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class FirewallVersion(Base):
+    """One version of a firewall configuration. The first one is the baseline; every next one is a
+    change with its diff against the version before, to be reviewed (acknowledged) by an admin."""
+
+    __tablename__ = "firewall_versions"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    source_id: Mapped[str] = mapped_column(ForeignKey("firewall_sources.id", ondelete="CASCADE"), index=True)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("environments.id", ondelete="CASCADE"), index=True)
+    taken_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    hash: Mapped[str] = mapped_column(String(64))
+    content: Mapped[str] = mapped_column(Text)
+    baseline: Mapped[bool] = mapped_column(Boolean, default=False)
+    diff: Mapped[str | None] = mapped_column(Text, nullable=True)
+    added: Mapped[int] = mapped_column(Integer, default=0)
+    removed: Mapped[int] = mapped_column(Integer, default=0)
+    made_by: Mapped[str | None] = mapped_column(String(300), nullable=True)  # a change made through Stackpilot
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    acknowledged_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+
+class VpnTunnel(Base):
+    """A VPN tunnel or VPN server Stackpilot found: WireGuard peers, IPsec (strongSwan) connections and
+    OpenVPN services on Linux machines, site-to-site interfaces (RRAS), VPN connections, WireGuard and
+    OpenVPN on Windows, and the site-to-site tunnels and VPN servers of a UniFi gateway. A watched tunnel
+    that is down for a while is an alert."""
+
+    __tablename__ = "vpn_tunnels"
+    __table_args__ = (UniqueConstraint("customer_id", "key", name="uq_vpn_tunnel_key"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("environments.id", ondelete="CASCADE"), index=True)
+    key: Mapped[str] = mapped_column(String(400))
+    kind: Mapped[str] = mapped_column(String(24))  # wireguard | ipsec | openvpn | windows_s2s | windows_vpn | unifi_s2s | unifi_server
+    name: Mapped[str] = mapped_column(String(255))
+    node_id: Mapped[str | None] = mapped_column(ForeignKey("nodes.id", ondelete="CASCADE"), nullable=True, index=True)
+    connection_id: Mapped[str | None] = mapped_column(ForeignKey("unifi_connections.id", ondelete="CASCADE"),
+                                                      nullable=True)
+    remote: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="unknown")  # up | down | idle | unknown
+    status_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    detail: Mapped[dict] = mapped_column(JsonType, default=dict)
+    changes: Mapped[list] = mapped_column(JsonType, default=list)  # [{"at", "from", "to"}] of the last days
+    watched: Mapped[bool | None] = mapped_column(Boolean, nullable=True)  # None: automatic (once seen up)
+    last_up_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_check_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

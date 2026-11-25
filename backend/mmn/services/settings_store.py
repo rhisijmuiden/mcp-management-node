@@ -93,7 +93,7 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "notify_mail": True,
         "mail_to": "",  # empty: every admin with an email address
         "checks": {"updates": True, "cves": True, "disks": True, "certificates": True, "backups": True,
-                   "identity": True, "other": True},
+                   "identity": True, "netsec": True, "other": True},
         "cert_warn_days": 21,
         "cve_lookup": True,  # look up the CVE numbers that pending security updates fix (OSV.dev)
         "proposals": True,  # turn findings into approval requests that run with one click
@@ -132,6 +132,26 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "grant_uses": 1,  # how many reads one approval allows
         "history_keep": 10,  # earlier passwords kept per item
         "notify_ai_use": True,  # show the admins a notification in the app when the AI read or used a secret
+    },
+    "netsec": {
+        # Phase 20: certificates, firewall changes and VPN tunnels (see services/certs.py and netsec.py).
+        "cert_interval_hours": 6,  # how often endpoints and certificate stores are read
+        "cert_warn_days": 21,  # alert and finding this many days before the expiry
+        "cert_critical_days": 7,  # critical from here
+        "alert_certs": True,
+        "alert_untrusted": True,  # endpoints with an untrusted chain or the wrong name
+        "uptime_endpoints": True,  # HTTPS and SSL VPN uptime checks become certificate endpoints
+        "extra_paths": [],  # extra certificate files on Linux machines (absolute paths, * allowed)
+        "fw_interval_minutes": 30,
+        "fw_keep_versions": 50,
+        "alert_fw_changes": True,  # an alert while a firewall change is not reviewed
+        "auto_ack_own": True,  # changes made through Stackpilot are acknowledged automatically
+        "fw_ignore": ["DOCKER", r"\bdocker0\b", r"\bbr-[0-9a-f]{12}\b", r"\bveth[0-9a-f]+", r"\bcali", "KUBE-",
+                      r"\bf2b-", "fail2ban", "crowdsec"],  # firewall lines left out (regular expressions)
+        "vpn_interval_minutes": 5,
+        "vpn_down_minutes": 10,  # a watched tunnel down this long is an alert
+        "alert_vpn": True,
+        "wg_handshake_seconds": 300,  # WireGuard peer with keepalive: down after this long without handshake
     },
     "m365": {
         # Phase 19: Microsoft 365 / Entra ID tenants per customer (see services/m365.py).
