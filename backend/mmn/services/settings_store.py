@@ -116,6 +116,14 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "notify_mail": "failure",  # always | failure | never
         "mail_to": "",  # empty: every admin with an email address
     },
+    "portal": {
+        # Phase 17: the customer portal with tickets (see services/tickets.py).
+        "enabled": True,
+        "staff_to": "",  # new tickets and customer replies; empty: the assignee, else every admin with an email
+        "auto_diagnose": True,  # run the first diagnosis on the linked machines when a ticket comes in
+        "auto_close_days": 7,  # resolved tickets close after this many days without a reply (0 = never)
+        "welcome": "",  # optional text on the portal start page
+    },
     "netwatch": {
         # Phase 15: network adapters that automatic recovery watches (see services/netwatch.py).
         "seen_up": {},  # {node id: {adapter: last time it was up}}

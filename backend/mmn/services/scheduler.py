@@ -326,6 +326,17 @@ async def _reports_job() -> None:
         log.exception("monthly reports failed")
 
 
+async def _tickets_close_job() -> None:
+    from mmn.services import tickets
+
+    try:
+        n = await tickets.close_stale()
+        if n:
+            log.info("closed %d resolved tickets without a reply", n)
+    except Exception:  # noqa: BLE001
+        log.exception("closing resolved tickets failed")
+
+
 async def start() -> None:
     scheduler.add_job(_inventory_job, "interval", minutes=30, id="workstation-inventory", replace_existing=True,
                       coalesce=True, max_instances=1)
@@ -367,6 +378,8 @@ async def start() -> None:
     scheduler.add_job(_uptime_prune_job, CronTrigger(hour=5, minute=7, timezone="UTC"), id="uptime-prune",
                       replace_existing=True, coalesce=True)
     scheduler.add_job(_unifi_prune_job, CronTrigger(hour=4, minute=53, timezone="UTC"), id="unifi-prune",
+                      replace_existing=True, coalesce=True)
+    scheduler.add_job(_tickets_close_job, CronTrigger(minute=37, timezone="UTC"), id="tickets-close",
                       replace_existing=True, coalesce=True)
     scheduler.start()
     await reload_backup_jobs()

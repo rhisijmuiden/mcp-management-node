@@ -74,9 +74,12 @@ def _criteria(ids: list[str]):
         Node,
         NodeJob,
         PairingCode,
+        PortalUser,
         Runbook,
         RunbookRun,
         SdnDesign,
+        Ticket,
+        TicketMessage,
         Transfer,
         UnifiConnection,
         UnifiEvent,
@@ -90,7 +93,11 @@ def _criteria(ids: list[str]):
     dep_ids = (select(Deployment.id).where(Deployment.node_id.in_(
         select(Node.id).where(Node.environment_id.in_(ids)))).scalar_subquery())
     check_ids = select(UptimeCheck.id).where(UptimeCheck.customer_id.in_(ids)).scalar_subquery()
+    ticket_ids = select(Ticket.id).where(Ticket.customer_id.in_(ids)).scalar_subquery()
     return [
+        with_loader_criteria(Ticket, Ticket.customer_id.in_(ids), include_aliases=True),
+        with_loader_criteria(TicketMessage, TicketMessage.ticket_id.in_(ticket_ids), include_aliases=True),
+        with_loader_criteria(PortalUser, PortalUser.customer_id.in_(ids), include_aliases=True),
         with_loader_criteria(UptimeCheck, UptimeCheck.customer_id.in_(ids), include_aliases=True),
         with_loader_criteria(UptimeIncident, UptimeIncident.customer_id.in_(ids), include_aliases=True),
         with_loader_criteria(UptimeResult, UptimeResult.check_id.in_(check_ids), include_aliases=True),

@@ -48,7 +48,7 @@ import {
   ShieldHalf,
   Wrench,
   Sunrise,
-  BookOpenCheck, HeartPulse, Radar,
+  BookOpenCheck, HeartPulse, Radar, LifeBuoy,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -176,10 +176,19 @@ export function Layout() {
       const show = d.status === "succeeded" ? toast.success : d.status === "failed" || d.status === "paused" || d.status === "skipped" ? toast.error : toast;
       show(text, { duration: 15_000, action: { label: t("rem.toast.open"), onClick: () => navigate("/remediation") } });
     };
+    const onTicket = (e: Event) => {
+      const d = (e as CustomEvent).detail as { id?: string; number?: number };
+      toast(t("tk.toast", { number: d.number ?? "" }), {
+        duration: 15_000,
+        action: { label: t("tk.toast_open"), onClick: () => navigate(d.id ? `/tickets/${d.id}` : "/tickets") },
+      });
+    };
+    window.addEventListener("mmn:ticket", onTicket);
     window.addEventListener("mmn:approval", onApproval);
     window.addEventListener("mmn:nightly", onNightly);
     window.addEventListener("mmn:remediation", onRemediation);
     return () => {
+      window.removeEventListener("mmn:ticket", onTicket);
       window.removeEventListener("mmn:approval", onApproval);
       window.removeEventListener("mmn:nightly", onNightly);
       window.removeEventListener("mmn:remediation", onRemediation);
@@ -202,6 +211,12 @@ export function Layout() {
   const uptimeDown = useQuery({
     queryKey: ["uptime-checks", "menu"],
     queryFn: async () => (await get<{ counts: Record<string, number> }>("api/uptime/checks")).counts.down ?? 0,
+    refetchInterval: 60_000,
+  });
+
+  const ticketCounts = useQuery({
+    queryKey: ["ticket-counts"],
+    queryFn: () => get<{ needs_reply: number }>("api/tickets/counts"),
     refetchInterval: 60_000,
   });
 
@@ -258,6 +273,7 @@ export function Layout() {
     {
       title: t("nav.section.operations"),
       items: [
+        { to: "/tickets", icon: <LifeBuoy />, label: t("nav.tickets"), badge: ticketCounts.data?.needs_reply || undefined },
         { to: "/monitoring", icon: <Activity />, label: t("nav.monitoring") },
         { to: "/uptime", icon: <Radar />, label: t("nav.uptime"), badge: uptimeDown.data || undefined },
         { to: "/backups", icon: <Archive />, label: t("nav.protection") },

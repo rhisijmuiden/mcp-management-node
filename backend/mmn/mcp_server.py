@@ -330,6 +330,13 @@ up", "what was down last night": `list_uptime_checks` (status=down), `get_uptime
 its uptime SLA target (`set_uptime_sla`). `save_uptime_check` adds or changes a check (show the user first),
 `delete_uptime_check` removes one.
 
+Tickets (customer portal): customers report problems and questions in their own portal and link them to their
+machines; Stackpilot runs a first diagnosis on those machines right away. "What tickets are open", "look at ticket
+1042": `list_tickets` (needs_reply = the customer waits for us), `get_ticket` (conversation, customer context and the
+diagnosis), `diagnose_ticket` (run it again). `reply_ticket` answers the customer (mailed to them: show the user the
+text first and write in the customer's language) or adds an internal note (internal=true); `update_ticket` changes
+status, priority, assignee or machines; `create_ticket` opens one for a customer.
+
 Nodes and servers can be named by id or by name. Every call is written to the audit log with your token's name.
 Destructive tools need `confirm` set to the exact node name, or are marked destructive: ask the user
 before calling them, and give a short `reason` for commands and service actions."""
@@ -3827,6 +3834,191 @@ async def get_guardrails(customer: str | None = None) -> dict:
         out = await gateway.effective_for(db, cid, p.token_id if p else None)
     if not customer:
         out["tools"] = {t["name"]: t["risk"] for t in gateway.catalog()}
+    return _jsonable(out)
+
+
+# ------------------------------------------------------------------ tickets and customer portal (phase 17)
+async def _ticket(db, ticket: str):
+    from mmn.services import tickets
+
+    try:
+        return await tickets.find_ticket(db, ticket)
+    except tickets.TicketError as e:
+        raise ToolDenied(str(e)) from e
+
+
+async def _ticket_detail(db, tk) -> dict:
+    from mmn.services import tickets
+
+    out = tickets.ticket_out(tk, await tickets.names(db))
+    out["thread"] = await tickets.messages(db, tk)
+    out["diagnosis"] = tk.diagnosis or {}
+    env = tk.customer
+    if env is not None:
+        out["customer_context"] = {"notes": env.notes, "maintenance_window": env.maintenance_window, "sla": env.sla}
+    return _jsonable(out)
+
+
+def _ai_author() -> str:
+    p = current_principal()
+    return f"AI ({p.token_name})" if p else "AI"
+
+
+@tool("read", RO)
+async def list_tickets(customer: str | None = None, status: str = "active", assignee: str | None = None,
+                       query: str | None = None) -> dict:
+    """Tickets that customers reported in the customer portal (or staff on their behalf), newest
+    activity first, with status (new, open, waiting_customer, on_hold, resolved, closed), priority,
+    linked machines, assignee, whether the customer waits for a reply (needs_reply) and the verdict of
+    the first automatic diagnosis. status: active (the default: everything not resolved or closed),
+    one status, or empty for all. assignee: a username, "me" (the token's user) or "none". query
+    searches subject, reporter, messages and the ticket number."""
+    from sqlalchemy import select
+
+    from mmn.models import User
+    from mmn.services import tickets
+
+    p = current_principal()
+    async with sessionmaker()() as db:
+        e = await _uptime_customer(db, customer)
+        aid = None
+        if assignee == "me":
+            aid = p.user_id if p else None
+        elif assignee == "none":
+            aid = "none"
+        elif assignee:
+            u = (await db.execute(select(User).where(User.username == assignee.lower()))).scalar_one_or_none()
+            if u is None:
+                raise ToolDenied("assignee not found")
+            aid = u.id
+        rows = await tickets.search(db, customer_id=e.id if e else None, status=status or None, assignee_id=aid,
+                                    q=query, limit=200)
+        nm = await tickets.names(db)
+        cnt = await tickets.message_counts(db, [r.id for r in rows])
+        return _jsonable({"counts": await tickets.counts(db),
+                          "tickets": [tickets.ticket_out(r, nm, counts=cnt) for r in rows]})
+
+
+@tool("read", RO)
+async def get_ticket(ticket: str) -> dict:
+    """One ticket (id, number or "#1042") with the whole conversation (customer messages, replies,
+    internal notes and status changes), the linked machines, the customer's notes, maintenance window
+    and SLA, and the first automatic diagnosis of the linked machines (findings per machine, failed
+    services, recent errors, open alerts, uptime checks that are down, suggested next steps). Start
+    here when asked to look at a ticket; dig deeper with diagnose_server, diagnose_workstation,
+    search_logs or find_errors."""
+    async with sessionmaker()() as db:
+        return await _ticket_detail(db, await _ticket(db, ticket))
+
+
+@tool("logs", RO)
+async def diagnose_ticket(ticket: str) -> dict:
+    """Run the first diagnosis of a ticket again, now, and return it: diagnose_server or
+    diagnose_workstation on every linked machine (find_errors on all servers of the customer when no
+    machine is linked), plus open alerts and uptime checks that are down. Takes up to 90 seconds."""
+    from mmn.services import tickets
+
+    async with sessionmaker()() as db:
+        tk = await _ticket(db, ticket)
+        tid = tk.id
+    diag = await tickets.run_diagnosis(tid)
+    if diag is None:
+        raise ToolDenied("the diagnosis failed; see the app log")
+    return _jsonable(diag)
+
+
+@tool("tickets", WRITE)
+async def reply_ticket(ticket: str, message: str, internal: bool = False, status: str | None = None) -> dict:
+    """Reply on a ticket. internal=false: the customer sees the reply in the portal and gets it by
+    mail, so show the user the text first and write it in the customer's language. internal=true: a
+    note for staff only (findings, what you tried). status: change it together with the reply, e.g.
+    waiting_customer (you asked the customer something) or resolved."""
+    from mmn.services import events, tickets
+    from mmn.services.links import public_base_url
+
+    async with sessionmaker()() as db:
+        tk = await _ticket(db, ticket)
+        old = tk.status
+        try:
+            m = await tickets.add_message(db, tk, kind="ai", body=message, internal=internal,
+                                          author_name=_ai_author(), status=status)
+        except tickets.TicketError as e:
+            raise ToolDenied(str(e)) from e
+        await db.commit()
+        base = await public_base_url(db)
+        out = await _ticket_detail(db, tk)
+    if not internal:
+        tickets.notify_later(tk.id, "staff_reply", base_url=base, message_id=m.id)
+    elif out["status"] != old:
+        tickets.notify_later(tk.id, "status", base_url=base)
+    events.publish("ticket.updated", {"id": tk.id})
+    return out
+
+
+@tool("tickets", WRITE)
+async def update_ticket(ticket: str, status: str | None = None, priority: str | None = None,
+                        assignee: str | None = None, machines: list[str] | None = None,
+                        category: str | None = None) -> dict:
+    """Change a ticket: status (new, open, waiting_customer, on_hold, resolved, closed; the customer
+    gets a mail for waiting_customer, resolved and closed), priority (low, normal, high, urgent),
+    assignee (a staff username, or "none"), the linked machines (names or ids of this customer's
+    machines; replaces the list) or category (problem, question, request)."""
+    from sqlalchemy import select
+
+    from mmn.models import User
+    from mmn.services import events, tickets
+    from mmn.services.links import public_base_url
+
+    async with sessionmaker()() as db:
+        tk = await _ticket(db, ticket)
+        aid: str | None | bool = False
+        if assignee == "none":
+            aid = None
+        elif assignee:
+            u = (await db.execute(select(User).where(User.username == assignee.lower()))).scalar_one_or_none()
+            if u is None:
+                raise ToolDenied("assignee not found")
+            aid = u.id
+        try:
+            changed = await tickets.update_ticket(db, tk, by=_ai_author(), status=status, priority=priority,
+                                                  assignee_id=aid, node_ids=machines, category=category)
+        except tickets.TicketError as e:
+            raise ToolDenied(str(e)) from e
+        await db.commit()
+        base = await public_base_url(db)
+        out = await _ticket_detail(db, tk)
+    if "status" in changed:
+        tickets.notify_later(tk.id, "status", base_url=base)
+    if changed.get("assigned"):
+        tickets.notify_later(tk.id, "assigned", base_url=base, by=_ai_author())
+    if changed:
+        events.publish("ticket.updated", {"id": tk.id})
+    return {"changed": sorted(changed), **out}
+
+
+@tool("tickets", WRITE)
+async def create_ticket(customer: str, subject: str, description: str, priority: str = "normal",
+                        category: str = "problem", machines: list[str] | None = None,
+                        diagnose: bool = True) -> dict:
+    """Open a ticket for a customer (for example for a problem you found yourself, or one a user
+    reported by phone), linked to machines of that customer (names or ids). The first diagnosis runs
+    on them in the background unless diagnose=false."""
+    from mmn.services import events, tickets
+
+    p = current_principal()
+    async with sessionmaker()() as db:
+        e = await _uptime_customer(db, customer)
+        try:
+            tk = await tickets.create_ticket(db, customer_id=e.id, subject=subject, body=description,
+                                             category=category, priority=priority, node_ids=machines,
+                                             by_name=p.token_name if p else "AI")
+        except tickets.TicketError as ex:
+            raise ToolDenied(str(ex)) from ex
+        await db.commit()
+        out = tickets.ticket_out(tk, await tickets.names(db))
+    if diagnose:
+        tickets.start_diagnosis(tk.id)
+    events.publish("ticket.created", {"id": tk.id, "number": tk.number, "customer_id": tk.customer_id})
     return _jsonable(out)
 
 

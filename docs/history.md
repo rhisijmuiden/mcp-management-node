@@ -24,6 +24,7 @@ Stackpilot is built in phases. Each phase is one pull request and one minor rele
 | 14 | v0.14.0 | Automatic recovery (self-healing) |
 | 15 | v0.15.0 | Network recovery and PowerShell scripts on Windows |
 | 16 | v0.16.0 | Uptime and SLA monitoring |
+| 17 | v0.17.0 | Customer portal with tickets |
 
 ## What each phase added
 
@@ -171,5 +172,16 @@ SLA text); the measured availability per month, without downtime inside the main
 Operations → Uptime & SLA and in the monthly report, with an optional alert when the month falls below the target.
 New MCP tools `list_uptime_checks`, `get_uptime_check`, `run_uptime_check`, `get_sla_report`, `save_uptime_check`,
 `delete_uptime_check` and `set_uptime_sla`, and a new token scope `monitoring`. New dependency: dnspython.
+
+**Phase 17** added the customer portal with tickets. People at a customer get a portal account (an invitation
+by mail, a member sees their own tickets, a manager every ticket of the organisation) and sign in at `/portal`,
+separate from the staff accounts and always limited to their own customer. They report a problem, question or
+request, pick the computers and servers it is about and follow the status and the replies. When a ticket comes
+in, Stackpilot runs a first diagnosis (the checks of `diagnose_server`, `diagnose_workstation` and `find_errors`,
+plus open alerts and uptime checks that are down) and shows it to staff only. Staff get the new page Operations →
+Tickets: the list per customer, status, priority, assignment, public replies and internal notes, portal accounts and
+portal settings, with mails through the app's SMTP server. Resolved tickets close by themselves after a number of
+days. New MCP tools `list_tickets`, `get_ticket`, `diagnose_ticket`, `reply_ticket`, `update_ticket` and
+`create_ticket`, and a new token scope `tickets`.
 
 Bug fix releases in between (v0.2.1, v0.6.1, v0.6.2, v0.7.1) are listed on the releases page.
