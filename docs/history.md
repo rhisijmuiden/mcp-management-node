@@ -25,6 +25,7 @@ Stackpilot is built in phases. Each phase is one pull request and one minor rele
 | 15 | v0.15.0 | Network recovery and PowerShell scripts on Windows |
 | 16 | v0.16.0 | Uptime and SLA monitoring |
 | 17 | v0.17.0 | Customer portal with tickets |
+| 18 | v0.18.0 | Documentation and password vault per customer |
 
 ## What each phase added
 
@@ -183,5 +184,19 @@ Tickets: the list per customer, status, priority, assignment, public replies and
 portal settings, with mails through the app's SMTP server. Resolved tickets close by themselves after a number of
 days. New MCP tools `list_tickets`, `get_ticket`, `diagnose_ticket`, `reply_ticket`, `update_ticket` and
 `create_ticket`, and a new token scope `tickets`.
+
+**Phase 18** added documentation and a password vault per customer. Operations → **Documentation**: Markdown pages
+(network plans, procedures, notes, contacts, hardware, ...) with templates, a side-by-side editor, tables and
+checklists, linked machines, tags, every earlier version (view and restore) and attachments that are stored
+encrypted; a page can be hidden from the AI. Operations → **Password vault**: credentials per customer (logins,
+servers, network devices, databases, API keys, WiFi, certificates, licences) with extra fields, a password generator,
+password history and a rotation reminder, encrypted with AES-256-GCM under a data key per item that is wrapped with
+a separate vault key (`vault.key`, part of the app backups, rotatable from the interface). Admins see or copy a
+secret after entering their password again; every reveal and copy is in the vault's access log. The AI only gets a
+secret after an admin approved that one use through the approvals inbox, whatever the policies say:
+`reveal_credential` returns it once after approval, `run_with_credential` hands it to a script on the machine in
+environment variables and wipes it from the output. New MCP tools `list_documents`, `get_document`,
+`save_document`, `list_credentials`, `reveal_credential`, `run_with_credential` and `save_credential`, new token
+scopes `docs` and `vault`, and `get_customer_context` lists the customer's documentation.
 
 Bug fix releases in between (v0.2.1, v0.6.1, v0.6.2, v0.7.1) are listed on the releases page.

@@ -128,6 +128,10 @@ async def _stage(stage: Path) -> None:
     files.mkdir(parents=True)
     if s.secret_key_file.exists():
         shutil.copy2(s.secret_key_file, files / "secret.key")
+    from mmn.services.vault import key_file
+
+    if key_file().exists():
+        shutil.copy2(key_file(), files / "vault.key")
     if s.files_dir.exists():
         shutil.copytree(s.files_dir, files / "data", dirs_exist_ok=True)
 
@@ -362,6 +366,13 @@ async def restore_backup(target_id: str, backup_id: str, *, user_id: str | None 
                 shutil.copy2(sk, s.secret_key_file)
                 os.chmod(s.secret_key_file, 0o600)
                 reset_secret_cache()
+            vk = state / "files" / "vault.key"
+            if vk.exists():
+                from mmn.services import vault
+
+                shutil.copy2(vk, vault.key_file())
+                os.chmod(vault.key_file(), 0o600)
+                vault.reset_cache()
             data = state / "files" / "data"
             if data.exists():
                 if s.files_dir.exists():

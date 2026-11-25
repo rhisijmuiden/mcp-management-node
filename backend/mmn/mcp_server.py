@@ -15,6 +15,7 @@ import contextvars
 import functools
 import inspect
 import json
+import re
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -118,7 +119,7 @@ def _target_of(args: dict[str, Any]) -> str | None:
         return ", ".join(map(str, args["servers"]))[:255]
     if args.get("door"):
         return f"door {args['door']}"[:255]
-    for k in ("wifi", "client", "device", "connection", "deployment", "design_id", "guest", "node", "server", "workstation", "customer", "slug", "template", "task_id", "run_id", "name", "backup_id",
+    for k in ("credential", "document", "wifi", "client", "device", "connection", "deployment", "design_id", "guest", "node", "server", "workstation", "customer", "slug", "template", "task_id", "run_id", "name", "backup_id",
               "target_id", "tag", "channel", "to", "package", "transfer_id", "pattern"):
         if args.get(k):
             return str(args[k])[:255]
@@ -128,6 +129,8 @@ def _target_of(args: dict[str, Any]) -> str | None:
 # Tools the AI may always call, also while AI actions are paused: they only report on approvals
 # and guardrails.
 GUARD_EXEMPT = {"get_approval", "get_guardrails"}
+# Tools that apply the policy themselves (reveal_credential first looks for an approved grant).
+SELF_GUARDED = {"reveal_credential"}
 
 
 async def _guard(p: Principal | None, name: str, risk: str, args: dict[str, Any]) -> Any:
@@ -201,7 +204,7 @@ def tool(scope: str, annotations: ToolAnnotations, *, all_customers: bool = Fals
                 if all_customers and p is not None and p.customers is not None:
                     raise ToolDenied("this tool works on the whole app or across customers; this token is tied to "
                                      "specific customers. Use a token for all customers.")
-                if approval_id is None and rb_call is None and name not in GUARD_EXEMPT:
+                if approval_id is None and rb_call is None and name not in GUARD_EXEMPT and name not in SELF_GUARDED:
                     # A dry run only shows what would change.
                     call_risk = "read" if bound.get("dry_run", dry_default) is True else risk
                     outcome = await _guard(p, name, call_risk, bound)
@@ -336,6 +339,16 @@ machines; Stackpilot runs a first diagnosis on those machines right away. "What 
 diagnosis), `diagnose_ticket` (run it again). `reply_ticket` answers the customer (mailed to them: show the user the
 text first and write in the customer's language) or adds an internal note (internal=true); `update_ticket` changes
 status, priority, assignee or machines; `create_ticket` opens one for a customer.
+
+Documentation and password vault: every customer has documentation pages (network plans, procedures, notes,
+contacts, hardware) and a password vault. Before working on a customer, look for relevant pages with
+`list_documents` (query, machine) and read them with `get_document`; keep them up to date with `save_document`
+(append=true for a dated change line). Passwords are never in documents: `list_credentials` shows what is in the
+vault without secrets. A secret is only used after an admin approved that use: `run_with_credential` (preferred:
+the script gets it in $SP_PASSWORD etc. on the machine and it never passes through you) or `reveal_credential`
+(answers pending_approval first; call it again once approved). Every request and use is in the vault's access log.
+Never repeat a secret to the user or write it into documents, tickets or notes. Store new or changed passwords
+with `save_credential`.
 
 Nodes and servers can be named by id or by name. Every call is written to the audit log with your token's name.
 Destructive tools need `confirm` set to the exact node name, or are marked destructive: ask the user
@@ -712,7 +725,12 @@ async def get_customer_context(customer: str) -> dict:
             e = await nodes.get_environment(db, customer)
         except nodes.NodeError as ex:
             raise ToolDenied(str(ex)) from ex
-        return _jsonable({"id": e.id, **customers.context_dict(e), "markdown": customers.context_markdown(e)})
+        from mmn.services import docs
+
+        pages = await docs.search(db, customer_id=e.id, ai_only=True, limit=50)
+        return _jsonable({"id": e.id, **customers.context_dict(e), "markdown": customers.context_markdown(e),
+                          "documentation": [{"id": d.id, "title": d.title, "category": d.category, "pinned": d.pinned}
+                                            for d in pages]})
 
 
 @tool("nodes", WRITE, all_customers=True)
@@ -4020,6 +4038,363 @@ async def create_ticket(customer: str, subject: str, description: str, priority:
         tickets.start_diagnosis(tk.id)
     events.publish("ticket.created", {"id": tk.id, "number": tk.number, "customer_id": tk.customer_id})
     return _jsonable(out)
+
+
+# ------------------------------------------------------------------ documentation and password vault (phase 18)
+async def _doc_customer(db, customer: str | None):
+    return await _uptime_customer(db, customer)
+
+
+async def _document(db, document: str, customer: str | None):
+    from mmn.services import docs
+
+    e = await _doc_customer(db, customer)
+    try:
+        d = await docs.find(db, document, e.id if e else None)
+    except docs.DocError as ex:
+        raise ToolDenied(str(ex)) from ex
+    if not d.ai_visible:
+        raise ToolDenied(f"document {document!r} not found")
+    return d
+
+
+async def _machine_ids(db, customer_id: str, machines: list[str] | None) -> list[str] | None:
+    if machines is None:
+        return None
+    return [await _uptime_machine(db, customer_id, m, "machine") for m in machines]
+
+
+@tool("read", RO)
+async def list_documents(customer: str | None = None, query: str | None = None, category: str | None = None,
+                         machine: str | None = None, tag: str | None = None) -> dict:
+    """The documentation of the customers: network plans, procedures, notes, contacts, hardware and software
+    pages (Markdown), newest first with pinned pages on top. query searches title and text and returns the
+    matching lines. category: network, procedure, notes, contacts, howto, hardware, software, security or other.
+    machine: only pages linked to that machine. Read a page with get_document. Pages an admin hid from the AI are
+    left out. Passwords are never in the documentation: they are in the vault (list_credentials)."""
+    from mmn.services import docs, vault
+
+    async with sessionmaker()() as db:
+        e = await _doc_customer(db, customer)
+        node_id = await _uptime_machine(db, e.id, machine, "machine") if (machine and e) else None
+        if machine and not e:
+            node_id, _ = await _node_id(machine)
+        rows = await docs.search(db, customer_id=e.id if e else None, q=query, category=category, tag=tag,
+                                 node_id=node_id, ai_only=True, limit=200)
+        names = await vault.machine_names(db)
+        out = []
+        for d in rows:
+            item = docs.doc_out(d, names=names, body=False)
+            if query:
+                item["matches"] = docs.snippets(d.body, query)
+            out.append(item)
+        return _jsonable({"documents": out})
+
+
+@tool("read", RO)
+async def get_document(document: str, customer: str | None = None) -> dict:
+    """One documentation page (id or exact title; give the customer when titles repeat) with its full Markdown
+    text, linked machines, tags, version and its attachments (names and sizes)."""
+    from mmn.services import docs, vault
+
+    async with sessionmaker()() as db:
+        d = await _document(db, document, customer)
+        return _jsonable(docs.doc_out(d, names=await vault.machine_names(db),
+                                      attachments=await docs.attachments_of(db, d.id)))
+
+
+@tool("docs", WRITE)
+async def save_document(customer: str, title: str, body: str | None = None, document: str | None = None,
+                        category: str | None = None, tags: list[str] | None = None,
+                        machines: list[str] | None = None, append: bool = False) -> dict:
+    """Write documentation for a customer: create a page, or change one (`document`: id or title). body is
+    Markdown; with append=true it is added at the end of the existing text (for example a dated line under
+    "Changes"). Every change keeps the previous version. Never put passwords or keys in documentation: store them
+    with save_credential. category: network, procedure, notes, contacts, howto, hardware, software, security or
+    other. machines: names or ids of the customer's machines this page is about."""
+    from mmn.services import docs, vault
+
+    p = current_principal()
+    by = f"AI ({p.token_name})" if p else "AI"
+    async with sessionmaker()() as db:
+        e = await _doc_customer(db, customer)
+        try:
+            if document:
+                d = await _document(db, document, e.id)
+                data: dict[str, Any] = {"title": title}
+                if body is not None:
+                    data["body"] = (d.body.rstrip() + "\n\n" + body.strip() + "\n") if append else body
+                if category:
+                    data["category"] = category
+                if tags is not None:
+                    data["tags"] = tags
+                if machines is not None:
+                    data["node_ids"] = await _machine_ids(db, e.id, machines)
+                changed = await docs.update(db, d, data, by=by)
+            else:
+                d = await docs.create(db, customer_id=e.id, title=title, body=body or "", category=category or "notes",
+                                      tags=tags, node_ids=await _machine_ids(db, e.id, machines) or [], by=by)
+                changed = ["created"]
+        except docs.DocError as ex:
+            raise ToolDenied(str(ex)) from ex
+        await db.commit()
+        from mmn.services import events
+
+        events.publish("docs.changed", {"id": d.id})
+        return _jsonable({**docs.doc_out(d, names=await vault.machine_names(db), body=False), "changed": changed})
+
+
+async def _credential(db, credential: str, customer: str | None):
+    from mmn.services import vault
+
+    e = await _doc_customer(db, customer)
+    try:
+        return await vault.find_item(db, credential, e.id if e else None)
+    except vault.VaultError as ex:
+        raise ToolDenied(str(ex)) from ex
+
+
+def _vault_actor() -> dict:
+    p = current_principal()
+    return {"actor_kind": "ai", "username": p.username if p else None, "token_id": p.token_id if p else None,
+            "token_name": p.token_name if p else None}
+
+
+def _no_runbook(name: str) -> None:
+    from mmn.services import gateway
+
+    if gateway.runbook_call.get():
+        raise ToolDenied(f"{name} cannot run as a runbook step: every use of a secret needs its own approval")
+
+
+@tool("vault", RO)
+async def list_credentials(customer: str | None = None, query: str | None = None, machine: str | None = None,
+                           kind: str | None = None) -> dict:
+    """The credentials in the password vault (names, kind, username, URL, linked machines, whether you may use it
+    and whether it is due for rotation) WITHOUT the secrets. To use one, call reveal_credential (needs an admin's
+    approval for every use) or, better, run_with_credential, which hands the secret to a script on the machine
+    without it passing through you. kind: login, server, network, database, api_key, wifi, certificate, license,
+    note or other."""
+    from mmn.services import vault
+
+    async with sessionmaker()() as db:
+        e = await _doc_customer(db, customer)
+        node_id = None
+        if machine:
+            node_id = await _uptime_machine(db, e.id, machine, "machine") if e else (await _node_id(machine))[0]
+        rows = await vault.search_items(db, customer_id=e.id if e else None, q=query, kind=kind, node_id=node_id,
+                                        limit=300)
+        names = await vault.machine_names(db)
+        out = []
+        for r in rows:
+            try:
+                o = vault.item_out(r, names=names)
+            except vault.VaultError:
+                continue
+            o["ai_may_use"] = r.ai_access == "approval"
+            for k in ("created_by", "updated_by"):
+                o.pop(k, None)
+            out.append(o)
+        return _jsonable({"credentials": out})
+
+
+@tool("vault", DESTRUCTIVE)
+async def reveal_credential(credential: str, reason: str, customer: str | None = None) -> dict:
+    """Read the secret of a vault credential (password, username, notes and extra fields). Every use needs an
+    admin's approval, whatever the policy says, and is written to the vault's access log with your `reason`.
+    The first call answers pending_approval: tell the user and stop. Once approved, call reveal_credential again
+    with the same arguments within the time the approval allows (15 minutes and one read by default) to get it.
+    Never repeat the secret to the user, write it into documents or tickets, or keep it longer than the task
+    needs. Prefer run_with_credential when the secret is only needed on a machine."""
+    from mmn.services import gateway, vault
+
+    _no_runbook("reveal_credential")
+    if not reason or not reason.strip():
+        raise ToolDenied("give a reason: it is shown to the admin who approves it and kept in the access log")
+    p = current_principal()
+    approval_id = gateway.approved_call.get()
+    async with sessionmaker()() as db:
+        item = await _credential(db, credential, customer)
+        if item.ai_access != "approval":
+            await vault.log_access(db, item, "ai_denied", reason=reason, success=False, error="not for the AI",
+                                   **_vault_actor())
+            await db.commit()
+            raise ToolDenied(f"credential {item.name!r} is not available to the AI (an admin set it to never)")
+        if approval_id:
+            # The admin approved: give this token a short-lived grant (the secret itself is not stored with the
+            # approval result).
+            a = await db.get(gateway.AiApproval, approval_id)
+            g = await vault.create_grant(db, item, token_id=p.token_id if p else None, approval_id=approval_id,
+                                         approved_by=a.decided_by if a else None)
+            await vault.log_access(db, item, "ai_approved", reason=reason, approval_id=approval_id,
+                                   approved_by=a.decided_by if a else None, **_vault_actor())
+            await db.commit()
+            return {"status": "approved", "credential": item.name, "expires_at": g.expires_at.isoformat(),
+                    "reads": g.uses_left,
+                    "message": "Approved. Call reveal_credential again with the same arguments to read the secret "
+                               f"before {g.expires_at.isoformat()}."}
+        args = {"credential": credential, "reason": reason, "customer": customer}
+        d = await gateway.decide(db, tool="reveal_credential", risk="destructive", args=_jsonable(args),
+                                 token_id=p.token_id if p else None, token_customers=p.customers if p else None)
+        if d.action not in ("paused", "block"):
+            secret = await _consume_and_read(db, item, reason, p)
+            if secret is not None:
+                return secret
+        item_id = item.id
+    outcome = await _guard(p, "reveal_credential", "destructive", args)  # raises when paused or blocked
+    async with sessionmaker()() as db:
+        item = await db.get(vault.VaultItem, item_id)
+        if isinstance(outcome, dict) and outcome.get("status") == "pending_approval":
+            await vault.log_access(db, item, "ai_request", reason=reason, approval_id=outcome.get("approval_id"),
+                                   **_vault_actor())
+            await db.commit()
+            return outcome
+        # Approved (and the grant made) while the call waited.
+        secret = await _consume_and_read(db, item, reason, p)
+        if secret is not None:
+            return secret
+    raise ToolDenied("the approval did not give access; ask the user")
+
+
+async def _consume_and_read(db, item, reason: str, p) -> dict | None:
+    from mmn.services import vault
+
+    g = await vault.consume_grant(db, item, p.token_id if p else None)
+    if g is None:
+        return None
+    out = vault.item_out(item, reveal=True)
+    await vault.log_access(db, item, "ai_reveal", reason=reason, approval_id=g.approval_id,
+                           approved_by=g.approved_by, reads_left=g.uses_left, **_vault_actor())
+    await vault.announce_ai_use(db, {"item": item.name, "token": p.token_name if p else None, "action": "reveal"})
+    await db.commit()
+    return _jsonable({"credential": item.name, "kind": item.kind, "url": item.url, "username": out["username"],
+                      "password": out["password"], "notes": out["notes"], "fields": out["fields"],
+                      "reads_left": g.uses_left,
+                      "note": "Use it only for this task. Do not repeat it to the user or write it down."})
+
+
+@tool("vault", DESTRUCTIVE)
+async def run_with_credential(server: str, credential: str, script: str, reason: str, customer: str | None = None,
+                              timeout: int = 300) -> dict:
+    """Run a script on a machine with a vault credential, without the secret passing through you. The script
+    gets it in environment variables: SP_USERNAME, SP_PASSWORD, SP_URL and SP_FIELD_<NAME> for extra fields
+    (bash on Linux: "$SP_PASSWORD"; PowerShell on Windows: $env:SP_PASSWORD). The secret is wiped from the output.
+    Every run needs an admin's approval (the admin sees the script and your reason) and the token also needs the
+    `exec` scope; the credential and the machine must belong to the same customer. timeout: seconds, max 1800."""
+    from mmn.models import Node, NodeJob
+    from mmn.services import agent_hub, gateway, nodes, vault
+
+    _no_runbook("run_with_credential")
+    p = _check("exec")
+    approval_id = gateway.approved_call.get()
+    if not approval_id:
+        raise ToolDenied("run_with_credential only runs after an admin approved it")
+    if not reason.strip() or not script.strip():
+        raise ToolDenied("give a script and a reason")
+    nid, nname = await _node_id(server)
+    async with sessionmaker()() as db:
+        item = await _credential(db, credential, customer)
+        n = await db.get(Node, nid)
+        if item.ai_access != "approval":
+            await vault.log_access(db, item, "ai_denied", reason=reason, success=False, error="not for the AI",
+                                   **_vault_actor())
+            await db.commit()
+            raise ToolDenied(f"credential {item.name!r} is not available to the AI (an admin set it to never)")
+        if n is None or n.environment_id != item.customer_id:
+            raise ToolDenied(f"{item.name} does not belong to the customer of {nname}")
+        sec = vault.read_secret(item)
+        a = await db.get(gateway.AiApproval, approval_id)
+        approved_by = a.decided_by if a else None
+        item_name, item_url = item.name, item.url or ""
+    env = {"SP_USERNAME": sec["username"], "SP_PASSWORD": sec["password"], "SP_URL": item_url}
+    # Wiped from the output: the password and the secret extra fields (not the username or URL; a short
+    # username would wipe half the output).
+    secrets_ = [sec["password"]] if len(sec["password"]) >= 3 else []
+    for f in sec["fields"]:
+        key = "SP_FIELD_" + re.sub(r"[^A-Za-z0-9]+", "_", f["name"]).strip("_").upper()[:50]
+        if key != "SP_FIELD_":
+            env[key] = f["value"]
+            if f["secret"] and len(f["value"]) >= 3:
+                secrets_.append(f["value"])
+    try:
+        t = max(1, min(timeout, 1800))
+        # Same as guests.script, but the secrets are registered for scrubbing before the agent starts.
+        job = await nodes.create_job(nid, "vault.run", {"credential": item_name, "reason": reason[:300]}, source="mcp",
+                                     requested_by=f"{p.username} (AI: {p.token_name})", exclusive=False)
+        agent_hub.scrub(job.id, secrets_)
+        try:
+            await agent_hub.request(nid, "script.run", {"script": script, "env": env, "timeout": t, "job_id": job.id},
+                                    timeout=60)
+        except Exception as e:  # noqa: BLE001
+            await agent_hub.finish_job(job.id, "failed", {}, str(e))
+            raise
+        status, result, error = await agent_hub.wait_job(job.id, t + 30)
+    except Exception as e:  # noqa: BLE001
+        async with sessionmaker()() as db:
+            item = await db.get(vault.VaultItem, item.id)
+            await vault.log_access(db, item, "ai_use", reason=reason, approval_id=approval_id, success=False,
+                                   machine=nname, error=str(e)[:500], **_vault_actor())
+            await db.commit()
+        raise _agent_errors(e) from e
+    finally:
+        env.clear()
+    async with sessionmaker()() as db:
+        j = await db.get(NodeJob, job.id)
+        output = vault.scrub(j.output if j else "", secrets_)
+        if j is not None:
+            j.output = output
+        item = await db.get(vault.VaultItem, item.id)
+        await vault.log_access(db, item, "ai_use", reason=reason, approval_id=approval_id, approved_by=approved_by,
+                               success=status == "success", machine=nname, job_id=job.id,
+                               exit_code=(result or {}).get("exit_code"), **_vault_actor())
+        await vault.announce_ai_use(db, {"item": item_name, "token": p.token_name, "action": "use", "machine": nname})
+        await db.commit()
+    agent_hub.scrub(job.id, None)
+    return _jsonable({"status": status, "exit_code": (result or {}).get("exit_code"), "machine": nname,
+                      "credential": item_name, "output": output[-60000:], "error": vault.scrub(error or "", secrets_)
+                      or None, "job_id": job.id})
+
+
+@tool("vault", WRITE)
+async def save_credential(customer: str, name: str, credential: str | None = None, kind: str | None = None,
+                          username: str | None = None, password: str | None = None, url: str | None = None,
+                          notes: str | None = None, machines: list[str] | None = None,
+                          tags: list[str] | None = None) -> dict:
+    """Store a credential in the customer's vault (encrypted), or change one (`credential`: id or name), for
+    example after you created an account or changed a password with run_command. A changed password keeps the old
+    one in the item's history. kind: login, server, network, database, api_key, wifi, certificate, license, note or
+    other. machines: names or ids of the customer's machines it belongs to. Returns the item without the secret.
+    New items may be used by the AI (with approval); an admin can change that."""
+    from mmn.services import events, vault
+
+    p = current_principal()
+    by = f"AI ({p.token_name})" if p else "AI"
+    async with sessionmaker()() as db:
+        e = await _doc_customer(db, customer)
+        try:
+            if credential:
+                item = await _credential(db, credential, e.id)
+                data: dict[str, Any] = {"name": name}
+                for k, v in (("kind", kind), ("username", username), ("password", password), ("url", url),
+                             ("notes", notes), ("tags", tags)):
+                    if v is not None:
+                        data[k] = v
+                if machines is not None:
+                    data["node_ids"] = await _machine_ids(db, e.id, machines)
+                changed = await vault.update_item(db, item, data, by=by)
+                await vault.log_access(db, item, "update", changed=changed, **_vault_actor())
+            else:
+                item = await vault.create_item(db, customer_id=e.id, name=name, kind=kind or "login", url=url,
+                                               payload={"username": username or "", "password": password or "",
+                                                        "notes": notes or ""},
+                                               tags=tags, node_ids=await _machine_ids(db, e.id, machines) or [], by=by)
+                changed = ["created"]
+                await vault.log_access(db, item, "create", **_vault_actor())
+        except vault.VaultError as ex:
+            raise ToolDenied(str(ex)) from ex
+        await db.commit()
+        events.publish("vault.changed", {"id": item.id})
+        return _jsonable({**vault.item_out(item, names=await vault.machine_names(db)), "changed": changed})
 
 
 # ------------------------------------------------------------------ MCP hub

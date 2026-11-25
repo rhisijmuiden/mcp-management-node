@@ -69,6 +69,9 @@ def _criteria(ids: list[str]):
         CustomerReport,
         Deployment,
         DeploymentRun,
+        Document,
+        DocumentAttachment,
+        DocumentRevision,
         Environment,
         MetricSample,
         Node,
@@ -86,6 +89,10 @@ def _criteria(ids: list[str]):
         UptimeCheck,
         UptimeIncident,
         UptimeResult,
+        VaultAccess,
+        VaultGrant,
+        VaultItem,
+        VaultItemHistory,
     )
 
     node_ids = select(Node.id).where(Node.environment_id.in_(ids)).scalar_subquery()
@@ -95,6 +102,13 @@ def _criteria(ids: list[str]):
     check_ids = select(UptimeCheck.id).where(UptimeCheck.customer_id.in_(ids)).scalar_subquery()
     ticket_ids = select(Ticket.id).where(Ticket.customer_id.in_(ids)).scalar_subquery()
     return [
+        with_loader_criteria(Document, Document.customer_id.in_(ids), include_aliases=True),
+        with_loader_criteria(DocumentRevision, DocumentRevision.customer_id.in_(ids), include_aliases=True),
+        with_loader_criteria(DocumentAttachment, DocumentAttachment.customer_id.in_(ids), include_aliases=True),
+        with_loader_criteria(VaultItem, VaultItem.customer_id.in_(ids), include_aliases=True),
+        with_loader_criteria(VaultItemHistory, VaultItemHistory.customer_id.in_(ids), include_aliases=True),
+        with_loader_criteria(VaultGrant, VaultGrant.customer_id.in_(ids), include_aliases=True),
+        with_loader_criteria(VaultAccess, VaultAccess.customer_id.in_(ids), include_aliases=True),
         with_loader_criteria(Ticket, Ticket.customer_id.in_(ids), include_aliases=True),
         with_loader_criteria(TicketMessage, TicketMessage.ticket_id.in_(ticket_ids), include_aliases=True),
         with_loader_criteria(PortalUser, PortalUser.customer_id.in_(ids), include_aliases=True),

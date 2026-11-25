@@ -308,8 +308,22 @@ async def _job_message(node_id: str, msg: dict[str, Any]) -> None:
             spawn(nodes.job_finished_mail(job_id))
 
 
+# Secrets that must not appear in the output of a job (phase 18: run_with_credential): {job id: [secret]}.
+_scrub: dict[str, list[str]] = {}
+
+
+def scrub(job_id: str, secrets_: list[str] | None) -> None:
+    """Wipe these secrets from every line of the job's output from now on (None: stop)."""
+    if secrets_:
+        _scrub[job_id] = sorted({s for s in secrets_ if s}, key=len, reverse=True)
+    else:
+        _scrub.pop(job_id, None)
+
+
 def add_line(node_id: str, job_id: str, line: str) -> None:
     """Append a line to a job's output (buffered, written within ~1.5 s) and show it live."""
+    for secret in _scrub.get(job_id, ()):
+        line = line.replace(secret, "***")
     buf = _job_buffers.setdefault(job_id, [])
     buf.append(line)
     events.publish("node.job", {"node_id": node_id, "job_id": job_id, "line": line})

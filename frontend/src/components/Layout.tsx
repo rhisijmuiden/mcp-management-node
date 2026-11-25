@@ -48,7 +48,7 @@ import {
   ShieldHalf,
   Wrench,
   Sunrise,
-  BookOpenCheck, HeartPulse, Radar, LifeBuoy,
+  BookOpenCheck, HeartPulse, Radar, LifeBuoy, BookText, LockKeyhole,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -183,11 +183,20 @@ export function Layout() {
         action: { label: t("tk.toast_open"), onClick: () => navigate(d.id ? `/tickets/${d.id}` : "/tickets") },
       });
     };
+    const onVault = (e: Event) => {
+      const d = (e as CustomEvent).detail as { item?: string; token?: string; action?: string; machine?: string };
+      toast(t(d.action === "use" ? "vault.toast_use" : "vault.toast_reveal", { item: d.item ?? "", token: d.token ?? "AI", machine: d.machine ?? "" }), {
+        duration: 15_000,
+        action: { label: t("vault.toast_open"), onClick: () => navigate("/vault") },
+      });
+    };
+    window.addEventListener("mmn:vault", onVault);
     window.addEventListener("mmn:ticket", onTicket);
     window.addEventListener("mmn:approval", onApproval);
     window.addEventListener("mmn:nightly", onNightly);
     window.addEventListener("mmn:remediation", onRemediation);
     return () => {
+      window.removeEventListener("mmn:vault", onVault);
       window.removeEventListener("mmn:ticket", onTicket);
       window.removeEventListener("mmn:approval", onApproval);
       window.removeEventListener("mmn:nightly", onNightly);
@@ -274,6 +283,8 @@ export function Layout() {
       title: t("nav.section.operations"),
       items: [
         { to: "/tickets", icon: <LifeBuoy />, label: t("nav.tickets"), badge: ticketCounts.data?.needs_reply || undefined },
+        { to: "/docs", icon: <BookText />, label: t("nav.docs") },
+        { to: "/vault", icon: <LockKeyhole />, label: t("nav.vault") },
         { to: "/monitoring", icon: <Activity />, label: t("nav.monitoring") },
         { to: "/uptime", icon: <Radar />, label: t("nav.uptime"), badge: uptimeDown.data || undefined },
         { to: "/backups", icon: <Archive />, label: t("nav.protection") },

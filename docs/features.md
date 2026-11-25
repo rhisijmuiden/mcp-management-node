@@ -500,6 +500,44 @@ Over MCP: `list_tickets`, `get_ticket` (the conversation, customer context and t
 with the scope `tickets` also `reply_ticket` (to the customer or as an internal note), `update_ticket` and
 `create_ticket`.
 
+### Documentation
+
+Operations → **Documentation**: the knowledge about every customer in one place, for the team and for the AI.
+
+- **Pages.** Markdown with headings, tables, checklists and links, written in a side-by-side editor with a live
+  preview. Categories (network, procedure, notes, contacts, how-to, hardware, software, security, other), tags,
+  pinned pages on top and the machines a page is about. Templates for a network plan, a procedure, contacts and a
+  hardware list, in English or Dutch.
+- **Versions.** Every change of the title or text keeps the previous version (the last 100): view one and restore it.
+  Two people saving the same page at once get a warning instead of overwriting each other.
+- **Attachments.** Drawings, PDFs and exports up to 25 MB each, stored encrypted like the vault; images and PDFs open
+  in the browser, everything else downloads.
+- **For the AI.** `list_documents` (search with matching lines, per machine or category), `get_document` and, with the
+  scope `docs`, `save_document` (create, change or append a dated line). `get_customer_context` lists the pages of the
+  customer. A page with *The AI may read this page* switched off is left out of every tool.
+
+### Password vault
+
+Operations → **Password vault**: the credentials of every customer, encrypted, with an access log.
+
+- **Items.** Logins, servers, network devices, databases, API keys, WiFi, certificates, licences and secure notes,
+  with a username, password, URL, notes, extra fields (secret or not), tags, linked machines and a rotation period
+  (the list shows which are due). A generator makes strong passwords or passphrases. Changing a password keeps the
+  previous ones (10 by default).
+- **Encryption at rest.** Every item has its own random 256-bit data key; the secret part is encrypted with
+  AES-256-GCM and bound to the item. The data keys are wrapped with the vault key in `/var/lib/mcp-management-node/vault.key`,
+  apart from the database, so a database dump alone reveals nothing. The key goes along in app backups (set a backup
+  passphrase: the vault warns when a location has none) and can be rotated in *Settings*.
+- **People.** Everyone sees the names and usernames; admins see and copy secrets after entering their password again
+  (unlocked for 15 minutes by default). Every reveal, copy and change is in the access log, also failed attempts.
+- **The AI.** With the scope `vault` the AI sees the vault without secrets (`list_credentials`). Using a secret
+  always needs an admin's approval, whatever the policies say (a policy can still block it), and an item can be set
+  to *Never* for the AI. `run_with_credential` is the preferred way: after approval the script runs on the machine with
+  `SP_USERNAME`, `SP_PASSWORD` and `SP_FIELD_<NAME>` in its environment, the secret is wiped from the output and never
+  passes through the AI. `reveal_credential` answers "pending approval" first; once approved the AI can read the
+  secret once within 15 minutes. `save_credential` stores a new or changed password. The access log shows what the AI
+  asked, who approved it, when it was read or used and on which machine; open AI grants can be revoked.
+
 ### Package updates
 
 **Updates** shows the pending package updates of all nodes, installs them with a live log and reboots where needed.

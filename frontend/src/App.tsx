@@ -40,6 +40,10 @@ const NetworkPage = lazy(() => import("@/pages/Network").then((m) => ({ default:
 const SdnDesignerPage = lazy(() => import("@/pages/SdnDesigner").then((m) => ({ default: m.SdnDesignerPage })));
 const TicketsPage = lazy(() => import("@/pages/Tickets").then((m) => ({ default: m.TicketsPage })));
 const TicketDetailPage = lazy(() => import("@/pages/Tickets").then((m) => ({ default: m.TicketDetailPage })));
+const DocsPage = lazy(() => import("@/pages/Docs").then((m) => ({ default: m.DocsPage })));
+const DocDetailPage = lazy(() => import("@/pages/Docs").then((m) => ({ default: m.DocDetailPage })));
+const DocEditorPage = lazy(() => import("@/pages/Docs").then((m) => ({ default: m.DocEditorPage })));
+const VaultPage = lazy(() => import("@/pages/Vault").then((m) => ({ default: m.VaultPage })));
 // The customer portal (phase 17): its own sign-in, layout and session.
 const PortalApp = lazy(() => import("@/portal/PortalApp"));
 const L = ({ children }: { children: ReactNode }) => <Suspense fallback={<Spinner />}>{children}</Suspense>;
@@ -85,6 +89,11 @@ export default function App() {
         <Route path="uptime" element={<UptimePage />} />
         <Route path="tickets" element={<L><TicketsPage /></L>} />
         <Route path="tickets/:id" element={<L><TicketDetailPage /></L>} />
+        <Route path="docs" element={<L><DocsPage /></L>} />
+        <Route path="docs/new" element={<RequireAuth admin><L><DocEditorPage /></L></RequireAuth>} />
+        <Route path="docs/:id" element={<L><DocDetailPage /></L>} />
+        <Route path="docs/:id/edit" element={<RequireAuth admin><L><DocEditorPage /></L></RequireAuth>} />
+        <Route path="vault" element={<L><VaultPage /></L>} />
         <Route path="runbooks/new" element={<RequireAuth admin><RunbookEditorPage /></RequireAuth>} />
         <Route path="runbooks/runs/:id" element={<RunbookRunPage />} />
         <Route path="runbooks/:id" element={<RequireAuth admin><RunbookEditorPage /></RequireAuth>} />
