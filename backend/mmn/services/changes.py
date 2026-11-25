@@ -274,7 +274,7 @@ async def task_occurrences(db: AsyncSession, start: datetime, end: datetime, cus
                            *, per_task: int = 60) -> list[dict[str, Any]]:
     """When the enabled scheduled tasks run between ``start`` and ``end`` (UTC), with the customers they
     touch. Only tasks of ``customer_id`` (or of every customer) when given."""
-    from apscheduler.triggers.cron import CronTrigger
+    from mmn.services.cron import cron_trigger
 
     tz = (await get_setting(db, "schedules")).get("timezone") or "UTC"
     with tenancy.unrestricted():
@@ -291,7 +291,7 @@ async def task_occurrences(db: AsyncSession, start: datetime, end: datetime, cus
         if allowed is not None and custs is not None and not custs & allowed:
             continue
         try:
-            trig = CronTrigger.from_crontab(task.cron, timezone=tz)
+            trig = cron_trigger(task.cron, timezone=tz)
         except ValueError:
             continue
         fire = trig.get_next_fire_time(None, start)

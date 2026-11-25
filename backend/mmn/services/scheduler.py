@@ -11,13 +11,14 @@ from sqlalchemy import select
 
 from mmn.db import sessionmaker
 from mmn.models import BackupTarget
+from mmn.services.cron import cron_trigger
 
 log = logging.getLogger("mmn.scheduler")
 scheduler = AsyncIOScheduler(timezone="UTC")
 
 
 def validate_cron(expr: str) -> None:
-    CronTrigger.from_crontab(expr, timezone="UTC")
+    cron_trigger(expr, timezone="UTC")
 
 
 async def _backup_job(target_id: str, kind: str) -> None:
@@ -51,7 +52,7 @@ async def reload_backup_jobs() -> None:
             if not expr:
                 continue
             try:
-                trigger = CronTrigger.from_crontab(expr, timezone="UTC")
+                trigger = cron_trigger(expr, timezone="UTC")
             except ValueError:
                 log.warning("Invalid cron %r on target %s", expr, tgt.name)
                 continue
@@ -135,14 +136,14 @@ async def reload_task_jobs() -> None:
         rows = (await db.execute(select(ScheduledTask).where(ScheduledTask.enabled.is_(True)))).scalars().all()
     for t in rows:
         try:
-            trigger = CronTrigger.from_crontab(t.cron, timezone=_tz)
+            trigger = cron_trigger(t.cron, timezone=_tz)
         except ValueError:
             log.warning("Invalid cron %r on task %s", t.cron, t.name)
             continue
         scheduler.add_job(_task_job, trigger, args=[t.id], id=f"task:{t.id}", max_instances=1, coalesce=True,
                           misfire_grace_time=3600, replace_existing=True)
     try:
-        scheduler.add_job(_community_sync_job, CronTrigger.from_crontab(community_cron, timezone=_tz),
+        scheduler.add_job(_community_sync_job, cron_trigger(community_cron, timezone=_tz),
                           id="community-sync", replace_existing=True, coalesce=True, max_instances=1)
     except ValueError:
         log.warning("Invalid community sync schedule %r", community_cron)
