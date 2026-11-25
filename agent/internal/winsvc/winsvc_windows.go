@@ -6,10 +6,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -83,13 +83,18 @@ func DisarmRestartTask() {
 func Run(dir string, fn func(ctx context.Context)) error {
 	if f := openLog(dir); f != nil {
 		log.SetOutput(f)
+		// A service has no console: without this a Go panic or fatal error is lost and Windows
+		// only logs "terminated unexpectedly" (event 7031). Now the stack trace ends up in agent.log.
+		if err := debug.SetCrashOutput(f, debug.CrashOptions{}); err != nil {
+			log.Printf("crash output: %v", err)
+		}
 		defer f.Close()
 	}
 	setRecovery()
 	return svc.Run(Name, &handler{run: fn})
 }
 
-func openLog(dir string) io.WriteCloser {
+func openLog(dir string) *os.File {
 	_ = os.MkdirAll(dir, 0o700)
 	p := filepath.Join(dir, "agent.log")
 	if fi, err := os.Stat(p); err == nil && fi.Size() > 5<<20 {
