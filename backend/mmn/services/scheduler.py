@@ -377,6 +377,10 @@ async def start() -> None:
                       coalesce=True, max_instances=1, next_run_time=datetime.now(UTC) + timedelta(seconds=20))
     scheduler.add_job(_uptime_prune_job, CronTrigger(hour=5, minute=7, timezone="UTC"), id="uptime-prune",
                       replace_existing=True, coalesce=True)
+    scheduler.add_job(_m365_job, "interval", minutes=1, id="m365-tick", replace_existing=True,
+                      coalesce=True, max_instances=1, next_run_time=datetime.now(UTC) + timedelta(seconds=45))
+    scheduler.add_job(_m365_prune_job, CronTrigger(hour=5, minute=17, timezone="UTC"), id="m365-prune",
+                      replace_existing=True, coalesce=True)
     scheduler.add_job(_unifi_prune_job, CronTrigger(hour=4, minute=53, timezone="UTC"), id="unifi-prune",
                       replace_existing=True, coalesce=True)
     scheduler.add_job(_tickets_close_job, CronTrigger(minute=37, timezone="UTC"), id="tickets-close",
@@ -476,6 +480,24 @@ async def _uptime_prune_job() -> None:
         await uptime.prune()
     except Exception:  # noqa: BLE001
         log.exception("pruning uptime results failed")
+
+
+async def _m365_job() -> None:
+    from mmn.services import m365
+
+    try:
+        await m365.tick()
+    except Exception:  # noqa: BLE001
+        log.exception("Microsoft 365 sync failed")
+
+
+async def _m365_prune_job() -> None:
+    from mmn.services import m365
+
+    try:
+        await m365.prune()
+    except Exception:  # noqa: BLE001
+        log.exception("pruning Microsoft 365 sign-ins failed")
 
 
 def stop() -> None:

@@ -342,6 +342,42 @@ offline devices raise monitoring alerts.
 - **UniFi → Access**: doors and lock state, remote unlock, temporary lock rules, emergency lockdown/evacuation,
   schedules and the access log.
 
+### Microsoft 365 & Entra ID
+
+Infrastructure → **Microsoft 365**: the Microsoft 365 tenant of every customer, read through Microsoft Graph.
+
+- **Connect** a tenant with an app registration in the customer's Entra ID. The dialog walks through the setup and
+  lists the application permissions to grant (read: `User.Read.All`, `Directory.Read.All`, `AuditLog.Read.All`,
+  `UserAuthenticationMethod.Read.All`, `IdentityRiskyUser.Read.All`, `IdentityRiskEvent.Read.All`, `Policy.Read.All`,
+  `Application.Read.All`; actions, optional: `User.EnableDisableAccount.All`, `User.RevokeSessions.All`,
+  `UserAuthenticationMethod.ReadWrite.All`, `User-PasswordProfile.ReadWrite.All`, `IdentityRiskyUser.ReadWrite.All`).
+  The app signs in with a client secret or a certificate; Stackpilot can make the certificate (download the `.cer`
+  and upload it in Entra). The secret or private key goes into the customer's **password vault** (never for the
+  AI) and every use is in the vault's access log.
+- **Tenants**: status of the last read, users, admins, users without MFA, risky users, security defaults,
+  Conditional Access, where MFA is read from, when the app's secret or certificate expires, and which parts cannot
+  be read and why (a missing permission, or a tenant without Entra ID P1/P2).
+- **Users**: everyone with licences, MFA, risk, last activity and status; filters for admins, without MFA, risky,
+  inactive (licensed but no sign-in for the tenant's number of days), blocked but licensed, guests. Click a user for
+  roles, MFA methods, the sign-ins that stood out and the risk detections, and the **actions**: sign out everywhere,
+  block (also signs out), unblock, reset MFA, reset the password (a temporary password that must be changed; it is
+  stored in the vault) and confirm or dismiss risk. Actions the app has no permission for are greyed out.
+- **Risk & MFA**: risky users, admins without MFA and the risk detections of the last 7 days.
+- **Sign-ins**: only the sign-ins that stand out are stored (30 days): risky, failed (MFA prompts do not count),
+  from a country outside the tenant's allowed list, and legacy authentication (IMAP, POP, SMTP AUTH, ...).
+- **Licences**: bought, assigned and free per subscription, with shortages and expired subscriptions.
+
+Alerts (monitoring, kind Microsoft 365) per tenant, each one can be turned off: risky users, admins without MFA,
+licence shortages and expired subscriptions, the app secret or certificate expiring, many failed sign-ins of one
+user and successful sign-ins from abroad. The **morning summary** has a category Microsoft 365 with the same
+findings plus users without MFA, no security defaults or Conditional Access, inactive and blocked-but-licensed
+accounts and unused licences; a risky user comes with a proposal (block, or sign out everywhere) that you approve
+with one click.
+
+For the AI (scope `m365`): `list_m365_tenants`, `list_m365_users`, `get_m365_user`, `list_m365_licences`,
+`list_m365_signins` and `refresh_m365`. `m365_user_action` (scope `m365_admin`) always waits for an admin's
+approval, whatever the policies say.
+
 ## Operations
 
 ### Customer backups

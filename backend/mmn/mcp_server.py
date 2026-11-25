@@ -350,6 +350,14 @@ the script gets it in $SP_PASSWORD etc. on the machine and it never passes throu
 Never repeat a secret to the user or write it into documents, tickets or notes. Store new or changed passwords
 with `save_credential`.
 
+Microsoft 365 / Entra ID: customers can have their tenant connected (`list_m365_tenants`). Read users with their
+licences, admin roles, MFA and risk (`list_m365_users`, filter admins / no_mfa / risky / stale / disabled_licensed),
+one user with recent sign-ins that stood out (`get_m365_user`), licences (`list_m365_licences`) and sign-ins that
+stood out (`list_m365_signins`: risky, failed, foreign country, legacy authentication). `refresh_m365` reads the
+tenant again. `m365_user_action` blocks or unblocks a user, signs them out everywhere, resets MFA or the password
+(the temporary password goes into the customer's vault, never to you) or confirms or dismisses their risk: every
+action needs an admin's approval, so give a clear `reason`.
+
 Nodes and servers can be named by id or by name. Every call is written to the audit log with your token's name.
 Destructive tools need `confirm` set to the exact node name, or are marked destructive: ask the user
 before calling them, and give a short `reason` for commands and service actions."""
@@ -725,12 +733,13 @@ async def get_customer_context(customer: str) -> dict:
             e = await nodes.get_environment(db, customer)
         except nodes.NodeError as ex:
             raise ToolDenied(str(ex)) from ex
-        from mmn.services import docs
+        from mmn.services import docs, m365
 
         pages = await docs.search(db, customer_id=e.id, ai_only=True, limit=50)
         return _jsonable({"id": e.id, **customers.context_dict(e), "markdown": customers.context_markdown(e),
                           "documentation": [{"id": d.id, "title": d.title, "category": d.category, "pinned": d.pinned}
-                                            for d in pages]})
+                                            for d in pages],
+                          "microsoft_365": [m365.overview(t) for t in await m365.tenants_of(db, e.id)]})
 
 
 @tool("nodes", WRITE, all_customers=True)
@@ -4395,6 +4404,179 @@ async def save_credential(customer: str, name: str, credential: str | None = Non
         await db.commit()
         events.publish("vault.changed", {"id": item.id})
         return _jsonable({**vault.item_out(item, names=await vault.machine_names(db)), "changed": changed})
+
+
+# ------------------------------------------------------------------ Microsoft 365 / Entra ID (phase 19)
+async def _m365_tenant(db, customer: str, tenant: str | None):
+    from mmn.services import m365
+
+    e = await _uptime_customer(db, customer)
+    try:
+        return e, await m365.tenant_for_customer(db, e.id, tenant)
+    except m365.M365Error as ex:
+        raise ToolDenied(str(ex)) from ex
+
+
+def _m365_user_view(u: dict) -> dict:
+    mfa = u.get("mfa")
+    return {"id": u.get("id"), "name": u.get("name"), "upn": u.get("upn"), "enabled": u.get("enabled"),
+            "type": u.get("type"), "licences": [m365_sku(x) for x in u.get("licences") or []], "admin": u.get("admin"),
+            "roles": u.get("roles") or [], "mfa": None if mfa is None else {"registered": mfa.get("registered"),
+                                                                            "methods": mfa.get("methods"),
+                                                                            "default": mfa.get("default")},
+            "risk": u.get("risk"), "last_sign_in": u.get("last_sign_in"), "last_activity": u.get("last_activity"),
+            "stale": u.get("stale"), "synced_from_ad": u.get("synced"), "department": u.get("department"),
+            "job": u.get("job")}
+
+
+def m365_sku(part: str) -> str:
+    from mmn.services import m365
+
+    return m365.sku_name(part)
+
+
+@tool("m365", RO)
+async def list_m365_tenants(customer: str | None = None) -> dict:
+    """The Microsoft 365 / Entra ID tenants connected to customers: status of the last sync, organisation and
+    domains, counts (users, admins, users and admins without MFA, risky users, licences bought and used),
+    security defaults and Conditional Access, when the app's secret or certificate expires, which parts
+    Stackpilot can read (features) and which write actions the app has permission for."""
+    from mmn.services import m365
+
+    async with sessionmaker()() as db:
+        e = await _uptime_customer(db, customer)
+        rows = await m365.tenants_of(db, e.id if e else None)
+        out = []
+        for t in rows:
+            x = m365.tenant_out(t)
+            out.append({k: x[k] for k in ("id", "customer_name", "name", "tenant_id", "status", "last_sync_at",
+                                          "last_error", "organization", "counts", "security", "mfa_source",
+                                          "app_credential", "credential_days", "features", "actions", "settings")})
+    return _jsonable({"tenants": out})
+
+
+@tool("m365", RO)
+async def list_m365_users(customer: str, filter: str = "all", query: str | None = None, tenant: str | None = None,
+                          limit: int = 200) -> dict:
+    """Users of the customer's Microsoft 365 tenant with licences, admin roles, MFA registration, Entra ID risk
+    and last sign-in. `filter`: all, admins, no_mfa (enabled members without MFA), risky, disabled, guests, stale
+    (licensed but no sign-in for the tenant's stale_days), unlicensed, licensed, disabled_licensed (blocked but
+    still licensed: costs money). `query` searches name, sign-in name, mail, department and job title."""
+    from mmn.services import m365
+
+    async with sessionmaker()() as db:
+        _, t = await _m365_tenant(db, customer, tenant)
+        try:
+            users = m365.filter_users(t, filter, query)
+        except m365.M365Error as ex:
+            raise ToolDenied(str(ex)) from ex
+        return _jsonable({"tenant": t.name, "synced_at": t.last_sync_at, "total": len(users),
+                          "users": [_m365_user_view(u) for u in users[:max(1, min(limit, 1000))]]})
+
+
+@tool("m365", RO)
+async def get_m365_user(customer: str, user: str, tenant: str | None = None) -> dict:
+    """One Microsoft 365 user (sign-in name, mail, id or exact display name) with licences, roles, MFA methods,
+    risk, the sign-ins of the last 30 days that stood out (risky, failed, foreign country, legacy
+    authentication), their risk detections and which actions are possible with `m365_user_action`."""
+    from mmn.services import m365
+
+    async with sessionmaker()() as db:
+        _, t = await _m365_tenant(db, customer, tenant)
+        u = m365.find_user(t, user)
+        if u is None:
+            raise ToolDenied(f"user {user} not found in {t.name}")
+        snap = t.snapshot or {}
+        return _jsonable({**_m365_user_view(u), "tenant": t.name,
+                          "signins": await m365.signins(db, tenant_id=t.id, user=u.get("upn") or u["id"],
+                                                        hours=24 * 30, limit=50),
+                          "risk_detections": [d for d in snap.get("risk_detections") or [] if d.get("user_id") == u["id"]],
+                          "possible_actions": [a for a, ok in m365.permissions_view(snap.get("granted") or [])["actions"].items()
+                                               if ok]})
+
+
+@tool("m365", RO)
+async def list_m365_licences(customer: str, tenant: str | None = None) -> dict:
+    """The licences (subscriptions) of the customer's tenant: bought, assigned, free, status (Enabled, Warning
+    = expired, Suspended), plus who is blocked but still licensed."""
+    from mmn.services import m365
+
+    async with sessionmaker()() as db:
+        _, t = await _m365_tenant(db, customer, tenant)
+        snap = t.snapshot or {}
+        return _jsonable({"tenant": t.name, "licences": snap.get("licences") or [],
+                          "disabled_licensed": [{"upn": u.get("upn"), "licences": [m365_sku(x) for x in u["licences"]]}
+                                                for u in m365.filter_users(t, "disabled_licensed")]})
+
+
+@tool("m365", RO)
+async def list_m365_signins(customer: str, flag: str | None = None, user: str | None = None, hours: int = 168,
+                            tenant: str | None = None, limit: int = 100) -> dict:
+    """Sign-ins of the customer's tenant that stood out in the last `hours` (default a week): `flag` risky (Entra
+    ID Protection), failed, foreign (outside the tenant's allowed countries) or legacy (old protocols such as
+    IMAP, POP, SMTP AUTH). Ordinary successful sign-ins are not stored. Includes the failed sign-ins per user in
+    the last 24 hours."""
+    from mmn.services import m365
+
+    async with sessionmaker()() as db:
+        _, t = await _m365_tenant(db, customer, tenant)
+        rows = await m365.signins(db, tenant_id=t.id, user=user, flag=flag, hours=hours, limit=max(1, min(limit, 500)))
+        failed = await m365.failed_counts(db, [t.id])
+        return _jsonable({"tenant": t.name, "signins": rows,
+                          "failed_24h": sorted(({"user": u, "count": n} for (_, u), n in failed.items()),
+                                               key=lambda x: -x["count"])[:50]})
+
+
+@tool("m365", WRITE)
+async def refresh_m365(customer: str, tenant: str | None = None) -> dict:
+    """Read the customer's Microsoft 365 tenant again now (normally every 15 minutes): users, licences, MFA,
+    risk and new sign-ins."""
+    from mmn.services import m365
+
+    async with sessionmaker()() as db:
+        _, t = await _m365_tenant(db, customer, tenant)
+        tid = t.id
+    try:
+        res = await m365.sync(tid)
+    except m365.M365Error as ex:
+        raise ToolDenied(str(ex)) from ex
+    return _jsonable(res)
+
+
+@tool("m365_admin", DESTRUCTIVE)
+async def m365_user_action(customer: str, user: str, action: str, reason: str, confirm: str,
+                           tenant: str | None = None) -> dict:
+    """Change a Microsoft 365 user. `action`: block (sign-in blocked and signed out everywhere), unblock,
+    revoke_sessions (sign out everywhere), reset_mfa (removes the MFA methods: the user registers again at the
+    next sign-in), reset_password (a temporary password that must be changed; it is stored in the customer's
+    password vault, never returned), confirm_compromised or dismiss_risk (Entra ID Protection). Always needs an
+    admin's approval: the call answers pending_approval and runs once approved. Set `confirm` to the user's
+    sign-in name (UPN) and give a `reason`."""
+    from mmn.services import m365
+
+    p = current_principal()
+    async with sessionmaker()() as db:
+        _, t = await _m365_tenant(db, customer, tenant)
+        u = m365.find_user(t, user)
+    upn = (u or {}).get("upn") or user
+    if confirm.strip().lower() != str(upn).lower():
+        raise ToolDenied(f"confirm must equal the user's sign-in name '{upn}'")
+    if action not in m365.ACTIONS:
+        raise ToolDenied(f"action must be one of {', '.join(m365.ACTIONS)}")
+    try:
+        res = await m365.user_action(t, upn, action, by=p.token_name if p else "ai", reason=reason)
+    except m365.M365Error as ex:
+        raise ToolDenied(str(ex)) from ex
+    async with sessionmaker()() as db:
+        from mmn.services.audit import audit
+
+        await audit(db, f"m365.user.{action}", source="mcp", target=res.get("user") or upn, tenant=t.name,
+                    reason=reason, token=p.token_name if p else None)
+        await db.commit()
+    if "vault_item" in res:
+        res["vault_item"] = {"name": res["vault_item"]["name"],
+                             "note": "the temporary password is in the customer's vault; an admin can show it there"}
+    return _jsonable(res)
 
 
 # ------------------------------------------------------------------ MCP hub

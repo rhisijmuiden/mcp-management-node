@@ -73,6 +73,8 @@ def _criteria(ids: list[str]):
         DocumentAttachment,
         DocumentRevision,
         Environment,
+        M365SignIn,
+        M365Tenant,
         MetricSample,
         Node,
         NodeJob,
@@ -103,6 +105,8 @@ def _criteria(ids: list[str]):
     ticket_ids = select(Ticket.id).where(Ticket.customer_id.in_(ids)).scalar_subquery()
     return [
         with_loader_criteria(Document, Document.customer_id.in_(ids), include_aliases=True),
+        with_loader_criteria(M365Tenant, M365Tenant.customer_id.in_(ids), include_aliases=True),
+        with_loader_criteria(M365SignIn, M365SignIn.customer_id.in_(ids), include_aliases=True),
         with_loader_criteria(DocumentRevision, DocumentRevision.customer_id.in_(ids), include_aliases=True),
         with_loader_criteria(DocumentAttachment, DocumentAttachment.customer_id.in_(ids), include_aliases=True),
         with_loader_criteria(VaultItem, VaultItem.customer_id.in_(ids), include_aliases=True),

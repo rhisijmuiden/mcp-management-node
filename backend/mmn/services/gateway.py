@@ -58,11 +58,15 @@ OPERATE_TOOLS = {
     "cleanup_disk", "recover_agent", "pause_remediation",
     # Phase 15: restarting a network adapter that has no link (one that is up needs force + confirm).
     "restart_network_adapter",
+    # Phase 19: reading a Microsoft 365 tenant again.
+    "refresh_m365",
 }
 
 # Phase 18: tools that use a secret from the password vault always need an admin's approval, whatever the
 # policies say (a policy can still block them).
 ALWAYS_APPROVE = {"reveal_credential", "run_with_credential"}
+# Phase 19: actions on Microsoft 365 users (block, reset MFA, ...) always need an admin's approval too.
+ALWAYS_APPROVE_M365 = {"m365_user_action"}
 
 FINAL = {"executed", "failed", "rejected", "expired"}
 
@@ -419,6 +423,8 @@ def reason_text(r: dict[str, Any]) -> str:
         return f"outside the maintenance window of {p.get('customer')} ({p.get('window')})"
     if c == "vault":
         return "uses a secret from the password vault (always needs approval)"
+    if c == "m365":
+        return "changes a Microsoft 365 user (always needs approval)"
     return c or ""
 
 
@@ -492,6 +498,8 @@ async def decide(db: AsyncSession, *, tool: str, risk: str, args: dict[str, Any]
 
     if tool in ALWAYS_APPROVE:
         results.append(("approve", {"code": "vault", "params": {"tool": tool}}))
+    if tool in ALWAYS_APPROVE_M365:
+        results.append(("approve", {"code": "m365", "params": {"tool": tool}}))
     d.action = _strictest(*(a for a, _ in results))
     if d.action != "allow":
         seen = set()

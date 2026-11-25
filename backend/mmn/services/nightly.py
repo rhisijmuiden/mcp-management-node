@@ -31,7 +31,7 @@ from mmn.services.settings_store import get_setting
 
 log = logging.getLogger("mmn.nightly")
 
-CATEGORIES = ("updates", "cves", "disks", "certificates", "backups", "other")
+CATEGORIES = ("updates", "cves", "disks", "certificates", "backups", "identity", "other")
 SEVERITIES = ("high", "medium", "low", "info")
 _SEV_ORDER = {s: i for i, s in enumerate(SEVERITIES)}
 SOURCE = "nightly"
@@ -53,6 +53,8 @@ def category_of(f: dict[str, Any]) -> str:
         return _CODE_CATEGORY[code]
     if f.get("area") == "backups" or code.startswith("backup_") or code.startswith("machine_backup"):
         return "backups"
+    if f.get("area") == "identity" or code.startswith("m365_"):
+        return "identity"
     return "other"
 
 
@@ -489,6 +491,10 @@ async def _refresh(e: Environment, cfg: dict[str, Any]) -> None:
             await asyncio.wait_for(asyncio.gather(*(one(n.id) for n in online)), timeout=330)
         except TimeoutError:
             log.info("update checks of %s took too long", e.name)
+    if checks.get("identity"):
+        from mmn.services import m365
+
+        await m365.refresh_customer(e.id)
     if e.nodes and checks.get("backups"):
         try:
             await asyncio.wait_for(protection.collect(e.id), timeout=600)
@@ -532,6 +538,13 @@ async def check_customer(run_id: str, env_id: str, cfg: dict[str, Any], cache: d
                 else:
                     found += res
             found += await endpoint_findings(list((e.nightly or {}).get("cert_endpoints") or []), warn, now, finding)
+        if checks.get("identity"):
+            from mmn.services import m365
+
+            try:
+                found += await m365.findings(db, e, now, finding)
+            except Exception as ex:  # noqa: BLE001
+                errors.append(f"Microsoft 365 check failed ({ex})"[:300])
         found = [f for f in found if checks.get(category_of(f), True)]
 
         from mmn.services import remediation
@@ -562,7 +575,8 @@ async def check_customer(run_id: str, env_id: str, cfg: dict[str, Any], cache: d
             # commit below), not proposed.
             fixer = remediation.rule_for_finding(recovery_rules, f, node_of(f, by_name), e.id) if recovery_rules else None
             recovered += 1 if fixer else 0
-            prop = proposal_for(f, node_of(f, by_name)) if cfg.get("proposals") and not fixer else None
+            ready = f.pop("proposal", None)  # findings that bring their own proposal (Microsoft 365)
+            prop = (ready or proposal_for(f, node_of(f, by_name))) if cfg.get("proposals") and not fixer else None
             if prop and prop["tool"] in gateway.REGISTRY:
                 spec = gateway.REGISTRY[prop["tool"]]
                 run_after = await run_after_for(db, e, spec.risk, cfg)
@@ -570,7 +584,8 @@ async def check_customer(run_id: str, env_id: str, cfg: dict[str, Any], cache: d
                 try:
                     a, created = await gateway.create_system_approval(
                         db, source=SOURCE, label=LABEL, tool=prop["tool"], args=prop["args"],
-                        target=prop["args"].get("node"), customers=[(e.id, e.name)], reason=reason,
+                        target=prop["args"].get("node") or prop["args"].get("user"), customers=[(e.id, e.name)],
+                        reason=reason,
                         run_after=run_after, expires_hours=20)
                 except gateway.ApprovalError as ex:
                     errors.append(str(ex))

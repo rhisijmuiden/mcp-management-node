@@ -112,7 +112,8 @@
     "uptime": "Uptime & SLA",
     "tickets": "Tickets",
     "docs": "Documentation",
-    "vault": "Password vault"
+    "vault": "Password vault",
+    "m365": "Microsoft 365"
   },
   "roles": {
     "admin": "Admin",
@@ -221,7 +222,11 @@
     "docs": "Documentation",
     "docs_desc": "Write customer documentation. Reading it only needs the read scope.",
     "vault": "Password vault",
-    "vault_desc": "See the vault (names, no secrets) and ask to use a credential. Every use needs an admin's approval and goes into the access log."
+    "vault_desc": "See the vault (names, no secrets) and ask to use a credential. Every use needs an admin's approval and goes into the access log.",
+    "m365": "Microsoft 365",
+    "m365_desc": "Read Microsoft 365 / Entra ID of customers: users, licences, MFA, risky users and sign-ins.",
+    "m365_admin": "Microsoft 365 actions",
+    "m365_admin_desc": "Ask to block or unblock users, sign them out, reset MFA or the password and handle risky users. Every action needs an admin's approval."
   },
   "dashboard": {
     "morning": "Good morning",
@@ -1776,7 +1781,8 @@
     "kind_service": "Service",
     "kind_network": "Network",
     "kind_uptime": "Uptime",
-    "kind_sla": "SLA"
+    "kind_sla": "SLA",
+    "kind_m365": "Microsoft 365"
   },
   "dep": {
     "title": "Deployments",
@@ -2548,7 +2554,8 @@
       "nightly": "Proposed by the nightly checks",
       "runbook": "Step {{step}} of runbook {{runbook}}",
       "recovery": "Automatic recovery ({{recovery}}): step {{step}} of runbook {{runbook}}",
-      "vault": "Uses a secret from the password vault: always needs approval"
+      "vault": "Uses a secret from the password vault: always needs approval",
+      "m365": "Changes a Microsoft 365 user: always needs approval"
     },
     "toast": {
       "new": "{{who}} asks for approval: {{tool}}",
@@ -3315,6 +3322,62 @@
     "cert_endpoint_error": {
       "f": "The certificate of {{endpoint}} could not be checked: {{error}}.",
       "s": "Check that Stackpilot can reach the address, or remove it from the list."
+    },
+    "m365_sync_error": {
+      "f": "Microsoft 365 {{tenant}} could not be read: {{error}}.",
+      "s": "Check the app registration, its secret or certificate and the admin consent."
+    },
+    "m365_risky_user": {
+      "f": "{{user}} is at {{level}} risk in Entra ID.",
+      "s": "Sign the user out everywhere and reset the password; block the account when the risk is confirmed."
+    },
+    "m365_admin_no_mfa": {
+      "f": "Administrator {{user}} ({{roles}}) has no MFA.",
+      "s": "Have the admin register MFA now, or require it with security defaults or Conditional Access."
+    },
+    "m365_no_mfa": {
+      "f": "{{count}} user(s) without MFA: {{names}}.",
+      "s": "Ask them to register the Microsoft Authenticator app (aka.ms/mfasetup)."
+    },
+    "m365_no_mfa_policy": {
+      "f": "{{tenant}} has neither security defaults nor an enabled Conditional Access policy.",
+      "s": "Turn on security defaults (Entra admin center > Overview > Properties), or require MFA with Conditional Access."
+    },
+    "m365_stale_users": {
+      "f": "{{count}} licensed account(s) without a sign-in for {{days}} days: {{names}}.",
+      "s": "Block or remove accounts nobody uses and free their licences."
+    },
+    "m365_disabled_licensed": {
+      "f": "{{count}} blocked account(s) still have a licence: {{names}}.",
+      "s": "Remove the licences (or convert mailboxes to shared mailboxes) to save costs."
+    },
+    "m365_licence_short": {
+      "f": "Licence {{licence}}: {{consumed}} assigned but only {{enabled}} bought.",
+      "s": "Buy licences or remove assignments before Microsoft turns them off."
+    },
+    "m365_licence_unused": {
+      "f": "Licence {{licence}}: {{available}} of {{enabled}} not assigned.",
+      "s": "Lower the number of licences at the next renewal if they stay unused."
+    },
+    "m365_licence_status": {
+      "f": "Licence {{licence}} is {{status}} (subscription expired or unpaid).",
+      "s": "Renew the subscription in the Microsoft 365 admin center."
+    },
+    "m365_secret_expiring": {
+      "f": "The secret or certificate of the Stackpilot app in {{tenant}} expires in {{days}} day(s).",
+      "s": "Create a new client secret or certificate in Entra and save it in Stackpilot."
+    },
+    "m365_failed_signins": {
+      "f": "Many failed sign-ins in 24 hours for: {{names}}.",
+      "s": "Check whether these are password attacks; make sure MFA is on for these accounts."
+    },
+    "m365_foreign_signins": {
+      "f": "Sign-ins from another country in 24 hours: {{names}}.",
+      "s": "Check with the users; sign them out and reset the password if it was not them."
+    },
+    "m365_missing_permissions": {
+      "f": "Stackpilot cannot read part of {{tenant}}: {{parts}}.",
+      "s": "Give the app the missing Microsoft Graph permissions with admin consent."
     }
   },
   "prot": {
@@ -3549,7 +3612,8 @@
       "disks": "Disks & storage",
       "certificates": "Certificates",
       "backups": "Backups",
-      "other": "Other"
+      "other": "Other",
+      "identity": "Microsoft 365"
     },
     "cat_hint": {
       "updates": "Pending updates and reboots, old agents, firmware",
@@ -3557,7 +3621,8 @@
       "disks": "Full disks and storage, SMART health",
       "certificates": "Certificates on servers and nodes, plus the addresses you list per customer",
       "backups": "Failed, missing and old backups",
-      "other": "The rest of the optimisation scan: offline machines, failed services, network"
+      "other": "The rest of the optimisation scan: offline machines, failed services, network",
+      "identity": "Risky users, MFA, inactive accounts, licences and sign-ins of the connected tenants"
     },
     "v_all": "All",
     "v_new": "New",
@@ -3593,7 +3658,9 @@
       "reboot": "Reboot",
       "update_agent": "Update the agent",
       "cleanup_disk": "Free disk space",
-      "renew_cert": "Renew the certificate"
+      "renew_cert": "Renew the certificate",
+      "m365_block": "Block the user",
+      "m365_revoke": "Sign the user out everywhere"
     },
     "pst": {
       "pending": "Waiting",
@@ -4674,7 +4741,8 @@
       "ai_approved": "Approved for AI",
       "ai_reveal": "Read by AI",
       "ai_use": "Used by AI",
-      "ai_denied": "Refused for AI"
+      "ai_denied": "Refused for AI",
+      "integration_use": "Used by integration"
     },
     "no_access": "Nothing logged yet.",
     "when": "When",
@@ -4727,5 +4795,302 @@
       "all": "everything",
       "history": "earlier password"
     }
+  },
+  "m365": {
+    "title": "Microsoft 365",
+    "desc": "Microsoft 365 and Entra ID of every customer: users, licences, MFA, risky users and suspicious sign-ins, with alerts, the morning summary and actions that the AI only runs after approval.",
+    "connect": "Connect tenant",
+    "empty": "No Microsoft 365 tenant connected yet",
+    "empty_hint": "Connect a customer's tenant with an app registration in Entra ID. Stackpilot then reads users, licences, MFA and sign-ins every 15 minutes.",
+    "k_users": "Active users",
+    "k_users_hint": "{{admins}} admin(s), {{guests}} guest(s)",
+    "k_mfa": "MFA registered",
+    "k_mfa_hint": "{{count}} user(s) without MFA",
+    "k_mfa_admins": "{{count}} admin(s) without MFA!",
+    "k_risky": "Risky users",
+    "k_risky_hint": "24 h: {{foreign}} abroad, {{failed}} failed sign-ins",
+    "k_licences": "Licences used",
+    "k_licences_hint": "Assigned / bought (paid licences)",
+    "tab_tenants": "Tenants",
+    "tab_users": "Users",
+    "tab_risk": "Risk & MFA",
+    "tab_signins": "Sign-ins",
+    "tab_licences": "Licences",
+    "status": {
+      "ok": "OK",
+      "partial": "Partly readable",
+      "error": "Error",
+      "unknown": "Not read yet"
+    },
+    "paused": "Paused",
+    "sync": "Read now",
+    "sync_ok": "Tenant read",
+    "sync_partial": "Tenant read; some parts are not available",
+    "sync_error": "The tenant could not be read",
+    "test": "Test connection",
+    "test_ok": "Connected to {{org}}",
+    "test_failed": "Connection failed: {{error}}",
+    "edit": "Edit",
+    "delete": "Remove",
+    "deleted": "Tenant removed",
+    "delete_title": "Remove {{name}}?",
+    "delete_desc": "Stackpilot stops reading this tenant.",
+    "delete_hint": "Stored sign-ins of this tenant are deleted. The credential stays in the password vault and the app registration stays in Entra ID; remove those yourself if you no longer need them.",
+    "error_title": "Cannot read the tenant",
+    "c_users": "Users",
+    "c_admins": "Admins",
+    "c_admins_no_mfa": "{{count}} without MFA",
+    "c_no_mfa": "Without MFA",
+    "c_risky": "Risky",
+    "security_defaults": "Security defaults",
+    "ca_policies": "Conditional Access",
+    "ca_count": "{{enabled}} of {{total}} on",
+    "mfa_source": "MFA read from",
+    "mfa_src": {
+      "registration": "Registration report",
+      "methods": "Methods per user"
+    },
+    "credential": "Sign-in of the app",
+    "auth": {
+      "secret": "Client secret",
+      "certificate": "Certificate"
+    },
+    "cred_days": "expires in {{count}} day(s)",
+    "cred_expired": "expired",
+    "vault_item": "In the vault",
+    "no_vault_item": "missing",
+    "last_sync": "Last read",
+    "never": "never",
+    "missing_title": "Not everything can be read",
+    "feature": {
+      "organization": "Organisation",
+      "users": "Users",
+      "last_signin": "Last sign-in",
+      "roles": "Admin roles",
+      "licences": "Licences",
+      "mfa": "MFA",
+      "risky_users": "Risky users",
+      "risk_detections": "Risk detections",
+      "security_defaults": "Security defaults",
+      "conditional_access": "Conditional Access",
+      "app_credentials": "Expiry of the app secret",
+      "signins": "Sign-in log"
+    },
+    "reason": {
+      "no_permission": "the app lacks the permission {{permission}} (or admin consent)",
+      "needs_p1": "needs Microsoft Entra ID P1 (e.g. Business Premium)",
+      "needs_p2": "needs Microsoft Entra ID P2",
+      "not_found": "not found",
+      "error": "error while reading"
+    },
+    "download_cert": "Download certificate (.cer)",
+    "users_title": "Users",
+    "users_desc": "Everyone in the connected tenants with licences, MFA, risk and last sign-in.",
+    "search": "Search name, address, department…",
+    "filter": {
+      "all": "All users",
+      "admins": "Admins",
+      "no_mfa": "Without MFA",
+      "risky": "Risky",
+      "stale": "Inactive (licensed)",
+      "disabled_licensed": "Blocked but licensed",
+      "guests": "Guests",
+      "disabled": "Blocked",
+      "unlicensed": "Without licence"
+    },
+    "no_users": "No users match",
+    "col_user": "User",
+    "col_mfa": "MFA",
+    "col_licences": "Licences",
+    "col_last": "Last active",
+    "col_status": "Status",
+    "admin": "Admin",
+    "guest": "Guest",
+    "stale": "Inactive",
+    "enabled": "Active",
+    "blocked": "Blocked",
+    "more_users": "{{count}} more: narrow the search.",
+    "mfa_on": "MFA",
+    "mfa_off": "No MFA",
+    "mfa_unknown": "MFA unknown",
+    "risk": {
+      "high": "High risk",
+      "medium": "Medium risk",
+      "low": "Low risk",
+      "hidden": "Risk hidden"
+    },
+    "risk_state": {
+      "atRisk": "At risk",
+      "confirmedCompromised": "Confirmed compromised",
+      "remediated": "Remediated",
+      "dismissed": "Dismissed"
+    },
+    "user": "User",
+    "synced": "Synced from AD",
+    "roles": "Admin roles",
+    "mfa_methods": "MFA methods",
+    "last_sign_in": "Last sign-in",
+    "department": "Job and department",
+    "created": "Created",
+    "risk_title": "{{level}} in Entra ID Protection",
+    "actions": "Actions",
+    "no_permission_hint": "The app does not have the permission for this action",
+    "actions_hint": "Greyed-out actions need an extra application permission on the app registration (see the tenant card).",
+    "action": {
+      "block": "Block sign-in",
+      "unblock": "Unblock",
+      "revoke_sessions": "Sign out everywhere",
+      "reset_mfa": "Reset MFA",
+      "reset_password": "Reset password",
+      "confirm_compromised": "Confirm compromised",
+      "dismiss_risk": "Dismiss risk"
+    },
+    "explain": {
+      "block": "The user can no longer sign in and is signed out on every device. Mail keeps arriving.",
+      "unblock": "The user can sign in again.",
+      "revoke_sessions": "Every session and refresh token is revoked: the user has to sign in again everywhere (within about an hour in some apps).",
+      "reset_mfa": "All MFA methods (Authenticator app, phone, keys) are removed. The user registers MFA again at the next sign-in. The password stays.",
+      "reset_password": "Stackpilot sets a random temporary password that must be changed at the next sign-in and signs the user out. The temporary password is stored in the customer's password vault.",
+      "confirm_compromised": "Marks the account as compromised in Entra ID Protection (high risk). Risk-based policies then act on it.",
+      "dismiss_risk": "Clears the user's risk in Entra ID Protection, for example after you checked a false alarm."
+    },
+    "reason_label": "Reason (optional)",
+    "reason_hint": "Goes into the audit log and the vault's access log.",
+    "done": {
+      "block": "{{user}} is blocked and signed out",
+      "unblock": "{{user}} can sign in again",
+      "revoke_sessions": "{{user}} is signed out everywhere",
+      "reset_mfa": "MFA of {{user}} is reset",
+      "reset_password": "Password reset",
+      "confirm_compromised": "{{user}} is marked as compromised",
+      "dismiss_risk": "Risk of {{user}} dismissed"
+    },
+    "done_password": "Password reset. The temporary password is in the vault: {{item}}",
+    "signins_title": "Sign-ins that stood out",
+    "signins_desc": "Risky sign-ins, failed ones, from another country or with old protocols. Ordinary sign-ins are not stored.",
+    "no_signins_user": "No sign-ins that stood out in the last 30 days.",
+    "no_signins": "Nothing that stood out",
+    "no_signin_log": "The sign-in log needs Entra ID P1 and the permission AuditLog.Read.All; not available for: {{tenants}}.",
+    "hours_24": "Last 24 hours",
+    "hours_168": "Last 7 days",
+    "hours_720": "Last 30 days",
+    "flag": {
+      "all": "All",
+      "risky": "Risky",
+      "foreign": "Abroad",
+      "failed": "Failed",
+      "legacy": "Old protocol"
+    },
+    "col_when": "When",
+    "col_where": "Where",
+    "col_app": "App",
+    "col_result": "Result",
+    "success": "Success",
+    "failed": "Failed",
+    "detections": "Risk detections",
+    "detections_desc": "What Entra ID Protection detected in the last 7 days (needs Entra ID P2).",
+    "no_detections": "No risk detections",
+    "col_detection": "Detection",
+    "col_risk": "Risk",
+    "det": {
+      "unfamiliarFeatures": "Unfamiliar sign-in properties",
+      "anonymizedIPAddress": "Anonymous IP address",
+      "maliciousIPAddress": "Malicious IP address",
+      "impossibleTravel": "Impossible travel",
+      "leakedCredentials": "Leaked credentials",
+      "passwordSpray": "Password spray",
+      "unlikelyTravel": "Atypical travel",
+      "mcasSuspiciousInboxManipulationRules": "Suspicious inbox rules",
+      "suspiciousBrowser": "Suspicious browser",
+      "newCountry": "New country",
+      "tokenIssuerAnomaly": "Token issuer anomaly",
+      "anomalousToken": "Anomalous token",
+      "adminConfirmedUserCompromised": "Admin confirmed compromised",
+      "investigationsThreatIntelligence": "Threat intelligence"
+    },
+    "risky_title": "Risky users",
+    "risky_desc": "Users Entra ID Protection sees as at risk or compromised.",
+    "no_risky": "No risky users",
+    "admins_no_mfa_title": "Admins without MFA",
+    "admins_no_mfa_desc": "Accounts with an admin role that have no second factor.",
+    "all_admins_mfa": "Every admin has MFA",
+    "licences_title": "Licences",
+    "licences_desc": "Subscriptions per tenant: bought, assigned and free.",
+    "show_free": "Show free licences",
+    "no_licences": "No licences",
+    "col_licence": "Licence",
+    "col_tenant": "Tenant",
+    "col_bought": "Bought",
+    "col_assigned": "Assigned",
+    "col_free": "Free",
+    "lic_short": "Too few",
+    "lic_status": {
+      "Enabled": "Active",
+      "Warning": "Expired (grace period)",
+      "Suspended": "Suspended",
+      "LockedOut": "Locked",
+      "Deleted": "Deleted"
+    },
+    "connect_title": "Connect a Microsoft 365 tenant",
+    "edit_title": "Edit {{name}}",
+    "connect_desc": "Stackpilot signs in as an app registration in the customer's tenant. Its secret or certificate goes into the password vault.",
+    "howto_title": "How to create the app registration (5 minutes)",
+    "howto_1": "Sign in at entra.microsoft.com as a Global Administrator of the customer.",
+    "howto_2": "Go to Applications > App registrations > New registration. Name: Stackpilot. Supported account types: this organisation only. No redirect URI. Register.",
+    "howto_3": "Copy the Application (client) ID and the Directory (tenant) ID from the overview into the fields below.",
+    "howto_4": "API permissions > Add a permission > Microsoft Graph > Application permissions: add the permissions below (read: all; write: only for the actions you want).",
+    "howto_5": "Click Grant admin consent for the organisation and confirm.",
+    "howto_6": "Certificates & secrets: create a client secret (copy the Value, not the ID) and paste it below, or choose Certificate and let Stackpilot make one that you upload there.",
+    "perm_read": "Read (needed)",
+    "perm_write": "Actions (optional)",
+    "copy_permissions": "Copy permissions",
+    "f_customer": "Customer",
+    "choose_customer": "Choose a customer…",
+    "f_name": "Name",
+    "f_name_hint": "For example the company name.",
+    "f_tenant": "Directory (tenant) ID",
+    "f_tenant_hint": "The GUID, or a domain such as contoso.onmicrosoft.com.",
+    "f_client": "Application (client) ID",
+    "f_client_hint": "From the overview of the app registration.",
+    "f_method": "Sign-in of the app",
+    "f_method_hint": "A certificate is safer and lasts longer; a client secret is quicker to set up.",
+    "f_credential": "Credential",
+    "f_credential_hint": "Stored encrypted in the customer's password vault; the AI never gets it.",
+    "src": {
+      "new_secret": "New client secret",
+      "vault": "From the vault",
+      "generate": "Let Stackpilot make one",
+      "paste": "Paste PEM"
+    },
+    "f_secret": "Client secret (Value)",
+    "f_secret_hint": "The Value column in Certificates & secrets, shown only once.",
+    "f_secret_keep": "Leave empty to keep the current secret. A new one replaces it; the old one stays in the vault history.",
+    "f_pem": "Private key and certificate (PEM)",
+    "f_pem_hint": "Both blocks in one text, without a passphrase.",
+    "generate_hint": "Stackpilot makes a certificate that is valid for 2 years and keeps the private key in the vault. After saving you download the certificate and upload it at Certificates & secrets > Certificates.",
+    "f_vault": "Vault item",
+    "f_vault_hint": "The password (secret) or the PEM in the password, notes or a field.",
+    "choose_vault": "Choose an item…",
+    "settings_title": "Alerts and checks",
+    "s_countries": "Allowed countries",
+    "s_countries_hint": "Two-letter codes, e.g. NL, BE. Sign-ins from elsewhere stand out. Empty: no country check.",
+    "s_stale": "Inactive after (days)",
+    "s_failed": "Failed sign-ins before an alert",
+    "s_failed_hint": "Per user, in 24 hours.",
+    "s_warn": "Warn before the app secret expires (days)",
+    "s_alert_risky": "Alert on risky users",
+    "s_alert_admin_mfa": "Alert on admins without MFA",
+    "s_alert_signins": "Alert on sign-ins abroad and many failures",
+    "s_alert_licences": "Alert on licence shortages and expired subscriptions",
+    "s_alert_secret": "Alert before the app secret expires",
+    "s_enabled": "Read this tenant",
+    "s_enabled_hint": "Off: Stackpilot stops reading it, without removing it.",
+    "saved": "Saved",
+    "connected": "Tenant connected; it is being read now",
+    "cert_title": "Upload the certificate in Entra",
+    "cert_desc": "The private key stays in the password vault; this file holds only the public certificate.",
+    "cert_step1": "Download the certificate below.",
+    "cert_step2": "In Entra: App registrations > Stackpilot > Certificates & secrets > Certificates > Upload certificate.",
+    "cert_step3": "Back in Stackpilot, click Test connection on the tenant."
   }
 }

@@ -26,6 +26,7 @@ Stackpilot is built in phases. Each phase is one pull request and one minor rele
 | 16 | v0.16.0 | Uptime and SLA monitoring |
 | 17 | v0.17.0 | Customer portal with tickets |
 | 18 | v0.18.0 | Documentation and password vault per customer |
+| 19 | v0.19.0 | Microsoft 365 and Entra ID per customer |
 
 ## What each phase added
 
@@ -198,5 +199,22 @@ secret after an admin approved that one use through the approvals inbox, whateve
 environment variables and wipes it from the output. New MCP tools `list_documents`, `get_document`,
 `save_document`, `list_credentials`, `reveal_credential`, `run_with_credential` and `save_credential`, new token
 scopes `docs` and `vault`, and `get_customer_context` lists the customer's documentation.
+
+**Phase 19** added Microsoft 365 and Entra ID per customer. Infrastructure → **Microsoft 365**: connect a tenant with
+an app registration in the customer's Entra ID (application permissions with admin consent; the page lists them and
+walks through the setup). The client secret, or a certificate that Stackpilot can make itself, is kept in the
+customer's password vault and every use is in the vault's access log. Every 15 minutes Stackpilot reads the users
+with licences, last sign-in, admin roles, MFA registration (from the registration report, or per user on tenants
+without Entra ID P1) and Entra ID Protection risk, the licences, risk detections, security defaults and Conditional
+Access, the expiry of the app's own secret or certificate, and the new sign-ins; only the ones that stand out are
+kept (risky, failed, from a country outside the tenant's list, legacy authentication). Parts a tenant lacks (P1/P2)
+or the app may not read are shown as such. Monitoring alerts (kind `m365`) and a new morning-summary category
+"Microsoft 365" cover risky users (with a proposal to block or sign out), admins and users without MFA, no security
+defaults or Conditional Access, inactive licensed accounts, blocked accounts that still have a licence, licence
+shortages and unused licences, expired subscriptions, the app secret expiring, many failed sign-ins and sign-ins from
+abroad. Admins block or unblock users, sign them out everywhere, reset MFA or the password (the temporary password
+goes into the vault) and confirm or dismiss risk. New MCP tools `list_m365_tenants`, `list_m365_users`,
+`get_m365_user`, `list_m365_licences`, `list_m365_signins`, `refresh_m365` and `m365_user_action` (always needs an
+admin's approval), new token scopes `m365` and `m365_admin`, and `get_customer_context` includes the tenant summary.
 
 Bug fix releases in between (v0.2.1, v0.6.1, v0.6.2, v0.7.1) are listed on the releases page.

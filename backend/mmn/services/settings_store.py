@@ -93,7 +93,7 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "notify_mail": True,
         "mail_to": "",  # empty: every admin with an email address
         "checks": {"updates": True, "cves": True, "disks": True, "certificates": True, "backups": True,
-                   "other": True},
+                   "identity": True, "other": True},
         "cert_warn_days": 21,
         "cve_lookup": True,  # look up the CVE numbers that pending security updates fix (OSV.dev)
         "proposals": True,  # turn findings into approval requests that run with one click
@@ -132,6 +132,12 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "grant_uses": 1,  # how many reads one approval allows
         "history_keep": 10,  # earlier passwords kept per item
         "notify_ai_use": True,  # show the admins a notification in the app when the AI read or used a secret
+    },
+    "m365": {
+        # Phase 19: Microsoft 365 / Entra ID tenants per customer (see services/m365.py).
+        "sync_minutes": 15,  # how often every tenant is read through Microsoft Graph
+        "signin_keep_days": 30,  # how long sign-ins that stood out are kept
+        "mfa_fallback_hours": 6,  # tenants without Entra ID P1: how often MFA is read per user
     },
     "netwatch": {
         # Phase 15: network adapters that automatic recovery watches (see services/netwatch.py).

@@ -9,6 +9,7 @@ import { ConsentPage, ForgotPage, LoginPage, ResetPage, SetupPage } from "@/page
 import { BackupsPage } from "@/pages/Backups";
 import { ProtectionPage } from "@/pages/Protection";
 import { NightlyPage } from "@/pages/Nightly";
+import { M365Page } from "@/pages/M365";
 import { RemediationPage } from "@/pages/Remediation";
 import { UptimePage } from "@/pages/Uptime";
 import { RunbookEditorPage, RunbookRunPage, RunbooksPage } from "@/pages/Runbooks";
@@ -87,6 +88,7 @@ export default function App() {
         <Route path="runbooks" element={<RunbooksPage />} />
         <Route path="remediation" element={<RemediationPage />} />
         <Route path="uptime" element={<UptimePage />} />
+        <Route path="m365" element={<M365Page />} />
         <Route path="tickets" element={<L><TicketsPage /></L>} />
         <Route path="tickets/:id" element={<L><TicketDetailPage /></L>} />
         <Route path="docs" element={<L><DocsPage /></L>} />
