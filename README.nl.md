@@ -15,7 +15,7 @@
   <a href="https://github.com/rhisijmuiden/stackpilot/releases/latest"><img alt="Laatste release" src="https://img.shields.io/github/v/release/rhisijmuiden/stackpilot?label=release&color=14213D"></a>
   <a href="https://github.com/rhisijmuiden/stackpilot/actions/workflows/release.yml"><img alt="Release build" src="https://img.shields.io/github/actions/workflow/status/rhisijmuiden/stackpilot/release.yml?label=build"></a>
   <img alt="Debian 13" src="https://img.shields.io/badge/draait%20op-Debian%2013-FF6B57">
-  <img alt="MCP-tools" src="https://img.shields.io/badge/MCP--tools-189-9CC3FF">
+  <img alt="MCP-tools" src="https://img.shields.io/badge/MCP--tools-196-9CC3FF">
   <img alt="Engels en Nederlands" src="https://img.shields.io/badge/talen-EN%20%7C%20NL-F6F7FB">
 </p>
 
@@ -51,7 +51,7 @@ AI-acties.
 | | |
 | --- | --- |
 | 🤖 **AI-gateway** | Commandocentrum, goedkeuringen-inbox (app + mail), beleid per risiconiveau, klant en token, onderhoudsvensters, noodknop, AI-sessies en activiteitenlog. |
-| 🧰 **189 MCP-tools** | Logs lezen, services herstarten, commando's uitvoeren, patchen, VM's, netwerk, HA, deploys en UniFi beheren, alles via één endpoint met OAuth 2.1 of API-tokens. [Volledige lijst](docs/mcp-tools.md). |
+| 🧰 **196 MCP-tools** | Logs lezen, services herstarten, commando's uitvoeren, patchen, VM's, netwerk, HA, deploys en UniFi beheren, alles via één endpoint met OAuth 2.1 of API-tokens. [Volledige lijst](docs/mcp-tools.md). |
 | 💻 **Werkplekken** | Pc's en laptops per klant: hardware, OS, aangemelde gebruiker, geïnstalleerde software, schijven en SSD-slijtage, Windows Update-geschiedenis, Defender, BitLocker/LUKS, firewall, TPM, een beveiligingsstatus, en acties op afstand (Defender-scan, definities bijwerken, groepsbeleid vernieuwen, bericht, afmelden). |
 | 📄 **Maandrapporten** | Eén rapport per klant per maand (PDF en HTML): beschikbaarheid, incidenten, updates, Proxmox-back-ups, beveiliging van werkplekken, AI-acties en aanbevelingen, op een vaste dag gemaild naar de klant of op verzoek gemaakt. |
 | 🏢 **Klanten** | Klantkiezer, klantpagina met Proxmox, servers, werkplekken, netwerk en AI-toegang, contactpersonen, notities voor de AI, onderhoudsvenster, SLA en een optimalisatiescan. |
@@ -61,6 +61,7 @@ AI-acties.
 | 🔎 **Troubleshooten** | Logs doorzoeken op veel servers tegelijk, foutoverzichten, software- en CVE-inventaris, data kopiëren tussen servers. |
 | 📶 **UniFi** | UniFi Network, Site Manager en Access: apparaten, clients, wifi-troubleshooter, gastisolatiecheck, firmware, events, deuren en toegangslog. |
 | 📈 **Monitoring** | Eén meting per node per minuut, 30 dagen bewaard, trends, SMART en slijtage, alerts per mail. |
+| 📚 **Documentatie & wachtwoordkluis** | Netwerkplannen, procedures, notities en contactpersonen per klant in Markdown, met versies, versleutelde bijlagen en gekoppelde machines; de AI leest ze voordat hij aan een klant werkt. Een wachtwoordkluis per klant (AES-256-GCM, eigen sleutel, sleutelrotatie, wachtwoordgeschiedenis, generator): mensen zien geheimen na het opnieuw invoeren van hun wachtwoord, de AI pas nadat een beheerder dat ene gebruik heeft goedgekeurd, of hij draait een script met het geheim zonder het zelf te zien. Elk tonen, kopiëren en gebruik staat in het toegangslog. |
 | 🎫 **Klantportaal & tickets** | Klanten loggen in op hun eigen portaal, melden problemen en vragen, koppelen die aan hun computers en servers en volgen de status. Stackpilot voert meteen een eerste diagnose uit op die machines; medewerkers antwoorden, maken interne notities, wijzen toe en lossen op, met mails via je eigen SMTP-server. De AI leest en beantwoordt tickets via MCP. |
 | 📡 **Uptime & SLA** | Externe controles per klant van websites (status, trefwoord, reactietijd, certificaat), TCP-poorten, ping, DNS-records en VPN-endpoints, vanaf Stackpilot of vanaf een machine bij de klant; storingen, meldingen en de gemeten SLA tegenover het doel van elke klant in het maandrapport. |
 | ⏱️ **Geplande taken** | Updates van containers en nodes, template-sync of een eigen commando op een cron-schema, met snapshot vooraf, rollback en mailrapport. |
@@ -159,7 +160,7 @@ zie **[installatie](docs/install.md)** (Engels).
 | Document | Inhoud |
 | --- | --- |
 | [Functiegids](docs/features.md) | Elk onderdeel van de app, pagina voor pagina |
-| [MCP-toolreferentie](docs/mcp-tools.md) | Alle 189 tools met risiconiveau, scope en parameters (gegenereerd uit de code) |
+| [MCP-toolreferentie](docs/mcp-tools.md) | Alle 196 tools met risiconiveau, scope en parameters (gegenereerd uit de code) |
 | [Installatie](docs/install.md) | Installeren, upgraden, reverse proxy (Zoraxy), agents, bestandslocaties, ontwikkelen |
 | [Architectuur](docs/architecture.md) | Onderdelen, agentprotocol, beveiligingsmodel |
 | [Releasegeschiedenis](docs/history.md) | Wat elke fase en release toevoegde |
@@ -181,7 +182,7 @@ zie **[installatie](docs/install.md)** (Engels).
 | 15 | **Netwerkherstel en Windows-scripts**: een netwerkkaart of uplink zonder link wordt herstart (ook door de agent zelf als die Stackpilot niet bereikt), en geplande taken draaien PowerShell-scripts op Windows-machines | ✅ Klaar (v0.15.0) |
 | 16 | **Uptime- en SLA-monitoring**: externe controles van websites, VPN's en poorten, SLA-percentage per klant in het maandrapport | ✅ Klaar (v0.16.0) |
 | 17 | **Klantportaal met tickets**: klanten melden problemen in hun eigen portaal, tickets gekoppeld aan machines, met een eerste diagnose door de AI | ✅ Klaar (v0.17.0) |
-| 18 | **Documentatie en wachtwoordkluis per klant**: de AI gebruikt geheimen alleen na goedkeuring, elk gebruik in het auditlog | 📋 Gepland |
+| 18 | **Documentatie en wachtwoordkluis per klant**: de AI gebruikt geheimen alleen na goedkeuring, elk gebruik in het auditlog | ✅ Klaar (v0.18.0) |
 | 19 | **Microsoft 365 / Entra-beheer**: gebruikers, licenties, MFA-status en riskante aanmeldingen per klant | 📋 Gepland |
 | 20 | **Certificaat-, firewall- en VPN-bewaking**: verloopdatums, configuratiewijzigingen en tunnels die wegvallen | 📋 Gepland |
 | 21 | **Kosten en licenties per klant**: abonnementen, licenties en hardware met verlengdatums | 📋 Gepland |

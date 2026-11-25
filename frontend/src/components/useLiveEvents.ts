@@ -51,6 +51,14 @@ export function useLiveEvents() {
             qc.invalidateQueries({ queryKey: ["ticket", String(msg.data.id ?? "")] });
             if (msg.event === "ticket.created") window.dispatchEvent(new CustomEvent("mmn:ticket", { detail: msg.data }));
           }
+          if (msg.event === "docs.changed") {
+            qc.invalidateQueries({ queryKey: ["documents"] });
+            qc.invalidateQueries({ queryKey: ["document", String(msg.data.id ?? "")] });
+          }
+          if (msg.event === "vault.changed" || msg.event === "vault.ai_use") {
+            for (const k of ["vault-items", "vault-item", "vault-access", "vault-status", "vault-grants"]) qc.invalidateQueries({ queryKey: [k] });
+            if (msg.event === "vault.ai_use") window.dispatchEvent(new CustomEvent("mmn:vault", { detail: msg.data }));
+          }
           if (msg.event === "uptime.result" && msg.data.change) {
             qc.invalidateQueries({ queryKey: ["uptime-checks"] });
             qc.invalidateQueries({ queryKey: ["uptime-sla"] });

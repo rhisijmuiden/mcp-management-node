@@ -65,6 +65,8 @@ class UserSession(Base):
     remember: Mapped[bool] = mapped_column(Boolean, default=False)
     ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
     user_agent: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Phase 18: the password vault is unlocked for this session (password entered again) until then.
+    vault_unlocked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped[User] = relationship(lazy="joined")
 
@@ -1110,3 +1112,147 @@ class TicketMessage(Base):
     internal: Mapped[bool] = mapped_column(Boolean, default=False)
     event: Mapped[dict] = mapped_column(JsonType, default=dict)  # system messages: {"kind": "status", ...}
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+# ------------------------------------------------------------------ phase 18: documentation and password vault
+class Document(Base):
+    """A page of customer documentation (Markdown): a network plan, procedure, notes, contacts... with
+    linked machines, tags, attachments and every earlier version. ``ai_visible`` = the AI (MCP) may read it."""
+
+    __tablename__ = "documents"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("environments.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    category: Mapped[str] = mapped_column(String(24), default="notes")
+    body: Mapped[str] = mapped_column(Text, default="")
+    tags: Mapped[list[str]] = mapped_column(JsonType, default=list)
+    node_ids: Mapped[list[str]] = mapped_column(JsonType, default=list)
+    pinned: Mapped[bool] = mapped_column(Boolean, default=False)
+    ai_visible: Mapped[bool] = mapped_column(Boolean, default=True)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    created_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    updated_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+    customer: Mapped[Environment] = relationship(lazy="joined")
+
+
+class DocumentRevision(Base):
+    """An earlier version of a document (saved on every change of title or text)."""
+
+    __tablename__ = "document_revisions"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    document_id: Mapped[str] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), index=True)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("environments.id", ondelete="CASCADE"), index=True)
+    version: Mapped[int] = mapped_column(Integer)
+    title: Mapped[str] = mapped_column(String(200))
+    body: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+
+class DocumentAttachment(Base):
+    """A file on a document (a drawing, PDF, export...). Stored encrypted under <files>/docs/."""
+
+    __tablename__ = "document_attachments"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    document_id: Mapped[str] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), index=True)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("environments.id", ondelete="CASCADE"), index=True)
+    filename: Mapped[str] = mapped_column(String(255))
+    content_type: Mapped[str] = mapped_column(String(128), default="application/octet-stream")
+    size: Mapped[int] = mapped_column(BigInteger, default=0)
+    sha256: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+
+class VaultItem(Base):
+    """A credential in the password vault of a customer. The secret part (username, password, notes,
+    extra fields) is encrypted with AES-256-GCM under its own data key, which is wrapped with the vault
+    key (``<data>/vault.key``). ``ai_access``: "approval" (the AI may use it after an admin approved
+    each use) or "never"."""
+
+    __tablename__ = "vault_items"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("environments.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    kind: Mapped[str] = mapped_column(String(24), default="login")
+    url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    tags: Mapped[list[str]] = mapped_column(JsonType, default=list)
+    node_ids: Mapped[list[str]] = mapped_column(JsonType, default=list)
+    ai_access: Mapped[str] = mapped_column(String(16), default="approval")
+    rotate_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    key_id: Mapped[str] = mapped_column(String(16))
+    wrapped_key: Mapped[bytes] = mapped_column(LargeBinary)
+    ciphertext: Mapped[bytes] = mapped_column(LargeBinary)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    secret_changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    updated_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+    customer: Mapped[Environment] = relationship(lazy="joined")
+
+
+class VaultItemHistory(Base):
+    """An earlier secret of a vault item (kept when the password changes), encrypted like the item."""
+
+    __tablename__ = "vault_item_history"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    item_id: Mapped[str] = mapped_column(ForeignKey("vault_items.id", ondelete="CASCADE"), index=True)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("environments.id", ondelete="CASCADE"), index=True)
+    key_id: Mapped[str] = mapped_column(String(16))
+    wrapped_key: Mapped[bytes] = mapped_column(LargeBinary)
+    ciphertext: Mapped[bytes] = mapped_column(LargeBinary)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+
+class VaultGrant(Base):
+    """Permission for one AI token to read one vault item, made when an admin approved the request. Short
+    lived and used up after ``uses_left`` reads."""
+
+    __tablename__ = "vault_grants"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    item_id: Mapped[str] = mapped_column(ForeignKey("vault_items.id", ondelete="CASCADE"), index=True)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("environments.id", ondelete="CASCADE"), index=True)
+    token_id: Mapped[str | None] = mapped_column(ForeignKey("api_tokens.id", ondelete="CASCADE"), nullable=True,
+                                                 index=True)
+    approval_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    approved_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    uses_left: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class VaultAccess(Base):
+    """The access log of the vault: every reveal, copy and use of a secret (by a person or the AI), every
+    AI request with its approval, and every change. Kept when the item is deleted."""
+
+    __tablename__ = "vault_access"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    item_id: Mapped[str | None] = mapped_column(ForeignKey("vault_items.id", ondelete="SET NULL"), nullable=True,
+                                                index=True)
+    item_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    customer_id: Mapped[str | None] = mapped_column(ForeignKey("environments.id", ondelete="CASCADE"), nullable=True,
+                                                    index=True)
+    action: Mapped[str] = mapped_column(String(24))
+    actor_kind: Mapped[str] = mapped_column(String(8), default="user")  # user | ai | system
+    username: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    token_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    token_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    approval_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    success: Mapped[bool] = mapped_column(Boolean, default=True)
+    detail: Mapped[dict] = mapped_column(JsonType, default=dict)

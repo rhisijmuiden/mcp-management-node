@@ -14,6 +14,7 @@ from mmn.api import (
     cluster,
     customers,
     deploy,
+    documents,
     gateway,
     guests,
     hub,
@@ -36,6 +37,7 @@ from mmn.api import (
     unifi,
     uptime,
     users,
+    vault,
     workstations,
     ws,
 )
@@ -105,6 +107,9 @@ def create_app() -> FastAPI:
         s.data_dir.mkdir(parents=True, exist_ok=True)
         s.run_dir.mkdir(parents=True, exist_ok=True)
         load_or_create_secret_key()
+        from mmn.services import vault as vault_service
+
+        vault_service.ensure_key()
         if s.run_scheduler:
             from mmn.services import scheduler
 
@@ -176,7 +181,8 @@ def create_app() -> FastAPI:
               oauth.router, ws.router, agent.router, proxmox.router, guests.router, library.router, network.router,
               cluster.router, monitoring.router, deploy.router, servers.router, unifi.router, customers.router,
               gateway.router, hub.router, workstations.router, reports.router, protection.router, nightly.router,
-              runbooks.router, remediation.router, uptime.router, tickets.router, portal.router):
+              runbooks.router, remediation.router, uptime.router, tickets.router, portal.router,
+              documents.router, vault.router):
         app.include_router(r)
     app.mount("/mcp", mcp_app)
     return app

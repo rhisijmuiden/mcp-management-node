@@ -124,6 +124,15 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "auto_close_days": 7,  # resolved tickets close after this many days without a reply (0 = never)
         "welcome": "",  # optional text on the portal start page
     },
+    "vault": {
+        # Phase 18: the password vault (see services/vault.py).
+        "unlock_minutes": 15,  # how long the vault stays unlocked after an admin entered their password again
+        "require_unlock": True,  # admins enter their password again before they see or copy a secret
+        "grant_minutes": 15,  # how long an approved AI request may read the secret
+        "grant_uses": 1,  # how many reads one approval allows
+        "history_keep": 10,  # earlier passwords kept per item
+        "notify_ai_use": True,  # show the admins a notification in the app when the AI read or used a secret
+    },
     "netwatch": {
         # Phase 15: network adapters that automatic recovery watches (see services/netwatch.py).
         "seen_up": {},  # {node id: {adapter: last time it was up}}

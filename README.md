@@ -14,7 +14,7 @@
   <a href="https://github.com/rhisijmuiden/stackpilot/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/rhisijmuiden/stackpilot?label=release&color=14213D"></a>
   <a href="https://github.com/rhisijmuiden/stackpilot/actions/workflows/release.yml"><img alt="Release build" src="https://img.shields.io/github/actions/workflow/status/rhisijmuiden/stackpilot/release.yml?label=build"></a>
   <img alt="Debian 13" src="https://img.shields.io/badge/runs%20on-Debian%2013-FF6B57">
-  <img alt="MCP tools" src="https://img.shields.io/badge/MCP%20tools-189-9CC3FF">
+  <img alt="MCP tools" src="https://img.shields.io/badge/MCP%20tools-196-9CC3FF">
   <img alt="English and Dutch" src="https://img.shields.io/badge/languages-EN%20%7C%20NL-F6F7FB">
 </p>
 
@@ -50,7 +50,7 @@ pauses all AI actions.
 | | |
 | --- | --- |
 | 🤖 **AI gateway** | Command center, approvals inbox (app + mail), policies per risk level, customer and token, maintenance windows, kill switch, AI sessions and activity log. |
-| 🧰 **189 MCP tools** | Read logs, restart services, run commands, patch, manage VMs, network, HA, deployments and UniFi, all through one endpoint with OAuth 2.1 or API tokens. [Full list](docs/mcp-tools.md). |
+| 🧰 **196 MCP tools** | Read logs, restart services, run commands, patch, manage VMs, network, HA, deployments and UniFi, all through one endpoint with OAuth 2.1 or API tokens. [Full list](docs/mcp-tools.md). |
 | 🏢 **Customers** | Customer switcher, customer page with Proxmox, servers, workstations, network and AI access, contacts, notes for the AI, maintenance window, SLA and an optimisation scan. |
 | 💻 **Workstations** | PCs and laptops per customer: hardware, OS, logged-in user, installed software, disks and SSD wear, Windows Update history, Defender, BitLocker/LUKS, firewall, TPM, a security status, and remote actions (Defender scan, signature update, Group Policy refresh, message, log off). |
 | 🌅 **Nightly checks & morning summary** | Every night every customer is checked: updates, security updates with the CVEs they fix, full disks, certificates that expire, failed or missing backups and the optimisation scan. In the morning one summary in the app and by mail, with what is new and resolved, and proposals you approve with one click; changes wait for the customer's maintenance window. |
@@ -64,6 +64,7 @@ pauses all AI actions.
 | 🔎 **Troubleshooting** | Log search across many servers, error overviews, software and CVE inventory, data copy between servers. |
 | 📶 **UniFi** | UniFi Network, Site Manager and Access: devices, clients, WiFi troubleshooter, guest isolation check, firmware, events, doors and access log. |
 | 📈 **Monitoring** | One sample per node per minute for 30 days, trends, SMART and wearout, alerts by mail. |
+| 📚 **Documentation & password vault** | Network plans, procedures, notes and contacts per customer in Markdown, with versions, encrypted attachments and linked machines; the AI reads them before it works on a customer. A password vault per customer (AES-256-GCM, its own key, key rotation, password history, generator): people see secrets after entering their password again, the AI only after an admin approved that one use, or it runs a script with the secret without ever seeing it. Every reveal, copy and use is in the access log. |
 | 🎫 **Customer portal & tickets** | Customers sign in to their own portal, report problems and questions, link them to their computers and servers and follow the status. Stackpilot runs a first diagnosis on those machines right away; staff reply, add internal notes, assign and resolve, with mails through your own SMTP server. The AI reads and answers tickets over MCP. |
 | 📡 **Uptime & SLA** | External checks per customer of websites (status, keyword, response time, certificate), TCP ports, ping, DNS records and VPN endpoints, from Stackpilot or from a machine at the customer; outages, alerts and the measured SLA against each customer's target in the monthly report. |
 | ⏱️ **Scheduled tasks** | Container and node updates, template sync or your own command on a cron schedule, with snapshot, rollback and a mailed report. |
@@ -165,7 +166,7 @@ see **[installation](docs/install.md)**.
 | Document | What's in it |
 | --- | --- |
 | [Feature guide](docs/features.md) | Every part of the app, page by page |
-| [MCP tool reference](docs/mcp-tools.md) | All 189 tools with risk level, scope and parameters (generated from the code) |
+| [MCP tool reference](docs/mcp-tools.md) | All 196 tools with risk level, scope and parameters (generated from the code) |
 | [Installation](docs/install.md) | Install, upgrade, reverse proxy (Zoraxy), agents, file locations, development |
 | [Architecture](docs/architecture.md) | Components, agent protocol, security model |
 | [Release history](docs/history.md) | What each phase and release added |
@@ -187,7 +188,7 @@ see **[installation](docs/install.md)**.
 | 15 | **Network recovery and Windows scripts**: a network card or uplink without link is restarted (also by the agent itself when it cannot reach Stackpilot), and scheduled tasks run PowerShell scripts on Windows machines | ✅ Done (v0.15.0) |
 | 16 | **Uptime and SLA monitoring**: external checks of websites, VPNs and ports, SLA percentage per customer in the monthly report | ✅ Done (v0.16.0) |
 | 17 | **Customer portal with tickets**: customers report problems in their own portal, tickets linked to machines, with a first diagnosis by the AI | ✅ Done (v0.17.0) |
-| 18 | **Documentation and password vault per customer**: the AI only uses secrets after approval, every use in the audit log | 📋 Planned |
+| 18 | **Documentation and password vault per customer**: the AI only uses secrets after approval, every use in the audit log | ✅ Done (v0.18.0) |
 | 19 | **Microsoft 365 / Entra management**: users, licences, MFA status and risky sign-ins per customer | 📋 Planned |
 | 20 | **Certificate, firewall and VPN monitoring**: expiry, configuration changes and tunnels that go down | 📋 Planned |
 | 21 | **Costs and licences per customer**: subscriptions, licences and hardware with renewal dates | 📋 Planned |

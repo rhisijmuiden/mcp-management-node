@@ -43,6 +43,7 @@ SECTION_TITLES = {
     "automatic recovery (phase 14)": "Automatic recovery",
     "uptime and SLA (phase 16)": "Uptime and SLA",
     "tickets and customer portal (phase 17)": "Tickets and customer portal",
+    "documentation and password vault (phase 18)": "Documentation and password vault",
     "MCP hub": "MCP hub (tools of other MCP servers appear as `<prefix>__<tool>`)",
 }
 SKIP_SECTIONS = {"ASGI wiring", "resources: customer context"}

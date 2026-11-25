@@ -60,6 +60,10 @@ OPERATE_TOOLS = {
     "restart_network_adapter",
 }
 
+# Phase 18: tools that use a secret from the password vault always need an admin's approval, whatever the
+# policies say (a policy can still block them).
+ALWAYS_APPROVE = {"reveal_credential", "run_with_credential"}
+
 FINAL = {"executed", "failed", "rejected", "expired"}
 
 
@@ -413,6 +417,8 @@ def reason_text(r: dict[str, Any]) -> str:
             " (the runbook asks approval for this step)" if p.get("always") else "")
     if c == "outside_window":
         return f"outside the maintenance window of {p.get('customer')} ({p.get('window')})"
+    if c == "vault":
+        return "uses a secret from the password vault (always needs approval)"
     return c or ""
 
 
@@ -484,6 +490,8 @@ async def decide(db: AsyncSession, *, tool: str, risk: str, args: dict[str, Any]
         results.append((t_action, {"code": t_kind, "params": {"risk": risk, "tool": tool, "action": t_action,
                                                               "layer": "token"}}))
 
+    if tool in ALWAYS_APPROVE:
+        results.append(("approve", {"code": "vault", "params": {"tool": tool}}))
     d.action = _strictest(*(a for a, _ in results))
     if d.action != "allow":
         seen = set()
