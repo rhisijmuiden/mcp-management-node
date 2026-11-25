@@ -12,6 +12,7 @@ import { NightlyPage } from "@/pages/Nightly";
 import { M365Page } from "@/pages/M365";
 import { SecurityPage } from "@/pages/Security";
 import { CostsPage } from "@/pages/Costs";
+import { ChangesPage } from "@/pages/Changes";
 import { RemediationPage } from "@/pages/Remediation";
 import { UptimePage } from "@/pages/Uptime";
 import { RunbookEditorPage, RunbookRunPage, RunbooksPage } from "@/pages/Runbooks";
@@ -95,6 +96,8 @@ export default function App() {
         <Route path="security/:tab" element={<SecurityPage />} />
         <Route path="costs" element={<Navigate to="/costs/overview" replace />} />
         <Route path="costs/:tab" element={<CostsPage />} />
+        <Route path="changes" element={<Navigate to="/changes/calendar" replace />} />
+        <Route path="changes/:tab" element={<ChangesPage />} />
         <Route path="tickets" element={<L><TicketsPage /></L>} />
         <Route path="tickets/:id" element={<L><TicketDetailPage /></L>} />
         <Route path="docs" element={<L><DocsPage /></L>} />

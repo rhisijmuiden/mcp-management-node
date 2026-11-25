@@ -48,7 +48,7 @@ import {
   ShieldHalf,
   Wrench,
   Sunrise,
-  BookOpenCheck, HeartPulse, Radar, CloudCog, LifeBuoy, BookText, LockKeyhole, Award, Flame, Waypoints, Wallet,
+  BookOpenCheck, HeartPulse, Radar, CloudCog, LifeBuoy, BookText, LockKeyhole, Award, Flame, Waypoints, Wallet, CalendarRange,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -246,6 +246,12 @@ export function Layout() {
     refetchInterval: 300_000,
   });
 
+  const changeBadge = useQuery({
+    queryKey: ["changes", "badge"],
+    queryFn: () => get<{ in_progress: number; warnings: number }>("api/changes/badge"),
+    refetchInterval: 300_000,
+  });
+
   const ticketCounts = useQuery({
     queryKey: ["ticket-counts"],
     queryFn: () => get<{ needs_reply: number }>("api/tickets/counts"),
@@ -307,6 +313,7 @@ export function Layout() {
       title: t("nav.section.operations"),
       items: [
         { to: "/tickets", icon: <LifeBuoy />, label: t("nav.tickets"), badge: ticketCounts.data?.needs_reply || undefined },
+        { to: "/changes", icon: <CalendarRange />, label: t("nav.changes"), badge: ((changeBadge.data?.in_progress ?? 0) + (changeBadge.data?.warnings ?? 0)) || undefined },
         { to: "/docs", icon: <BookText />, label: t("nav.docs") },
         { to: "/vault", icon: <LockKeyhole />, label: t("nav.vault") },
         { to: "/costs/overview", icon: <Wallet />, label: t("nav.costs"), badge: costBadge.data?.attention || undefined },

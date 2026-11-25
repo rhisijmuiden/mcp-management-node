@@ -164,6 +164,16 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "include_stopped": True,  # stopped VMs and containers still count (their resources stay reserved)
         "m365_quantity": "enabled",  # enabled (bought) | consumed (assigned) Microsoft 365 licences are billed
     },
+    "changes": {
+        # Phase 22: change calendar per customer (see services/changes.py).
+        "notify_before": [4320, 60],  # minutes before the start: 3 days and 1 hour
+        "notify_after": True,  # a notice when a change is completed or failed
+        "notify_cancel": True,  # a notice when an announced change is cancelled
+        "recipients": "both",  # contacts | portal | both | none (only the extra addresses of a customer)
+        "auto_status": True,  # in progress at the start, completed at the end (a linked runbook decides itself)
+        "default_minutes": 120,  # length of a new change
+        "ical_token": "",  # staff feed of every customer; empty: off
+    },
     "m365": {
         # Phase 19: Microsoft 365 / Entra ID tenants per customer (see services/m365.py).
         "sync_minutes": 15,  # how often every tenant is read through Microsoft Graph

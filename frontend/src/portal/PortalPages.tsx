@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Clock, HelpCircle, Inbox, Laptop, LifeBuoy, MessageSquare, Plus, Send, Server, Sparkles, UserRound, Wrench } from "lucide-react";
+import { CalendarPlus, CalendarRange, CheckCircle2, Clock, Copy, HelpCircle, Inbox, Laptop, LifeBuoy, MessageSquare, Plus, Send, Server, Sparkles, UserRound, Wrench } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams } from "react-router";
@@ -11,6 +11,7 @@ import { Alert, Badge, EmptyState, PageHeader, Spinner, Stat } from "@/component
 import { errorMessage } from "@/lib/api";
 import { cn, formatDate, timeAgo } from "@/lib/utils";
 import { PriorityBadge, StatusBadge, type Priority, type TicketStatus } from "@/pages/Tickets";
+import { STATUS_TONE, whenText, type ChangeStatus } from "@/pages/Changes";
 import { pget, ppatch, ppost } from "./api";
 import { usePortal } from "./PortalApp";
 
@@ -294,6 +295,76 @@ export function PortalAccountPage() {
           </CardBody>
         </Card>
       </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ planned maintenance (phase 22) */
+interface PChange {
+  id: string; ref: string; title: string; description: string | null; kind: string; impact: "none" | "minor" | "degraded" | "outage";
+  status: ChangeStatus; starts_at: string; ends_at: string; machines: { id: string; name: string }[]; outcome_note: string | null;
+}
+
+function PortalChangeItem({ c }: { c: PChange }) {
+  const { t, i18n } = useTranslation();
+  const s = new Date(c.starts_at);
+  const done = c.status === "completed" || c.status === "failed" || c.status === "cancelled";
+  return (
+    <li className="flex gap-4 px-5 py-4">
+      <div className={cn("grid w-14 shrink-0 place-items-center self-start rounded-lg border border-line py-1.5 text-center", done ? "bg-sunken text-muted" : "bg-info-soft")}>
+        <div className="text-[11px] font-bold uppercase">{s.toLocaleDateString(i18n.language === "nl" ? "nl-NL" : "en-GB", { month: "short" })}</div>
+        <div className="text-xl font-bold leading-none">{s.getDate()}</div>
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={cn("font-semibold", c.status === "cancelled" && "line-through")}>{c.title}</span>
+          <Badge tone={STATUS_TONE[c.status]} dot>{t(`chg.st.${c.status}`)}</Badge>
+        </div>
+        <div className="text-sm text-muted">{whenText(c, i18n.language)} · {t(`chg.kind.${c.kind}`)} · <span className="mono">{c.ref}</span></div>
+        {c.status !== "cancelled" && <div className="mt-1 text-sm"><span className="text-muted">{t("portal.changes_impact")}:</span> {t(`chg.impact.${c.impact}`)}</div>}
+        {c.machines.length > 0 && <div className="text-sm"><span className="text-muted">{t("portal.changes_systems")}:</span> {c.machines.map((m) => m.name).join(", ")}</div>}
+        {c.description && !done && <p className="mt-2 whitespace-pre-wrap text-sm">{c.description}</p>}
+        {c.outcome_note && done && <p className="mt-2 whitespace-pre-wrap text-sm"><span className="text-muted">{t("portal.changes_result")}:</span> {c.outcome_note}</p>}
+      </div>
+    </li>
+  );
+}
+
+export function PortalChangesPage() {
+  const { t } = useTranslation();
+  const q = useQuery({
+    queryKey: ["portal-changes"],
+    queryFn: () => pget<{ upcoming: PChange[]; past: PChange[]; maintenance_window: string | null; timezone: string; ical_url: string | null }>("changes"),
+    refetchInterval: 120_000,
+  });
+  const d = q.data;
+  return (
+    <div>
+      <PageHeader title={t("portal.changes_title")} description={t("portal.changes_desc")} />
+      {q.isLoading ? <Spinner /> : q.isError ? <Alert tone="offline">{errorMessage(q.error, t)}</Alert> : d && (
+        <div className="space-y-5">
+          {d.maintenance_window && <Alert tone="info">{t("portal.changes_window", { window: d.maintenance_window })}</Alert>}
+          <Card>
+            <CardHeader icon={<CalendarRange />} title={t("portal.changes_upcoming")} />
+            {!d.upcoming.length ? <EmptyState icon={<CheckCircle2 />} title={t("portal.changes_none")} /> : <ul className="divide-y divide-line">{d.upcoming.map((c) => <PortalChangeItem key={c.id} c={c} />)}</ul>}
+          </Card>
+          <Card>
+            <CardHeader icon={<Clock />} title={t("portal.changes_past")} />
+            {!d.past.length ? <CardBody><p className="text-sm text-muted">{t("portal.changes_past_none")}</p></CardBody> : <ul className="divide-y divide-line">{d.past.map((c) => <PortalChangeItem key={c.id} c={c} />)}</ul>}
+          </Card>
+          {d.ical_url && (
+            <Card>
+              <CardHeader icon={<CalendarPlus />} title={t("portal.changes_feed")} description={t("portal.changes_feed_desc")} />
+              <CardBody>
+                <div className="flex items-center gap-2">
+                  <Input readOnly value={d.ical_url} className="font-mono text-xs" onFocus={(e) => e.target.select()} />
+                  <Button variant="secondary" onClick={() => { navigator.clipboard?.writeText(d.ical_url!); toast.success(t("portal.changes_copied")); }}><Copy /></Button>
+                </div>
+              </CardBody>
+            </Card>
+          )}
+        </div>
+      )}
     </div>
   );
 }

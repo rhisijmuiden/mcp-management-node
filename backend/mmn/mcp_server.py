@@ -374,6 +374,12 @@ and Microsoft 365 licences it is based on. `list_cost_items` lists licences, con
 services, `list_expiring_contracts` what runs out or must be cancelled soon. `save_cost_item`, `set_cost_rate` and
 `finalize_cost_statement` change them (scope costs_admin); finalise a month only when the user asks.
 
+Change calendar: `get_change_calendar` shows planned changes, scheduled task runs and the maintenance window of
+every customer; `list_changes` / `get_change` the changes (CHG-numbers) with their conflicts and the notices sent.
+Before planning, `check_change_slot` checks a time and suggests the next free slot inside the maintenance window;
+`save_change` plans or moves a change (scope changes_admin), the customer gets notices by itself (default 3 days and
+1 hour before, and afterwards). `set_change_status` and `send_change_notice` mail the customer: only when asked.
+
 Nodes and servers can be named by id or by name. Every call is written to the audit log with your token's name.
 Destructive tools need `confirm` set to the exact node name, or are marked destructive: ask the user
 before calling them, and give a short `reason` for commands and service actions."""
@@ -5028,6 +5034,228 @@ async def finalize_cost_statement(customer: str, period: str, note: str | None =
         await db.commit()
         s = await costs.statement(db, e, p)
     return _jsonable({"customer": e.name, "period": p, "status": s["status"], "totals": s["totals"]})
+
+
+# ------------------------------------------------------------------ change calendar (phase 22)
+def _change_err(ex: Exception) -> ToolDenied:
+    return ToolDenied(str(ex))
+
+
+async def _change_detail(db, ch) -> dict:
+    from mmn.services import changes
+
+    out = changes.change_out(ch, await changes.names(db))
+    eff = await changes.effective(db, ch.customer, ch)
+    out["conflicts"] = await changes.conflicts(db, ch.customer, ch.starts_at, ch.ends_at, node_ids=ch.node_ids,
+                                               exclude_id=ch.id, task_id=ch.task_id,
+                                               notify_before=eff["notify_before"])
+    out["notice_settings"] = {k: eff[k] for k in ("notify_before", "notify_after", "recipients")}
+    out["recipients"] = len(await changes.recipients(db, ch.customer, eff))
+    out["maintenance_window"] = ch.customer.maintenance_window
+    return _jsonable(out)
+
+
+@tool("changes", RO)
+async def list_changes(customer: str | None = None, status: str | None = None, start: str | None = None,
+                       end: str | None = None) -> dict:
+    """Planned maintenance and changes in the change calendar (CHG-numbers), soonest first, with customer, time
+    (UTC), kind, expected impact, status and machines. `status`: draft, planned, in_progress, completed, failed,
+    cancelled, or active (planned + in progress) / upcoming (not finished yet). `start`/`end`: ISO dates."""
+    from mmn.services import changes
+
+    if status and status not in (*changes.STATUSES, "active", "upcoming"):
+        raise ToolDenied("status must be one of " + ", ".join((*changes.STATUSES, "active", "upcoming")))
+    async with sessionmaker()() as db:
+        e = await _netsec_customer(db, customer)
+        try:
+            s = changes.parse_dt(start, "start") if start else None
+            en = changes.parse_dt(end, "end") if end else None
+        except changes.ChangeError as ex:
+            raise _change_err(ex) from ex
+        rows = await changes.search(db, customer_id=e.id if e else None, status=status, start=s, end=en, limit=300)
+        nm = await changes.names(db)
+        tz = await changes.tz_of(db)
+        out = []
+        for r in rows:
+            x = changes.change_out(r, nm)
+            for k in ("notices", "description", "internal_notes", "node_ids"):
+                x.pop(k, None)
+            out.append(x)
+    return _jsonable({"changes": out, "timezone": str(tz)})
+
+
+@tool("changes", RO)
+async def get_change(change: str, customer: str | None = None) -> dict:
+    """One change (its CHG-number, id or title): description for the customer, internal notes, machines, linked
+    scheduled task and runbook, the notices that were sent and the conflicts: outside_window (not inside the
+    customer's maintenance window), overlap (another change at the same time), task (a scheduled task runs then),
+    task_outside (the linked task does not run during the change), short_notice."""
+    from mmn.services import changes
+
+    async with sessionmaker()() as db:
+        e = await _netsec_customer(db, customer)
+        try:
+            ch = await changes.find_change(db, change, e.id if e else None)
+        except changes.ChangeError as ex:
+            raise _change_err(ex) from ex
+        return await _change_detail(db, ch)
+
+
+@tool("changes", RO)
+async def get_change_calendar(customer: str | None = None, days: int = 30, start: str | None = None) -> dict:
+    """The calendar of the coming `days` (default 30, at most 120) from `start` (default today): changes, when the
+    scheduled tasks run (with the customers they touch) and the maintenance window of every customer. Use it to
+    find a quiet moment before planning a change."""
+    from datetime import UTC, datetime, timedelta
+
+    from mmn.services import changes
+
+    days = max(1, min(int(days or 30), 120))
+    async with sessionmaker()() as db:
+        e = await _netsec_customer(db, customer)
+        try:
+            s = changes.parse_dt(start, "start", await changes.tz_of(db)) if start else datetime.now(UTC)
+        except changes.ChangeError as ex:
+            raise _change_err(ex) from ex
+        cal = await changes.calendar(db, s, s + timedelta(days=days), e.id if e else None)
+    for c in cal["changes"]:
+        for k in ("notices", "description", "internal_notes", "node_ids"):
+            c.pop(k, None)
+    return _jsonable(cal)
+
+
+@tool("changes", RO)
+async def check_change_slot(customer: str, start: str | None = None, end: str | None = None,
+                            minutes: int | None = None, machines: list[str] | None = None) -> dict:
+    """Check a proposed time for a change of a customer before planning it: the conflicts (maintenance window,
+    other changes, scheduled tasks, notice period) and the next free slot of that length inside the customer's
+    maintenance window (`suggestion`). Times are ISO; without an offset they are in the app's time zone. Without
+    `start` you only get the suggestion. `minutes` is the length (default the setting, 120)."""
+    from datetime import timedelta
+
+    from mmn.services import changes
+
+    async with sessionmaker()() as db:
+        e = await _netsec_required(db, customer)
+        tz = await changes.tz_of(db)
+        cfg = await changes.settings(db)
+        try:
+            node_ids = await changes._clean_machines(db, e.id, machines or [])
+            s = changes.parse_dt(start, "start", tz) if start else None
+            en = changes.parse_dt(end, "end", tz) if end else None
+        except changes.ChangeError as ex:
+            raise _change_err(ex) from ex
+        length = minutes or (int((en - s).total_seconds() // 60) if s and en else int(cfg["default_minutes"]))
+        if length < 5:
+            raise ToolDenied("a change lasts at least 5 minutes")
+        found = []
+        if s:
+            en = en or s + timedelta(minutes=length)
+            if en <= s:
+                raise ToolDenied("the end must be after the start")
+            eff = await changes.effective(db, e)
+            found = await changes.conflicts(db, e, s, en, node_ids=node_ids, notify_before=eff["notify_before"])
+        sug = await changes.suggest(db, e, length, node_ids=node_ids)
+    return _jsonable({"customer": e.name, "maintenance_window": e.maintenance_window, "timezone": str(tz),
+                      "minutes": length, "conflicts": found, "suggestion": sug,
+                      "ok": not any(x["severity"] == "warning" for x in found)})
+
+
+@tool("changes_admin", WRITE)
+async def save_change(customer: str, change: str | None = None, title: str | None = None, start: str | None = None,
+                      end: str | None = None, minutes: int | None = None, description: str | None = None,
+                      internal_notes: str | None = None, kind: str | None = None, impact: str | None = None,
+                      machines: list[str] | None = None, scheduled_task: str | None = None,
+                      runbook: str | None = None, run_runbook: bool | None = None, draft: bool | None = None,
+                      notify: bool | None = None, notify_before_minutes: list[int] | None = None) -> dict:
+    """Plan a change or maintenance for a customer in the change calendar, or change one (give `change`: its
+    CHG-number; only the fields you give change). Check the time with check_change_slot first and plan inside the
+    customer's maintenance window unless the user says otherwise.
+    `description` is shown to the customer (notices, portal, iCal): plain, non-technical; `internal_notes` stay
+    with staff. `kind`: maintenance, update, change, migration, other. `impact`: none, minor, degraded, outage.
+    `start`/`end` ISO (without offset: the app's time zone) or `minutes`. `machines`: names or ids of the
+    customer's machines. `scheduled_task` / `runbook` link them (name or id); `run_runbook` starts the runbook
+    when the change begins (its steps follow the AI policies). `draft` true: not shown to the customer and no
+    notices. Notices go to the customer by themselves before the start (`notify_before_minutes`, default the
+    customer's setting, 3 days and 1 hour), when it moves or is cancelled, and afterwards; `notify` false: none."""
+    from mmn.services import changes
+
+    fields: dict[str, Any] = {k: v for k, v in {
+        "title": title, "starts_at": start, "ends_at": end, "minutes": minutes, "description": description,
+        "internal_notes": internal_notes, "kind": kind, "impact": impact, "run_runbook": run_runbook,
+        "notify": notify}.items() if v is not None}
+    if notify_before_minutes is not None:
+        fields["notify_before"] = notify_before_minutes
+    if machines is not None:
+        fields["node_ids"] = machines
+    if scheduled_task is not None:
+        fields["task_id"] = scheduled_task
+    if runbook is not None:
+        fields["runbook_id"] = runbook
+    async with sessionmaker()() as db:
+        e = await _netsec_required(db, customer)
+        try:
+            ch = await changes.find_change(db, change, e.id) if change else None
+            if ch is None:
+                fields["status"] = "draft" if draft else "planned"
+            ch = await changes.save_change(db, ch, customer_id=e.id, by=_actor(), **fields)
+            if change and draft is not None and ch.status in ("draft", "planned"):
+                await changes.set_status(db, ch, "draft" if draft else "planned", by=_actor())
+        except changes.ChangeError as ex:
+            raise _change_err(ex) from ex
+        await db.commit()
+        await db.refresh(ch)
+        return await _change_detail(db, ch)
+
+
+@tool("changes_admin", WRITE)
+async def set_change_status(customer: str, change: str, status: str, note: str | None = None) -> dict:
+    """Move a change on: in_progress (started), completed or failed (with `note`: the outcome, shown to the
+    customer in the notice afterwards), cancelled (the customer gets a cancellation when they were told), planned
+    (from draft, or again after cancelling) or draft. Only cancel or finish when the user asks or it really
+    happened: the customer is mailed."""
+    from mmn.services import changes
+    from mmn.services.links import public_base_url
+
+    async with sessionmaker()() as db:
+        e = await _netsec_required(db, customer)
+        try:
+            ch = await changes.find_change(db, change, e.id)
+            await changes.set_status(db, ch, status, by=_actor(), note=note)
+        except changes.ChangeError as ex:
+            raise _change_err(ex) from ex
+        await db.commit()
+        if ch.status in changes.FINISHED:
+            from datetime import UTC, datetime
+
+            await changes.tick_one(db, ch, datetime.now(UTC), base_url=await public_base_url(db))
+            await db.commit()
+        return await _change_detail(db, ch)
+
+
+@tool("changes_admin", WRITE)
+async def send_change_notice(customer: str, change: str, kind: str = "announce") -> dict:
+    """Mail a notice of a change to the customer's contacts now: announce (the plan), rescheduled (a new time) or
+    after (the outcome of a finished change). The notices before the start go out by themselves: only use this
+    when the user asks."""
+    from mmn.services import changes
+    from mmn.services.links import public_base_url
+
+    if kind not in ("announce", "rescheduled", "after"):
+        raise ToolDenied("kind must be announce, rescheduled or after")
+    async with sessionmaker()() as db:
+        e = await _netsec_required(db, customer)
+        try:
+            ch = await changes.find_change(db, change, e.id)
+        except changes.ChangeError as ex:
+            raise _change_err(ex) from ex
+        if ch.status == "draft":
+            raise ToolDenied("a draft is not sent to the customer: plan it first")
+        if kind == "after" and ch.status not in ("completed", "failed"):
+            raise ToolDenied("the change is not finished yet")
+        entry = await changes.send_notice(db, ch, kind, base_url=await public_base_url(db))
+        await db.commit()
+    return _jsonable({"change": changes.label(ch), "notice": entry})
 
 
 # ------------------------------------------------------------------ MCP hub

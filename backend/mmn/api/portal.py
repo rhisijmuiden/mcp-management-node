@@ -376,3 +376,26 @@ async def close(tid: str, db: AsyncSession = Depends(get_db), u: PortalUser = De
         out = tickets.ticket_out(tk, await _names(db, u), staff=False)
     events.publish("ticket.updated", {"id": tk.id})
     return out
+
+
+# ------------------------------------------------------------------ change calendar (phase 22)
+@router.get("/changes")
+async def portal_changes(request: Request, db: AsyncSession = Depends(get_db), u: PortalUser = Depends(portal_user)):
+    """The customer's planned maintenance and changes (no drafts, no internal notes), the last 90 days and
+    everything ahead, plus the secret iCal link of the customer when staff made one."""
+    from mmn.services import changes
+
+    now = datetime.now(UTC)
+    with own(u):
+        rows = await changes.search(db, customer_id=u.customer_id, start=now - timedelta(days=90),
+                                    include_drafts=False)
+        nm = await _names(db, u)
+        nm = {"machines": nm["machines"], "tasks": {}, "runbooks": {}}
+        out = [changes.change_out(r, nm, staff=False) for r in rows]
+    c = changes.customer_settings(u.customer)
+    base = await public_base_url(db, request)
+    upcoming = [x for x in out if x["status"] in changes.ACTIVE]
+    past = sorted((x for x in out if x["status"] not in changes.ACTIVE), key=lambda x: x["starts_at"], reverse=True)
+    return {"upcoming": upcoming, "past": past, "maintenance_window": u.customer.maintenance_window,
+            "timezone": str(await changes.tz_of(db)),
+            "ical_url": f"{base}/api/changes/ical/{c['ical_token']}.ics" if c.get("ical_token") else None}

@@ -51,6 +51,7 @@ export function useLiveEvents() {
             qc.invalidateQueries({ queryKey: ["ticket", String(msg.data.id ?? "")] });
             if (msg.event === "ticket.created") window.dispatchEvent(new CustomEvent("mmn:ticket", { detail: msg.data }));
           }
+          if (msg.event === "changes.updated") qc.invalidateQueries({ queryKey: ["changes"] });
           if (msg.event === "docs.changed") {
             qc.invalidateQueries({ queryKey: ["documents"] });
             qc.invalidateQueries({ queryKey: ["document", String(msg.data.id ?? "")] });

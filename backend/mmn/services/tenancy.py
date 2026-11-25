@@ -67,6 +67,7 @@ def _criteria(ids: list[str]):
         BackupCoverage,
         CertEndpoint,
         Certificate,
+        Change,
         ConfigBackup,
         CostItem,
         CostRate,
@@ -114,6 +115,7 @@ def _criteria(ids: list[str]):
     ticket_ids = select(Ticket.id).where(Ticket.customer_id.in_(ids)).scalar_subquery()
     return [
         with_loader_criteria(Document, Document.customer_id.in_(ids), include_aliases=True),
+        with_loader_criteria(Change, Change.customer_id.in_(ids), include_aliases=True),
         with_loader_criteria(CostItem, CostItem.customer_id.in_(ids), include_aliases=True),
         with_loader_criteria(CostRate, or_(CostRate.customer_id.is_(None), CostRate.customer_id.in_(ids)),
                              include_aliases=True),
