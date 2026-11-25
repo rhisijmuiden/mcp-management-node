@@ -55,7 +55,8 @@ log = logging.getLogger("mmn.remediation")
 
 TRIGGERS = ("alert", "finding")
 MODES = ("auto", "approve", "notify")
-ALERT_KINDS = ("offline", "service", "network", "disk", "storage", "memory", "cpu", "smart", "unifi", "backup")
+ALERT_KINDS = ("offline", "service", "network", "disk", "storage", "memory", "cpu", "smart", "unifi", "backup",
+               "uptime")
 # Finding codes of the nightly checks that a rule can answer (the interface offers these).
 FINDING_CODES = ("disk_full", "guest_disk_full", "agent_old", "reboot_pending", "updates_pending",
                  "updates_pending_sec", "security_updates", "cve_fixable", "windows_security", "cert_expiring",

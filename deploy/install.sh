@@ -119,7 +119,7 @@ fi
 # ------------------------------------------------------------------ packages
 step "Installing system packages"
 export DEBIAN_FRONTEND=noninteractive
-PKGS=(python3 python3-venv python3-packaging postgresql postgresql-client nginx ssl-cert curl ca-certificates tar openssh-client)
+PKGS=(python3 python3-venv python3-packaging postgresql postgresql-client nginx ssl-cert curl ca-certificates tar openssh-client iputils-ping)
 [[ "$FROM_SOURCE" == 1 ]] && PKGS+=(git nodejs npm)
 apt-get update -qq
 apt-get install -y -qq --no-install-recommends "${PKGS[@]}" >/dev/null

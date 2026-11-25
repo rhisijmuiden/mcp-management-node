@@ -57,6 +57,7 @@
   <div class="tiles">
     <div class="tile"><div class="l">{{ T.k_machines }}</div><div class="v">{{ s.machines.proxmox + s.machines.servers + s.machines.workstations }}</div></div>
     <div class="tile"><div class="l">{{ T.k_availability }}</div><div class="v">{% if s.availability is not none %}{{ '%.2f'|format(s.availability) }}%{% else %}–{% endif %}</div></div>
+    {% if s.uptime_sla is not none %}<div class="tile"><div class="l">{{ T.k_sla }}</div><div class="v">{{ '%.2f'|format(s.uptime_sla) }}%</div></div>{% endif %}
     <div class="tile"><div class="l">{{ T.k_incidents }}</div><div class="v">{{ s.incidents }}</div></div>
     <div class="tile"><div class="l">{{ T.k_updates }}</div><div class="v">{{ s.updates_installed }}</div></div>
     <div class="tile"><div class="l">{{ T.k_backups }}</div><div class="v">{{ s.backups_ok }} / {{ s.backups_failed }}</div></div>
@@ -76,6 +77,36 @@
     {% endfor %}
   </table></div>
   {% else %}<p class="empty">–</p>{% endif %}
+
+  {% set up = d.uptime or {} %}
+  <h2>{{ T.uptime_title }}</h2>
+  {% if up.checks %}
+  {% set pct = ('%.2f'|format(up.availability)) if up.availability is not none else '–' %}
+  <p>{% if up.target_pct is not none %}{{ T.uptime_line.format(pct=pct, target=('%g'|format(up.target_pct))) }}
+     {% if up.met %}<span class="b ok">{{ T.sla_met }}</span>{% elif up.met == false %}<span class="b critical">{{ T.sla_missed }}</span>{% endif %}
+     {% else %}{{ T.uptime_line_nt.format(pct=pct) }}{% endif %}</p>
+  {% if up.allowed_downtime_minutes is not none %}<p class="muted">{{ T.sla_allowed.format(down=('%g'|format(up.downtime_minutes)), allowed=('%g'|format(up.allowed_downtime_minutes))) }}</p>{% endif %}
+  {% if up.exclude_maintenance and up.maintenance_window %}<p class="muted">{{ T.maint_excluded.format(window=up.maintenance_window) }}</p>{% endif %}
+  <div class="card scroll"><table>
+    <tr><th>{{ T.check }}</th><th>{{ T.type }}</th><th>{{ T.uptime }}</th><th>{{ T.downtime }}</th><th>{{ T.count }}</th></tr>
+    {% for c in up.checks %}
+    {% set goal = up.target_pct if up.target_pct is not none else 99.5 %}
+    <tr><td>{{ c.name }}{% if not c.in_sla %} <span class="muted">({{ T.not_in_sla }})</span>{% endif %}<div class="muted">{{ c.target }}</div></td>
+      <td>{{ T['k_' ~ c.kind] }}</td>
+      <td>{% if c.availability is not none %}<span class="b {{ 'ok' if c.availability >= goal else ('warning' if c.availability >= 98 else 'critical') }}">{{ '%.2f'|format(c.availability) }}%</span>{% else %}–{% endif %}</td>
+      <td>{{ '%g'|format(c.downtime_minutes) }} {{ T.minutes }}</td><td>{{ c.incidents }}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% if up.incidents %}
+  <h3 style="font-size:14px;margin:16px 0 8px">{{ T.outage_list }}</h3>
+  <div class="card scroll"><table>
+    <tr><th>{{ T.when }}</th><th>{{ T.check }}</th><th>{{ T.what }}</th><th>{{ T.duration }}</th></tr>
+    {% for i in up.incidents %}
+    <tr><td class="muted">{{ dt(i.started_at) }}</td><td>{{ i.check }}</td><td>{{ i.error or '' }}</td><td>{{ '%g'|format(i.duration_minutes) }} {{ T.minutes }}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% endif %}
+  {% else %}<p class="empty">{{ T.none_uptime }}</p>{% endif %}
 
   <h2>{{ T.incidents }}</h2>
   {% if d.incidents['items'] %}

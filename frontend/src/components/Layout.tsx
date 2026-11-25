@@ -48,7 +48,7 @@ import {
   ShieldHalf,
   Wrench,
   Sunrise,
-  BookOpenCheck, HeartPulse,
+  BookOpenCheck, HeartPulse, Radar,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -199,6 +199,12 @@ export function Layout() {
     refetchInterval: 60_000,
   });
 
+  const uptimeDown = useQuery({
+    queryKey: ["uptime-checks", "menu"],
+    queryFn: async () => (await get<{ counts: Record<string, number> }>("api/uptime/checks")).counts.down ?? 0,
+    refetchInterval: 60_000,
+  });
+
   const sections: { title?: string; items: Item[] }[] = [
     {
       items: [
@@ -253,6 +259,7 @@ export function Layout() {
       title: t("nav.section.operations"),
       items: [
         { to: "/monitoring", icon: <Activity />, label: t("nav.monitoring") },
+        { to: "/uptime", icon: <Radar />, label: t("nav.uptime"), badge: uptimeDown.data || undefined },
         { to: "/backups", icon: <Archive />, label: t("nav.protection") },
         { to: "/proxmox/updates", icon: <ArrowUpCircle />, label: t("nav.updates") },
         { to: "/servers/software", icon: <ShieldCheck />, label: t("nav.srv_software"), admin: true },

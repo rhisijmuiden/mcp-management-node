@@ -238,6 +238,9 @@ class Environment(Base):
     backup: Mapped[dict] = mapped_column(JsonType, default=dict)
     # Phase 12: nightly checks {"enabled": bool, "cert_endpoints": ["host:port", ...]}.
     nightly: Mapped[dict] = mapped_column(JsonType, default=dict)
+    # Phase 16: uptime SLA {"target_pct": 99.9, "exclude_maintenance": true, "alert_breach": true,
+    # "recipients": [...]}; the free text ``sla`` stays for people and the AI.
+    uptime: Mapped[dict] = mapped_column(JsonType, default=dict)
 
     nodes: Mapped[list[Node]] = relationship(back_populates="environment", lazy="selectin")
 
@@ -923,3 +926,77 @@ class RemediationAttempt(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+# ------------------------------------------------------------------ phase 16: uptime and SLA
+class UptimeCheck(Base):
+    """An external check of one service of a customer: a website (HTTP(S) status, keyword, response
+    time), a TCP port, ping, a DNS record or a VPN endpoint. Run from Stackpilot itself or from the
+    agent of a machine at the customer (``probe_node_id``, for addresses only reachable there).
+
+    ``config``: http {"method", "expect_status": "200-399", "keyword", "keyword_absent",
+    "verify_tls", "follow_redirects"}, dns {"record_type", "expect", "server"}, vpn {"mode": "ssl" |
+    "tunnel"}. ``node_id`` is the machine the service runs on (optional): alerts then belong to that
+    machine, so an automatic recovery rule can restart it."""
+
+    __tablename__ = "uptime_checks"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("environments.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    kind: Mapped[str] = mapped_column(String(16))  # http | tcp | ping | dns | vpn
+    target: Mapped[str] = mapped_column(String(500))
+    port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    config: Mapped[dict] = mapped_column(JsonType, default=dict)
+    probe_node_id: Mapped[str | None] = mapped_column(ForeignKey("nodes.id", ondelete="SET NULL"), nullable=True)
+    node_id: Mapped[str | None] = mapped_column(ForeignKey("nodes.id", ondelete="SET NULL"), nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    interval_seconds: Mapped[int] = mapped_column(Integer, default=60)
+    timeout_seconds: Mapped[int] = mapped_column(Integer, default=10)
+    fail_after: Mapped[int] = mapped_column(Integer, default=2)  # consecutive failures before "down"
+    slow_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)  # slower = "degraded"
+    cert_warn_days: Mapped[int] = mapped_column(Integer, default=14)  # 0 = no certificate alert
+    severity: Mapped[str] = mapped_column(String(16), default="critical")  # critical | warning
+    in_sla: Mapped[bool] = mapped_column(Boolean, default=True)
+    # up | down | degraded | unknown (never checked or the probe agent is offline)
+    status: Mapped[str] = mapped_column(String(16), default="unknown")
+    status_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    failures: Mapped[int] = mapped_column(Integer, default=0)
+    failing_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_check_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_ms: Mapped[float | None] = mapped_column(nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    last_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cert_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+
+class UptimeResult(Base):
+    """One run of an uptime check (kept 35 days; incidents are kept longer for the SLA)."""
+
+    __tablename__ = "uptime_results"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    check_id: Mapped[str] = mapped_column(ForeignKey("uptime_checks.id", ondelete="CASCADE"), index=True)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)  # None = could not check (probe offline)
+    ms: Mapped[float | None] = mapped_column(nullable=True)
+    code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error: Mapped[str | None] = mapped_column(String(300), nullable=True)
+
+
+class UptimeIncident(Base):
+    """A period in which a check was down, from its first failed run until the first good one."""
+
+    __tablename__ = "uptime_incidents"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    check_id: Mapped[str] = mapped_column(ForeignKey("uptime_checks.id", ondelete="CASCADE"), index=True)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("environments.id", ondelete="CASCADE"), index=True)
+    check_name: Mapped[str] = mapped_column(String(120))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    error: Mapped[str | None] = mapped_column(String(500), nullable=True)

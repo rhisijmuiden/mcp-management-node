@@ -46,6 +46,10 @@ export function useLiveEvents() {
             if (msg.data.step === "finished") qc.invalidateQueries({ queryKey: ["dashboard"] });
           }
           if (msg.event === "maintenance") qc.invalidateQueries();
+          if (msg.event === "uptime.result" && msg.data.change) {
+            qc.invalidateQueries({ queryKey: ["uptime-checks"] });
+            qc.invalidateQueries({ queryKey: ["uptime-sla"] });
+          }
           if (msg.event === "node.status") scheduleNodes(String(msg.data.node_id ?? ""));
           if (msg.event === "task.run") {
             const rid = String(msg.data.run_id ?? "");

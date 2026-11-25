@@ -438,6 +438,38 @@ One sample per node per minute, kept for 30 days: CPU, memory and disk with tren
 usage and SMART/wearout of physical disks (collected every 10 minutes). Alerts for offline nodes, high CPU, memory,
 disk or storage use, failing disks and UniFi problems are mailed when they open and close.
 
+### Uptime & SLA
+
+Operations → **Uptime & SLA**: external checks of each customer's services, and the SLA they add up to.
+
+- **Kinds of checks.** *Website* (HTTP or HTTPS: the expected status such as 200-399, a keyword that must, or must
+  not, be on the page, the response time and the TLS certificate with its expiry date), *TCP port* (mail server,
+  RDP gateway, database), *ping*, *DNS* (a record of type A, AAAA, CNAME, MX, TXT, NS, SOA, CAA, SRV or PTR, with an
+  optional expected value and resolver) and *VPN* (the portal of an SSL VPN answers TLS, or a host behind a
+  site-to-site, WireGuard or IPsec tunnel answers ping).
+- **Where from.** From Stackpilot itself (the outside view), or from the agent of a machine at the customer, for
+  addresses that are only reachable there and for tunnels. When that agent is offline the result is "unknown", not
+  down. A check can also name the machine its service runs on, so its alerts belong to that machine and an
+  automatic recovery rule ("uptime check down") can restart the service.
+- **Interval and limits.** Every 30 seconds to an hour, a timeout, "down after" N failed checks in a row, an
+  optional "slow above" limit (the check becomes *slow* with a warning) and a warning before the certificate
+  expires. **Test** in the editor runs the check once without saving it.
+- **Outages and alerts.** An outage starts at the first failed check and ends at the first good one. A check that
+  is down, slow or has an expiring certificate is an alert in Monitoring, mailed like every other alert and also to
+  the customer's extra uptime recipients. The menu shows how many checks are down.
+- **History.** Response times and good/failed checks over 24 hours, 7 and 30 days, the latest results with their
+  errors and the outages; availability per check over 24 hours, 7 and 30 days. Results are kept 35 days, outages
+  two years.
+- **SLA per customer.** The tab *SLA* shows per month the measured availability of the checks that count in the
+  SLA (time-weighted), the target, met or not, and the downtime against the allowed downtime. The target is the
+  customer's uptime SLA setting, or a percentage in its SLA text ("99,9% uptime"). Downtime inside the customer's
+  maintenance window does not count unless you turn that off. Optionally an alert when the current month falls
+  below the target. The **monthly report** has a section *Service availability (SLA)* with the result, every check
+  and the outages.
+
+Over MCP: `list_uptime_checks`, `get_uptime_check`, `run_uptime_check`, `get_sla_report`, and with the scope
+`monitoring` also `save_uptime_check`, `delete_uptime_check` and `set_uptime_sla`.
+
 ### Package updates
 
 **Updates** shows the pending package updates of all nodes, installs them with a live log and reboots where needed.

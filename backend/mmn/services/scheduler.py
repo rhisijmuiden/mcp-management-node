@@ -362,6 +362,10 @@ async def start() -> None:
                       coalesce=True, max_instances=1)
     scheduler.add_job(_unifi_poll_job, "interval", minutes=5, id="unifi-poll", replace_existing=True,
                       coalesce=True, max_instances=1)
+    scheduler.add_job(_uptime_job, "interval", seconds=15, id="uptime-tick", replace_existing=True,
+                      coalesce=True, max_instances=1, next_run_time=datetime.now(UTC) + timedelta(seconds=20))
+    scheduler.add_job(_uptime_prune_job, CronTrigger(hour=5, minute=7, timezone="UTC"), id="uptime-prune",
+                      replace_existing=True, coalesce=True)
     scheduler.add_job(_unifi_prune_job, CronTrigger(hour=4, minute=53, timezone="UTC"), id="unifi-prune",
                       replace_existing=True, coalesce=True)
     scheduler.start()
@@ -441,6 +445,24 @@ async def _unifi_prune_job() -> None:
         await service.prune_events()
     except Exception:  # noqa: BLE001
         log.exception("pruning UniFi events failed")
+
+
+async def _uptime_job() -> None:
+    from mmn.services import uptime
+
+    try:
+        await uptime.tick()
+    except Exception:  # noqa: BLE001
+        log.exception("uptime checks failed")
+
+
+async def _uptime_prune_job() -> None:
+    from mmn.services import uptime
+
+    try:
+        await uptime.prune()
+    except Exception:  # noqa: BLE001
+        log.exception("pruning uptime results failed")
 
 
 def stop() -> None:
