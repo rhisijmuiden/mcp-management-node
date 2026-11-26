@@ -625,6 +625,16 @@ async def build(db: AsyncSession, e: Environment, period: str, lang: str = "en",
                            "rule": a["rule_name"], "status": a["status"]}
                           for a in reversed(rec["items"]) if a["status"] not in ("notified",)]}
 
+    # Work performed, written for the customer: tasks on their machines, procedures, automatic
+    # recovery, planned changes and handled requests, with how long each took.
+    from mmn.services import worklog
+
+    try:
+        work = await worklog.collect(db, e, ns, start, end, lang, tz)
+    except Exception:  # noqa: BLE001 - the rest of the report is still useful
+        log.exception("work section of the report of %s", e.name)
+        work = None
+
     # Uptime checks and the uptime SLA (phase 16).
     from mmn.services import uptime as uptime_svc
 
@@ -649,6 +659,7 @@ async def build(db: AsyncSession, e: Environment, period: str, lang: str = "en",
         "customer": {"id": e.id, "name": e.name, "contact": e.contact_name, "email": e.contact_email,
                      "sla": e.sla, "maintenance_window": e.maintenance_window},
         "status": status,
+        "work": work,
         "summary": {"machines": {"proxmox": sum(1 for n in ns if n.kind == "proxmox"),
                                  "servers": sum(1 for n in ns if customers.machine_type(n) == "server"),
                                  "workstations": len(ws)},
@@ -703,6 +714,7 @@ KORAAL = (255, 107, 87)
 MUTED = (79, 91, 115)
 LINE = (220, 225, 235)
 SOFT = (246, 247, 251)
+WORK_TONE = {"done": "ok", "fixed": "ok", "partial": "warning", "failed": "critical"}
 TONE = {"ok": (28, 138, 87), "warning": (168, 107, 0), "critical": (194, 52, 52), "unknown": MUTED,
         "high": (194, 52, 52), "medium": (168, 107, 0), "low": MUTED, "info": MUTED}
 
@@ -836,6 +848,20 @@ def render_pdf(data: dict[str, Any], tz: ZoneInfo) -> bytes:
     pdf.set_text_color(*TONE.get(st, NACHT))
     pdf.set_font("Helvetica", "B", 10)
     pdf.cell(0, 6, L(T[f"overall_{st}"]), new_x="LMARGIN", new_y="NEXT")
+
+    work = data.get("work")
+    if work:
+        lb = work["labels"]
+        h2(lb["title"])
+        if work["items"]:
+            para(work["line"])
+            pdf.ln(1)
+            rows = [[_fmt_dt(x["at"], tz), x["title"] + (f" - {x['detail']}" if x.get("detail") else ""),
+                     x.get("where") or "-", x["by_label"], x["took"], x["result_label"]] for x in work["items"]]
+            table([lb["when"], lb["what"], lb["where"], lb["by"], lb["took"], lb["result"]], rows,
+                  [27, 67, 34, 22, 17, 19], [WORK_TONE.get(x["result"]) for x in work["items"]], 5)
+        else:
+            para(lb["none"], muted=True)
 
     h2(T["availability"])
     if data["availability"]:

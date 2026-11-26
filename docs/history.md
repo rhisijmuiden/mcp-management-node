@@ -32,6 +32,7 @@ Stackpilot is built in phases. Each phase is one pull request and one minor rele
 | 22 | v0.22.0 | Change calendar with notices to the customer |
 | – | v0.22.1 | Fix: numeric weekdays in cron schedules follow standard cron (0 and 7 = Sunday, 6 = Saturday) |
 | – | v0.22.2 | Fix: generating a monthly report failed (Internal Server Error) when the backup coverage listed items |
+| – | v0.23.0 | Monthly report: "Work performed" overview for the customer (what was done, by whom, how long, result), EN + NL |
 
 ## What each phase added
 
