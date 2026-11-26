@@ -10,6 +10,12 @@ which runs failed. Sources:
 * Windows servers and workstations: Windows Server Backup (policy, system state, last result) and
   known backup agents (Veeam with its last session, Acronis, Synology Active Backup, ...), read with a
   fixed read-only PowerShell script through the agent's command channel.
+* Veeam Backup & Replication servers (the Veeam Backup Service runs on the machine): the jobs, the last
+  sessions with the result per VM and the restore points per VM, read with a fixed read-only script in
+  PowerShell 7 (``pwsh``, which the Veeam module of v13 needs; Windows PowerShell 5.1 when pwsh is
+  missing, for older versions). The VMs are matched by name to the customer's machines, so a server that
+  is backed up as a Hyper-V or VMware VM shows its Veeam restore points; VMs without an agent are listed
+  as items of their own. Nothing in Veeam is changed.
 * Linux servers: backup tools, timers and cron entries (proxmox-backup-client, restic, borg, ...),
   and whether the machine is a Proxmox Backup Server (then its datastores and jobs, see ``pbs``).
 * A machine that is itself a guest counts as covered by the guest's backup.
@@ -48,7 +54,7 @@ TASK_DAYS = 14
 LOCAL_TTL = timedelta(hours=2)  # Windows/Linux checks on the machine itself are repeated at most this often
 FRESH_FOR_ALERTS = timedelta(hours=6)  # older coverage is not used for alerts
 SHARED_TYPES = {"pbs", "nfs", "cifs", "cephfs", "glusterfs", "rbd", "iscsi"}
-KEY_RE = re.compile(r"^(guest:[A-Za-z0-9_.-]{1,100}:\d{3,9}|machine:[0-9a-f]{32})$")
+KEY_RE = re.compile(r"^(guest:[A-Za-z0-9_.-]{1,100}:\d{3,9}|machine:[0-9a-f]{32}|veeam:[0-9a-f]{32}:[a-z0-9_.-]{1,100})$")
 UPID_RE = re.compile(r"^UPID:[A-Za-z0-9._@!:-]{10,300}$")
 FAIL_RE = re.compile(r"ERROR: Backup of VM (\d+) failed - (.+)")
 # Status order: problems first.
@@ -358,6 +364,108 @@ try{$e=Get-WinEvent -FilterHashtable @{LogName='Veeam Agent';Id=190} -MaxEvents 
 if($e){$m=[string]$e.Message;$r.veeam=[ordered]@{at=(D $e.TimeCreated);level=[int]$e.Level;message=$m.Substring(0,[Math]::Min(300,$m.Length))}}}catch{}
 $r|ConvertTo-Json -Depth 5 -Compress"""
 
+# Veeam Backup & Replication, read-only (only Get-* cmdlets): jobs, the last sessions with the result per
+# VM, and the restore points per VM. Runs in PowerShell 7 (pwsh), see VEEAM_WRAPPER. Times in UTC.
+VEEAM_SCRIPT = r"""$ErrorActionPreference='Stop';$WarningPreference='SilentlyContinue'
+$r=[ordered]@{v=1;ps=$PSVersionTable.PSVersion.ToString();jobs=@();vms=@();errors=@()}
+function D($d){if($d -and ([datetime]$d).Year -gt 1901){([datetime]$d).ToUniversalTime().ToString('o')}}
+try{Import-Module Veeam.Backup.PowerShell -DisableNameChecking}catch{$r.errors+=("module: "+$_.Exception.Message);$r|ConvertTo-Json -Depth 5 -Compress;exit}
+$ss=@();try{$t0=(Get-Date).AddDays(-7);$ss=@(Get-VBRBackupSession|?{$_.CreationTime -gt $t0}|Sort-Object CreationTime -Descending)}catch{$r.errors+=("sessions: "+$_.Exception.Message)}
+try{$r.jobs=@(Get-VBRJob|%{$j=$_;$js=@($ss|?{$_.JobId -eq $j.Id});$l=$js|?{[string]$_.State -eq 'Stopped'}|select -First 1
+[ordered]@{name=$j.Name;type=[string]$j.TypeToString;scheduled=[bool]$j.IsScheduleEnabled;running=[bool]($js|?{[string]$_.State -ne 'Stopped'});last_result=$(if($l){[string]$l.Result});last_start=$(if($l){D $l.CreationTime});last_end=$(if($l){D $l.EndTime})}})}catch{$r.errors+=("jobs: "+$_.Exception.Message)}
+$task=@{};$run=@{}
+foreach($x in ($ss|select -First 40)){try{$done=[string]$x.State -eq 'Stopped';foreach($k in $x.GetTaskSessions()){$n=[string]$k.Name
+if(-not $done){$run[$n]=$true}elseif(-not $task[$n]){$m=[string]$k.Info.Reason;$task[$n]=[ordered]@{status=[string]$k.Status;at=(D $x.EndTime);job=$x.JobName;reason=$m.Substring(0,[Math]::Min(300,$m.Length))}}}}catch{$r.errors+=("tasks: "+$_.Exception.Message)}}
+try{$r.vms=@(Get-VBRRestorePoint|Group-Object VmName|%{$g=@($_.Group|Sort-Object CreationTime -Descending);$ok=$g|?{-not $_.IsCorrupted -and $_.IsConsistent}|select -First 1;$b=$g[0].GetBackup();$n=$_.Name
+[ordered]@{name=$n;job=([string]$b.JobName -replace (' - '+[regex]::Escape($n)+'$'),'');type=[string]$b.TypeToString;points=$g.Count;last=$(if($ok){D $ok.CreationTime});last_full=(D ($g|?{-not $_.IsCorrupted -and [string]$_.Algorithm -eq 'Full'}|select -First 1).CreationTime);size=$(if($ok){[int64]$ok.ApproxSize}else{0});task=$task[$n];running=[bool]$run[$n]}})}catch{$r.errors+=("points: "+$_.Exception.Message)}
+$r|ConvertTo-Json -Depth 5 -Compress"""
+
+
+def veeam_wrapper() -> str:
+    """Windows PowerShell 5.1 command that runs VEEAM_SCRIPT in pwsh (7) when it is installed."""
+    import base64
+
+    enc = base64.b64encode(VEEAM_SCRIPT.encode("utf-16-le")).decode()
+    return ("$p=@(\"$env:ProgramFiles\\PowerShell\\7\\pwsh.exe\",(Get-Command pwsh -ErrorAction SilentlyContinue).Source)"
+            "|?{$_ -and (Test-Path $_)}|select -First 1\n"
+            f"$e='{enc}'\n"
+            "if($p){& $p -NoProfile -NonInteractive -EncodedCommand $e}"
+            "else{'NOPWSH';powershell.exe -NoProfile -NonInteractive -EncodedCommand $e}")
+
+
+# Backup types of Veeam whose items are machines (VMs and agents), not Microsoft 365, Entra ID, NAS, ...
+VEEAM_MACHINE_TYPES = re.compile(r"hyper-v|vmware|vsphere|vcloud|nutanix|proxmox|agent|windows|linux|copy", re.I)
+
+
+def parse_veeam(stdout: str) -> dict[str, Any]:
+    raw = (stdout or "").strip()
+    start = raw.find("{")
+    if start < 0:
+        raise NodeError("the Veeam check returned no data: " + raw[:200])
+    try:
+        d = json.loads(raw[start:])
+    except ValueError as e:
+        raise NodeError(f"the Veeam check returned invalid data: {e}") from e
+
+    def lst(v: Any) -> list[Any]:
+        return [v] if isinstance(v, (dict, str)) else list(v or [])
+
+    errors = [str(x)[:300] for x in lst(d.get("errors"))]
+    if "NOPWSH" in raw[:start] and any(x.startswith("module:") for x in errors):
+        errors.append("PowerShell 7 (pwsh) is not installed; the Veeam module of version 13 needs it")
+    vms = []
+    for v in lst(d.get("vms")):
+        if not isinstance(v, dict) or not v.get("name"):
+            continue
+        task = v.get("task") if isinstance(v.get("task"), dict) else None
+        vms.append({"name": str(v["name"])[:200], "job": str(v.get("job") or "")[:200],
+                    "type": str(v.get("type") or "")[:100], "points": int(v.get("points") or 0),
+                    "last": v.get("last"), "last_full": v.get("last_full"), "size": int(v.get("size") or 0),
+                    "running": bool(v.get("running")), "task": task})
+    jobs = [j for j in lst(d.get("jobs")) if isinstance(j, dict)]
+    return {"version": str(d.get("ps") or ""), "jobs": jobs[:100], "vms": vms[:500], "errors": errors}
+
+
+def _veeam_slug(name: str) -> str:
+    return re.sub(r"[^a-z0-9_.-]", "-", name.lower())[:100] or "vm"
+
+
+def classify_veeam_vm(vm: dict[str, Any], max_h: int, now: datetime) -> tuple[str, str | None]:
+    """Status and detail of one VM in Veeam: failed when the last finished run of the VM failed after the last
+    good restore point, otherwise never/stale/ok by the age of the last good restore point."""
+    last = vm.get("last")
+    task = vm.get("task") or {}
+    status = str(task.get("status") or "")
+    age = _age_h(last, now)
+    if status == "Failed" and (not last or (task.get("at") or "") > last):
+        return "failed", task.get("reason") or "Failed"
+    if not last:
+        return "never", None
+    if age is not None and age > max_h:
+        return "stale", None
+    return "ok", (task.get("reason") or None) if status == "Warning" else None
+
+
+def veeam_index(machines: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """VMs of every Veeam server of a customer by short lower-case name (newest restore point wins)."""
+    out: dict[str, dict[str, Any]] = {}
+    for m in machines:
+        vs = (m.get("local") or {}).get("veeam_server") or {}
+        for vm in vs.get("vms") or []:
+            k = _short(vm["name"])
+            item = {**vm, "server_id": m["machine_id"], "server": m["name"]}
+            if k not in out or (vm.get("last") or "") > (out[k].get("last") or ""):
+                out[k] = item
+    return out
+
+
+def _veeam_out(vm: dict[str, Any]) -> dict[str, Any]:
+    task = vm.get("task") or {}
+    return {"server": vm.get("server"), "server_id": vm.get("server_id"), "job": vm.get("job"),
+            "points": vm.get("points"), "size": vm.get("size"), "last_full": vm.get("last_full"),
+            "running": vm.get("running"), "result": task.get("status"), "result_at": task.get("at")}
+
+
 LINUX_SCRIPT = r"""export LC_ALL=C
 s(){ echo "@@@$1"; }
 s tools; for c in proxmox-backup-client proxmox-backup-manager restic borg borgmatic rsnapshot duplicity duplicati-cli urbackupclientctl veeamconfig bacula-fd bareos-fd; do command -v "$c" >/dev/null 2>&1 && echo "$c"; done
@@ -418,8 +526,21 @@ async def check_machine(n: Node) -> dict[str, Any]:
     if res.get("timed_out"):
         raise NodeError("the backup check timed out")
     out = parse_windows(res.get("stdout") or "") if n.kind == "windows" else parse_linux(res.get("stdout") or "")
+    if n.kind == "windows" and any(a.get("name") == "VeeamBackupSvc" for a in out.get("agents") or []):
+        out["veeam_server"] = await check_veeam(n)
     out["checked_at"] = datetime.now(UTC).isoformat()
     return out
+
+
+async def check_veeam(n: Node) -> dict[str, Any]:
+    """Read the jobs, sessions and restore points of a Veeam Backup & Replication server (read-only)."""
+    try:
+        res = await agent_hub.request(n.id, "exec", {"command": veeam_wrapper(), "timeout": 240}, timeout=270) or {}
+        if res.get("timed_out"):
+            return {"error": "the Veeam check timed out", "vms": [], "jobs": []}
+        return parse_veeam(res.get("stdout") or "")
+    except (AgentError, NodeError) as e:
+        return {"error": str(e)[:300], "vms": [], "jobs": []}
 
 
 def _short(name: str | None) -> str:
@@ -556,17 +677,33 @@ def classify_guest(g: dict[str, Any], policy: dict[str, Any], now: datetime) -> 
 
 
 def classify_machine(m: dict[str, Any], policy: dict[str, Any], now: datetime,
-                     guests_by_key: dict[str, dict[str, Any]]) -> dict[str, Any]:
+                     guests_by_key: dict[str, dict[str, Any]],
+                     veeam_vms: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
     r = dict(m)
     local = m.get("local") or {}
     max_h = policy["max_age_hours"]
-    method, st, last, detail = None, None, None, None
+    method, st, last, detail, vbr = None, None, None, None, None
     wsb = local.get("wsb") or {}
     veeam = local.get("veeam") or {}
+    vserver = local.get("veeam_server")
+    vm = (veeam_vms or {}).get(_short(m.get("name"))) if m.get("kind", "machine") == "machine" else None
+    if vm and vm.get("server_id") == m.get("machine_id"):
+        vm = None  # the Veeam server itself
     if m["key"] in policy["exclude"]:
         st = "excluded"
     elif local.get("pbs_server"):
         method, st = "pbs", "backup_server"
+    elif vm:
+        method, last = "veeam_br", vm.get("last")
+        st, detail = classify_veeam_vm(vm, max_h, now)
+        vbr = _veeam_out(vm)
+    elif vserver:
+        method, st = "veeam_server", "backup_server"
+        jobs = vserver.get("jobs") or []
+        vbr = {"jobs": len(jobs), "vms": len(vserver.get("vms") or []),
+               "failed_jobs": [j.get("name") for j in jobs if j.get("last_result") == "Failed"],
+               "version": vserver.get("version")}
+        detail = vserver.get("error") or ("; ".join(vserver.get("errors") or []) or None)
     elif wsb.get("policy"):
         method, last = "wsb", wsb.get("last_success")
         age = _age_h(last, now)
@@ -592,8 +729,28 @@ def classify_machine(m: dict[str, Any], policy: dict[str, Any], now: datetime,
     if m.get("role") == "workstation" and not policy.get("workstations") and st in PROBLEMS:
         st = "not_monitored"
     r.update({"status": st, "method": method, "last_backup": last, "age_hours": _age_h(last, now), "detail": detail,
-              "system_state": wsb.get("system_state") if wsb.get("policy") else None})
+              "system_state": wsb.get("system_state") if wsb.get("policy") else None, "veeam": vbr})
     return r
+
+
+def veeam_items(machines: list[dict[str, Any]], vms: dict[str, dict[str, Any]], policy: dict[str, Any],
+                now: datetime) -> list[dict[str, Any]]:
+    """Coverage items for VMs in Veeam that are no Stackpilot machine of the customer (no agent on them)."""
+    names = {_short(m.get("name")) for m in machines}
+    out = []
+    for k, vm in sorted(vms.items()):
+        if k in names or not VEEAM_MACHINE_TYPES.search(vm.get("type") or ""):
+            continue
+        key = f"veeam:{vm['server_id']}:{_veeam_slug(vm['name'])}"
+        if key in policy["exclude"]:
+            st, detail = "excluded", None
+        else:
+            st, detail = classify_veeam_vm(vm, policy["max_age_hours"], now)
+        out.append({"key": key, "kind": "veeam_vm", "machine_id": vm["server_id"], "name": vm["name"], "os": None,
+                    "role": "server", "online": None, "local": None, "error": None, "guest": None, "status": st,
+                    "method": "veeam_br", "last_backup": vm.get("last"), "age_hours": _age_h(vm.get("last"), now),
+                    "detail": detail, "system_state": None, "veeam": _veeam_out(vm)})
+    return out
 
 
 def _summary(guests_: list[dict[str, Any]], machines: list[dict[str, Any]]) -> dict[str, Any]:
@@ -630,7 +787,10 @@ def view(e: Environment, row: BackupCoverage | None, *, now: datetime | None = N
         all_guests += gs
         clusters.append({**{k: v for k, v in c.items() if k != "guests"}, "guest_count": len(gs)})
     by_key = {g["key"]: g for g in all_guests}
-    machines = [classify_machine(m, policy, now, by_key) for m in data.get("machines") or []]
+    raw_machines = data.get("machines") or []
+    vms = veeam_index(raw_machines)
+    machines = [classify_machine(m, policy, now, by_key, vms) for m in raw_machines]
+    machines += veeam_items(raw_machines, vms, policy, now)
     all_guests.sort(key=lambda r: (order.get(r["status"], 99), r["cluster"], r["vmid"]))
     machines.sort(key=lambda r: (order.get(r["status"], 99), r["role"] != "server", r["name"].lower()))
     return {"customer": {"id": e.id, "name": e.name, "sla": e.sla}, "policy": policy,
@@ -753,7 +913,7 @@ def scan_findings(v: dict[str, Any] | None, finding) -> list[dict[str, Any]]:
             out.append(finding("high", "backups", m["name"], f"The last backup failed ({m.get('detail') or m.get('method')}).",
                                "Check the backup on the machine and run it again.", "diagnose_server",
                                code="machine_backup_failed", detail=m.get("detail") or m.get("method") or "-"))
-        elif m["status"] in ("none", "never"):
+        elif m["status"] in ("none", "never") and m.get("kind") != "veeam_vm":
             out.append(finding("medium", "backups", m["name"],
                                "No backup found: no Windows Server Backup, no backup agent and not a backed-up guest.",
                                "Set up a backup (for Windows: Windows Server Backup with system state), or back the "
