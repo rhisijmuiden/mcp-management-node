@@ -97,7 +97,7 @@ Across servers: **Log search**, **Software & CVE** and **Data copy** (see the [f
 - `main` → production releases `vX.Y.Z` (published once per `VERSION`).
 - `test` → test builds `vX.Y.Z-test.N` (prereleases).
 
-**Info & updates** (bottom of the menu) shows the version, checks for updates, switches channel and installs an
+**Info & updates** (the version number in the top bar) shows the version, checks for updates, switches channel and installs an
 update. The privileged updater downloads the release again, verifies its SHA-256, backs up the database, migrates,
 switches the `current` link and restarts; when the health check fails it rolls back the code and database.
 Running the installer again also upgrades or repairs and keeps all data.

@@ -60,49 +60,89 @@ export const useCustomer = () => useContext(CustomerContext);
 export const useCustomers = () =>
   useQuery({ queryKey: ["customers"], queryFn: () => getAll<CustomerSummary[]>("api/customers"), refetchInterval: 60_000 });
 
-/** Customer switcher at the top of the menu: limits the whole app to one customer. */
+/** CSS colour for a customer colour name (the dot classes live in ENV_COLORS). */
+export const CUSTOMER_CSS: Record<string, string> = {
+  lucht: "var(--lucht)",
+  koraal: "var(--koraal)",
+  online: "var(--status-online)",
+  warning: "var(--status-warning)",
+  nacht: "var(--ink)",
+  info: "var(--lucht)",
+};
+
+/** One line under a customer in the switcher: what is linked and what needs attention. */
+function customerLine(c: CustomerSummary, t: (k: string, o?: Record<string, unknown>) => string): { text: string; tone: "muted" | "warning" | "offline" } {
+  const offline = c.machines - c.online;
+  if (offline > 0) return { text: t("top.cust_offline", { count: offline }), tone: "offline" };
+  if (c.alerts > 0) return { text: t("top.cust_alerts", { count: c.alerts }), tone: "warning" };
+  if (c.unifi.errors > 0) return { text: t("top.cust_unifi_error"), tone: "warning" };
+  if (!c.machines && !c.unifi.connections) return { text: t("top.cust_empty"), tone: "muted" };
+  return { text: t("top.cust_ok"), tone: "muted" };
+}
+
+/** Customer switcher in the top bar: limits the whole app to one customer. */
 export function CustomerSwitcher({ onNavigate }: { onNavigate?: () => void }) {
   const { t } = useTranslation();
   const { customerId, setCustomer } = useCustomer();
   const list = useCustomers();
   const navigate = useNavigate();
+  const [q, setQ] = useState("");
   const current = list.data?.find((c) => c.id === customerId);
   useEffect(() => {
     // The chosen customer was deleted: back to all customers.
     if (customerId && list.data && !current) setCustomer("");
   }, [customerId, list.data, current, setCustomer]);
-  const item = "flex cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm outline-none data-[highlighted]:bg-sunken";
+  const shown = (list.data ?? []).filter((c) => !q || c.name.toLowerCase().includes(q.toLowerCase()));
+  const item = "flex cursor-pointer items-center gap-3 rounded px-3 py-2 text-sm outline-none data-[highlighted]:bg-sunken";
+  const chip = "rounded bg-sunken px-1.5 py-px text-[10.5px] font-bold text-muted";
+  const pick = (id: string) => {
+    setCustomer(id);
+    setQ("");
+    if (id) toast.success(t("cust.switched", { name: list.data?.find((c) => c.id === id)?.name ?? "" }));
+  };
   return (
-    <DM.Root>
+    <DM.Root onOpenChange={(o) => { if (!o) setQ(""); }}>
       <DM.Trigger
-        className={cn(
-          "flex w-full cursor-pointer items-center gap-3 rounded-md border bg-raised px-3 py-2 text-left transition-colors hover:bg-sunken focus:outline-none focus-visible:ring-2 focus-visible:ring-lucht",
-          current ? "border-nacht dark:border-lucht" : "border-line",
-        )}
+        className="flex min-w-0 cursor-pointer items-center gap-2.5 rounded-md border border-white/20 bg-white/[0.07] px-3 py-1.5 text-left text-white transition-colors hover:bg-white/[0.14] focus:outline-none focus-visible:ring-2 focus-visible:ring-lucht sm:min-w-[240px]"
         aria-label={t("cust.switch")}
       >
-        {current ? <EnvDot color={current.color} className="size-3" /> : <Globe2 className="size-4 text-muted" />}
+        {current ? <span className="size-3 shrink-0 rounded-full" style={{ background: CUSTOMER_CSS[current.color] ?? "var(--lucht)" }} /> : <Globe2 className="size-4 shrink-0 text-white/60" />}
         <span className="min-w-0 flex-1 leading-tight">
-          <span className="block text-[11px] font-semibold text-muted">{t("cust.customer")}</span>
-          <span className="block truncate text-[14px] font-semibold">{current ? current.name : t("cust.all")}</span>
+          <span className="hidden text-[10px] font-bold uppercase tracking-[0.08em] text-white/60 sm:block">{t("cust.customer")}</span>
+          <span className="block truncate text-[13.5px] font-semibold">{current ? current.name : t("cust.all")}</span>
         </span>
-        <ChevronsUpDown className="size-4 shrink-0 text-muted" />
+        <ChevronsUpDown className="size-4 shrink-0 text-white/60" />
       </DM.Trigger>
       <DM.Portal>
-        <DM.Content align="start" sideOffset={6} className="z-50 max-h-[70vh] w-[260px] overflow-y-auto rounded-md border border-line bg-raised p-1 shadow-xl">
-          <DM.Item onSelect={() => setCustomer("")} className={item}>
-            <Globe2 className="size-4 text-muted" /> <span className="flex-1">{t("cust.all")}</span>
+        <DM.Content align="start" sideOffset={8} className="z-50 max-h-[75vh] w-[min(440px,calc(100vw-24px))] overflow-y-auto rounded-md border border-line bg-raised p-1.5 shadow-xl">
+          {(list.data?.length ?? 0) > 5 && (
+            <div className="p-1 pb-1.5">
+              <Input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.stopPropagation()} placeholder={t("top.cust_search")} aria-label={t("top.cust_search")} className="h-9" />
+            </div>
+          )}
+          <DM.Item onSelect={() => pick("")} className={item}>
+            <Globe2 className="size-4 text-muted" />
+            <span className="min-w-0 flex-1"><span className="block font-semibold">{t("cust.all")}</span><span className="block text-xs text-muted">{t("top.cust_all_hint")}</span></span>
             {!customerId && <Check className="size-4 text-koraal" />}
           </DM.Item>
           <DM.Separator className="my-1 h-px bg-line" />
-          {list.data?.map((c) => (
-            <DM.Item key={c.id} onSelect={() => setCustomer(c.id)} className={item}>
-              <EnvDot color={c.color} />
-              <span className="min-w-0 flex-1 truncate">{c.name}</span>
-              {c.status === "attention" && <span className="size-1.5 rounded-full bg-warning" aria-label={t("cust.status_attention")} />}
-              {customerId === c.id && <Check className="size-4 text-koraal" />}
-            </DM.Item>
-          ))}
+          {shown.map((c) => {
+            const line = customerLine(c, t);
+            return (
+              <DM.Item key={c.id} onSelect={() => pick(c.id)} className={cn(item, customerId === c.id && "bg-sunken")}>
+                <span className="size-2.5 shrink-0 rounded-full" style={{ background: CUSTOMER_CSS[c.color] ?? "var(--lucht)" }} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-semibold">{c.name}</span>
+                  <span className={cn("block truncate text-xs", line.tone === "offline" ? "text-offline" : line.tone === "warning" ? "text-warning" : "text-muted")}>{line.text}</span>
+                </span>
+                <span className="hidden shrink-0 gap-1 sm:flex">
+                  {c.machines > 0 && <span className={chip}>{t("top.chip_machines", { count: c.machines })}</span>}
+                  {c.unifi.connections > 0 && <span className={chip}>UniFi</span>}
+                </span>
+                {customerId === c.id && <Check className="size-4 shrink-0 text-koraal" />}
+              </DM.Item>
+            );
+          })}
           <DM.Separator className="my-1 h-px bg-line" />
           {current && (
             <DM.Item onSelect={() => { navigate(`/customers/${current.id}`); onNavigate?.(); }} className={item}>
