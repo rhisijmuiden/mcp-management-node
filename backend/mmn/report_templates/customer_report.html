@@ -39,6 +39,7 @@
   .b.warning, .b.medium { background:var(--warn-soft); color:var(--warn); }
   .b.critical, .b.high { background:var(--crit-soft); color:var(--crit); }
   .b.low, .b.info, .b.unknown { background:var(--wolk); color:var(--muted); }
+  .cat { display:inline-block; font-size:11px; font-weight:700; color:var(--koraal); text-transform:uppercase; letter-spacing:.4px; }
   ul.issues { margin:0; padding-left:18px; }
   footer { color:var(--muted); font-size:12px; text-align:center; padding:0 24px 32px; }
   @media print { body { background:#fff; } header { -webkit-print-color-adjust:exact; print-color-adjust:exact; } h2 { break-after:avoid; } tr { break-inside:avoid; } }
@@ -65,6 +66,23 @@
     <div class="tile"><div class="l">{{ T.k_ai }}</div><div class="v">{{ s.ai_changes }}</div></div>
   </div>
   <p class="status {{ d.status }}">{{ T['overall_' ~ d.status] }}</p>
+
+  {% set w = d.work %}
+  {% if w %}
+  <h2>{{ w.labels.title }}</h2>
+  {% if w['items'] %}
+  <p>{{ w.line }}</p>
+  <div class="card scroll"><table>
+    <tr><th>{{ w.labels.when }}</th><th>{{ w.labels.what }}</th><th>{{ w.labels.where }}</th><th>{{ w.labels.by }}</th><th>{{ w.labels.took }}</th><th>{{ w.labels.result }}</th></tr>
+    {% for x in w['items'] %}
+    <tr><td class="muted" style="white-space:nowrap">{{ dt(x.at) }}</td>
+      <td><span class="cat">{{ x.category_label }}</span><div>{{ x.title }}</div>{% if x.detail %}<div class="muted" style="font-size:12px">{{ x.detail }}</div>{% endif %}</td>
+      <td>{{ x.where or '–' }}</td><td>{{ x.by_label }}</td><td style="white-space:nowrap">{{ x.took }}</td>
+      <td><span class="b {{ {'done': 'ok', 'fixed': 'ok', 'partial': 'warning', 'failed': 'critical'}[x.result] }}">{{ x.result_label }}</span></td></tr>
+    {% endfor %}
+  </table></div>
+  {% else %}<p class="empty">{{ w.labels.none }}</p>{% endif %}
+  {% endif %}
 
   <h2>{{ T.availability }}</h2>
   {% if d.availability %}

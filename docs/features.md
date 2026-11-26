@@ -305,6 +305,11 @@ The customer's **Reports** tab makes an IT report per month, as PDF (house style
 
 - **Summary** with machines, availability of servers and Proxmox nodes, incidents, updates installed, backups OK and
   failed, security points and AI changes, plus an overall verdict.
+- **Work performed**, written for the customer in plain language: every task on their machines (updates, backups,
+  restore points, restarts, new servers, network changes), procedures (runbooks), automatic recovery, planned changes
+  from the change calendar and handled requests, each with when, by whom (engineer, AI assistant, automatic or on the
+  customer's request), how long it took and the result. Repeats on the same machine and day are merged and purely
+  technical jobs are left out.
 - **Availability** per server from the offline alerts (workstations are left out: they sleep), **incidents** from
   monitoring alerts, **updates** installed per machine (update jobs plus Windows Update / apt history) and pending,
   **Proxmox backups** (vzdump tasks of the month per cluster and guests without a backup job), **workstations** with
