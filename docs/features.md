@@ -2,9 +2,10 @@
 
 [← Back to the README](../README.md) · [MCP tool reference](mcp-tools.md) · [Installation](install.md)
 
-This guide follows the menu on the left of the app. Everything you can do in the interface, an AI assistant can do
+This guide describes every part of the app; [Finding your way](#finding-your-way) shows where each one sits in the menu. Everything you can do in the interface, an AI assistant can do
 through the [MCP tools](mcp-tools.md), within the limits you set.
 
+- [Finding your way](#finding-your-way)
 - [Customers](#customers)
 - [AI gateway](#ai-gateway)
   - [Command center](#command-center) · [Morning summary](#morning-summary) · [Approvals](#approvals) · [Policies & guardrails](#policies--guardrails) ·
@@ -25,6 +26,33 @@ through the [MCP tools](mcp-tools.md), within the limits you set.
 - [Interface, languages and security](#interface-languages-and-security)
 
 ---
+
+## Finding your way
+
+**Top bar.** The dark bar at the top holds the customer switcher, search, approvals waiting for you, the version
+(Info & updates) and your account menu (language, theme, sign out).
+
+- **Customer switcher.** Pick a customer and the whole app is limited to that customer: every list, page and
+  count. Each customer in the list shows how many machines it has, whether UniFi is linked, and what needs
+  attention (machines offline, open alerts). A coloured band under the top bar says which customer you are working
+  in, with links to the customer overview and back to all customers.
+- **Search (Ctrl+K or ⌘K).** Jump to any page, customer or machine by typing part of its name. Picking a customer
+  switches to it and opens its overview.
+
+**Left menu.** Grouped by what you want to do:
+
+| Group | Contains |
+| --- | --- |
+| Today | Command center, Morning summary, Approvals, Tickets |
+| Customer | Customer overview (when a customer is picked), All customers |
+| Environment | Proxmox, Servers, Workstations, Network (UniFi), Microsoft 365 |
+| Maintenance | Backups, Updates & software, Monitoring & uptime, Certificates & firewall, Change calendar |
+| Automation | Runbooks, Deployments, Scheduled tasks, Automatic recovery |
+| Knowledge & admin | Documentation, Password vault, Costs & licences |
+| Integrations (bottom) | Agents & pairing, Connected AI, API tokens, MCP hub, UniFi consoles, Mail server |
+| Settings (bottom) | AI policies, Tool catalog, AI sessions, Users, App backups, Notifications, Web server & proxy, Audit log, General |
+
+Old addresses keep working, so links in mails and reports still open the right page.
 
 ## Customers
 
@@ -798,7 +826,7 @@ App name, public address and default language.
 
 ![Info and updates](images/info-updates.png)
 
-**Info & updates** at the bottom of the menu shows the version, commit, build, uptime and the Python, PostgreSQL and OS
+**Info & updates** (the version number in the top bar) shows the version, commit, build, uptime and the Python, PostgreSQL and OS
 versions. It checks GitHub for a newer release, shows the release notes, switches between the **Production** (`main`)
 and **Test** (`test`) channel and **installs the update**: the updater downloads the release, verifies its SHA-256,
 backs up the database, migrates, restarts and rolls back the code and database when the new version doesn't start.

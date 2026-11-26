@@ -203,7 +203,7 @@ see **[installation](docs/install.md)**.
 - `main` → production releases `vX.Y.Z`
 - `test` → test builds `vX.Y.Z-test.N` (prereleases)
 
-Switch channel and update from **Info & updates** at the bottom of the menu. Releases are built by
+Switch channel and update from **Info & updates** (the version number in the top bar). Releases are built by
 [`.github/workflows/release.yml`](.github/workflows/release.yml).
 
 ## Development

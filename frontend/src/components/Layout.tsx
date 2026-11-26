@@ -48,17 +48,20 @@ import {
   ShieldHalf,
   Wrench,
   Sunrise,
+  Languages,
+  Search,
   BookOpenCheck, HeartPulse, Radar, CloudCog, LifeBuoy, BookText, LockKeyhole, Award, Flame, Waypoints, Wallet, CalendarRange,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
-import { useTranslation } from "react-i18next";
+import { Trans, useTranslation } from "react-i18next";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { post, get, patch } from "@/lib/api";
 import { applyTheme, localStorageSet, useAuth } from "@/lib/auth";
 import type { SystemInfo } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { InfoDialog } from "./InfoDialog";
-import { CustomerSwitcher, useCustomer } from "./customers";
+import { CUSTOMER_CSS, CustomerSwitcher, useCustomer, useCustomers } from "./customers";
+import { CommandPalette, type PageEntry } from "./CommandPalette";
 import { useLiveEvents } from "./useLiveEvents";
 import { PausedBanner } from "@/pages/Gateway";
 import i18n from "@/i18n";
@@ -75,7 +78,7 @@ interface Item {
   children?: Item[];
 }
 
-const EXACT = new Set(["/", "/proxmox", "/servers"]);
+const EXACT = new Set(["/", "/proxmox", "/servers", "/customers"]);
 
 function NavItem({ item, onClick, isAdmin, nested }: { item: Item; onClick?: () => void; isAdmin: boolean; nested?: boolean }) {
   const { t } = useTranslation();
@@ -148,6 +151,7 @@ export function Layout() {
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const info = useQuery({ queryKey: ["system-info"], queryFn: () => get<SystemInfo>("api/system/info"), refetchInterval: 5 * 60_000 });
   useLiveEvents();
   const isAdmin = user?.role === "admin";
@@ -260,26 +264,23 @@ export function Layout() {
 
   const sections: { title?: string; items: Item[] }[] = [
     {
-      items: [
-        { to: customerId ? `/customers/${customerId}` : "/customers", icon: <Building2 />, label: customerId ? t("nav.customer_page") : t("nav.customers") },
-      ],
-    },
-    {
-      title: t("nav.section.gateway"),
+      title: t("nav.section.today"),
       items: [
         { to: "/", icon: <LayoutDashboard />, label: t("nav.command_center") },
         { to: "/ai/nightly", icon: <Sunrise />, label: t("nav.nightly") },
         { to: "/ai/approvals", icon: <Hand />, label: t("nav.approvals"), admin: true, badge: pending.data?.pending },
-        { to: "/ai/policies", icon: <ShieldHalf />, label: t("nav.ai_policies"), admin: true },
-        { to: "/ai/hub", icon: <Network />, label: t("nav.mcp_hub"), admin: true },
-        { to: "/ai/tools", icon: <Wrench />, label: t("nav.tool_catalog"), admin: true },
-        { to: "/ai/connections", icon: <Bot />, label: t("nav.ai_connections") },
-        { to: "/ai/sessions", icon: <History />, label: t("nav.ai_sessions"), admin: true },
-        { to: "/ai/tokens", icon: <KeyRound />, label: t("nav.api_tokens") },
+        { to: "/tickets", icon: <LifeBuoy />, label: t("nav.tickets"), badge: ticketCounts.data?.needs_reply || undefined },
       ],
     },
     {
-      title: t("nav.section.infrastructure"),
+      title: t("nav.section.customer"),
+      items: [
+        ...(customerId ? [{ to: `/customers/${customerId}`, icon: <Building2 />, label: t("nav.customer_overview") }] : []),
+        { to: "/customers", icon: <Users />, label: t("nav.customers_all") },
+      ],
+    },
+    {
+      title: t("nav.section.environment"),
       items: [
         {
           icon: <Boxes />, label: t("nav.section.proxmox"), children: [
@@ -303,22 +304,27 @@ export function Layout() {
           icon: <Wifi />, label: t("nav.section.unifi"), children: [
             { to: "/unifi/network", icon: <Wifi />, label: t("nav.unifi_network") },
             { to: "/unifi/access", icon: <DoorClosed />, label: t("nav.unifi_access") },
-            { to: "/unifi/connections", icon: <Cable />, label: t("nav.unifi_connections") },
           ],
         },
         { to: "/m365", icon: <CloudCog />, label: t("nav.m365"), badge: m365Risk.data || undefined },
       ],
     },
     {
-      title: t("nav.section.operations"),
+      title: t("nav.section.maintenance"),
       items: [
-        { to: "/tickets", icon: <LifeBuoy />, label: t("nav.tickets"), badge: ticketCounts.data?.needs_reply || undefined },
-        { to: "/changes", icon: <CalendarRange />, label: t("nav.changes"), badge: ((changeBadge.data?.in_progress ?? 0) + (changeBadge.data?.warnings ?? 0)) || undefined },
-        { to: "/docs", icon: <BookText />, label: t("nav.docs") },
-        { to: "/vault", icon: <LockKeyhole />, label: t("nav.vault") },
-        { to: "/costs/overview", icon: <Wallet />, label: t("nav.costs"), badge: costBadge.data?.attention || undefined },
-        { to: "/monitoring", icon: <Activity />, label: t("nav.monitoring") },
-        { to: "/uptime", icon: <Radar />, label: t("nav.uptime"), badge: uptimeDown.data || undefined },
+        { to: "/backups", icon: <Archive />, label: t("nav.protection") },
+        {
+          icon: <ArrowUpCircle />, label: t("nav.updates_software"), children: [
+            { to: "/proxmox/updates", icon: <ArrowUpCircle />, label: t("nav.updates") },
+            { to: "/servers/software", icon: <ShieldCheck />, label: t("nav.srv_software"), admin: true },
+          ],
+        },
+        {
+          icon: <Activity />, label: t("nav.monitoring_uptime"), children: [
+            { to: "/monitoring", icon: <Activity />, label: t("nav.monitoring") },
+            { to: "/uptime", icon: <Radar />, label: t("nav.uptime"), badge: uptimeDown.data || undefined },
+          ],
+        },
         {
           icon: <ShieldCheck />, label: t("nav.security"), children: [
             { to: "/security/certificates", icon: <Award />, label: t("nav.sec_certs"), badge: certBadge || undefined },
@@ -326,30 +332,77 @@ export function Layout() {
             { to: "/security/vpn", icon: <Waypoints />, label: t("nav.sec_vpn"), badge: netsec.data?.vpn.watched_down || undefined },
           ],
         },
-        { to: "/backups", icon: <Archive />, label: t("nav.protection") },
-        { to: "/proxmox/updates", icon: <ArrowUpCircle />, label: t("nav.updates") },
-        { to: "/servers/software", icon: <ShieldCheck />, label: t("nav.srv_software"), admin: true },
-        { to: "/runbooks", icon: <BookOpenCheck />, label: t("nav.runbooks"), badge: runbookInput.data?.waiting_input },
-        { to: "/remediation", icon: <HeartPulse />, label: t("nav.remediation") },
-        { to: "/tasks", icon: <CalendarClock />, label: t("nav.tasks") },
-        { to: "/deployments", icon: <Rocket />, label: t("nav.deployments") },
+        { to: "/changes", icon: <CalendarRange />, label: t("nav.changes"), badge: ((changeBadge.data?.in_progress ?? 0) + (changeBadge.data?.warnings ?? 0)) || undefined },
       ],
     },
     {
-      title: t("nav.section.admin"),
+      title: t("nav.section.automation"),
       items: [
+        { to: "/runbooks", icon: <BookOpenCheck />, label: t("nav.runbooks"), badge: runbookInput.data?.waiting_input },
+        { to: "/deployments", icon: <Rocket />, label: t("nav.deployments") },
+        { to: "/tasks", icon: <CalendarClock />, label: t("nav.tasks") },
+        { to: "/remediation", icon: <HeartPulse />, label: t("nav.remediation") },
+      ],
+    },
+    {
+      title: t("nav.section.knowledge"),
+      items: [
+        { to: "/docs", icon: <BookText />, label: t("nav.docs") },
+        { to: "/vault", icon: <LockKeyhole />, label: t("nav.vault") },
+        { to: "/costs/overview", icon: <Wallet />, label: t("nav.costs"), badge: costBadge.data?.attention || undefined },
+      ],
+    },
+  ];
+
+  const footerItems: Item[] = [
+    {
+      icon: <Plug />, label: t("nav.section.integrations"), children: [
         { to: "/admin/agents", icon: <Plug />, label: t("nav.agents"), admin: true },
+        { to: "/ai/connections", icon: <Bot />, label: t("nav.ai_connections") },
+        { to: "/ai/tokens", icon: <KeyRound />, label: t("nav.api_tokens") },
+        { to: "/ai/hub", icon: <Network />, label: t("nav.mcp_hub"), admin: true },
+        { to: "/unifi/connections", icon: <Cable />, label: t("nav.unifi_connections_full") },
+        { to: "/admin/mail", icon: <Mail />, label: t("nav.mail"), admin: true },
+      ],
+    },
+    {
+      icon: <Settings />, label: t("nav.section.settings"), children: [
+        { to: "/ai/policies", icon: <ShieldHalf />, label: t("nav.ai_policies"), admin: true },
+        { to: "/ai/tools", icon: <Wrench />, label: t("nav.tool_catalog"), admin: true },
+        { to: "/ai/sessions", icon: <History />, label: t("nav.ai_sessions"), admin: true },
         { to: "/admin/users", icon: <Users />, label: t("nav.users"), admin: true },
         { to: "/admin/backups", icon: <DatabaseBackup />, label: t("nav.backups"), admin: true },
-        { to: "/admin/mail", icon: <Mail />, label: t("nav.mail"), admin: true },
         { to: "/admin/notifications", icon: <Bell />, label: t("nav.notifications"), admin: true },
         { to: "/admin/web-server", icon: <Globe />, label: t("nav.web_server"), admin: true },
         { to: "/admin/audit", icon: <ScrollText />, label: t("nav.audit"), admin: true },
         { to: "/admin/general", icon: <Settings />, label: t("nav.general"), admin: true },
       ],
     },
-    { title: t("nav.section.help"), items: [{ to: "/help", icon: <HelpCircle />, label: t("nav.help") }] },
+    { to: "/help", icon: <HelpCircle />, label: t("nav.help") },
   ];
+
+  // Every page for the Ctrl+K search, with the menu group it lives in.
+  const pages: PageEntry[] = [];
+  const collect = (items: Item[], group: string) => {
+    for (const i of items) {
+      if (i.admin && !isAdmin) continue;
+      if (i.children) collect(i.children, `${group} › ${i.label}`);
+      else if (i.to && !i.soon) pages.push({ to: i.to, label: i.label, group });
+    }
+  };
+  sections.forEach((s) => collect(s.items, s.title ?? ""));
+  collect(footerItems, t("nav.section.setup"));
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSearchOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const logout = async () => {
     await post("api/auth/logout");
@@ -372,109 +425,162 @@ export function Layout() {
 
   const sidebar = (
     <div className="flex h-full flex-col">
-      <div className="flex h-16 items-center gap-3 px-5">
-        <img src="brand/rhis-icon.svg" alt="" className="size-8 rounded-[8px]" />
-        <div className="min-w-0 leading-tight">
-          <div className="display line-clamp-2 text-[14px] leading-tight">{status?.app_name || "Stackpilot"}</div>
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-muted">Powered by RHIS</div>
-        </div>
-      </div>
-      <div className="px-3 pb-1 pt-1">
-        <CustomerSwitcher onNavigate={() => setMobileOpen(false)} />
-      </div>
-      <nav className="flex-1 overflow-y-auto px-3 pb-4">
+      <nav className="flex-1 overflow-y-auto px-3 pb-4" aria-label={t("nav.menu")}>
         {sections.map((s) => (
           <Section key={s.title ?? "top"} title={s.title} items={s.items} onNavigate={() => setMobileOpen(false)} isAdmin={isAdmin} />
         ))}
       </nav>
-      <div className="border-t border-line p-3">
-        <button
-          onClick={() => setInfoOpen(true)}
-          className="flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-left text-sm hover:bg-sunken"
-        >
-          <Info className="size-[18px] text-muted" />
-          <span className="flex-1">
-            <span className="block font-semibold">{t("info.button")}</span>
-            <span className="mono block text-xs text-muted">
-              {info.data ? `${info.data.tag}${info.data.channel === "test" ? " · test" : ""}` : "…"}
-            </span>
-          </span>
-          {info.data?.update_available && (
-            <span className="rounded-full bg-koraal px-2 py-0.5 text-[10px] font-bold uppercase text-nacht">{t("info.update_badge")}</span>
-          )}
-        </button>
+      <div className="border-t border-line px-3 pb-3 pt-1">
+        <Section items={footerItems} onNavigate={() => setMobileOpen(false)} isAdmin={isAdmin} />
       </div>
     </div>
   );
 
+  const userMenu = (
+    <DM.Root>
+      <DM.Trigger className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-white hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-lucht" aria-label={t("account.title")}>
+        <span className="grid size-8 place-items-center rounded-full bg-lucht text-sm font-bold text-nacht">
+          {(user?.full_name || user?.username || "?").slice(0, 1).toUpperCase()}
+        </span>
+        <span className="hidden text-left text-sm leading-tight xl:block">
+          <span className="block font-semibold">{user?.full_name || user?.username}</span>
+          <span className="block text-xs text-white/60">{user?.role === "admin" ? t("roles.admin") : t("roles.viewer")}</span>
+        </span>
+        <ChevronDown className="hidden size-4 text-white/60 sm:block" />
+      </DM.Trigger>
+      <DM.Portal>
+        <DM.Content align="end" sideOffset={6} className="z-50 min-w-56 rounded-md border border-line bg-raised p-1 shadow-xl">
+          <DM.Item onSelect={() => navigate("/account")} className="flex cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm outline-none data-[highlighted]:bg-sunken">
+            <UserIcon className="size-4" /> {t("account.title")}
+          </DM.Item>
+          <DM.Item onSelect={() => setInfoOpen(true)} className="flex cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm outline-none data-[highlighted]:bg-sunken">
+            <Info className="size-4" /> {t("info.button")}
+          </DM.Item>
+          <DM.Separator className="my-1 h-px bg-line" />
+          <div className="px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-muted">{t("account.language")}</div>
+          {(["en", "nl"] as const).map((lng) => (
+            <DM.Item key={lng} onSelect={() => setPref({ language: lng })} className="flex cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm outline-none data-[highlighted]:bg-sunken">
+              <Languages className="size-4" /> {lng === "nl" ? "Nederlands" : "English"}
+              {i18n.language === lng && <span className="ml-auto size-1.5 rounded-full bg-koraal" />}
+            </DM.Item>
+          ))}
+          <DM.Separator className="my-1 h-px bg-line" />
+          <div className="px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-muted">{t("account.theme")}</div>
+          {(["system", "light", "dark"] as const).map((th) => (
+            <DM.Item key={th} onSelect={() => setPref({ theme: th })} className="flex cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm outline-none data-[highlighted]:bg-sunken">
+              {th === "light" ? <Sun className="size-4" /> : th === "dark" ? <Moon className="size-4" /> : <Monitor className="size-4" />}
+              {t(`account.theme_${th}`)}
+              {user?.theme === th && <span className="ml-auto size-1.5 rounded-full bg-koraal" />}
+            </DM.Item>
+          ))}
+          <DM.Separator className="my-1 h-px bg-line" />
+          <DM.Item onSelect={logout} className="flex cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm text-offline outline-none data-[highlighted]:bg-sunken">
+            <LogOut className="size-4" /> {t("auth.logout")}
+          </DM.Item>
+        </DM.Content>
+      </DM.Portal>
+    </DM.Root>
+  );
+
+  const pill = "flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-full border border-white/20 px-3 py-1 text-xs font-semibold text-white/90 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-lucht [&_svg]:size-3.5";
+
   return (
-    <div className="flex h-full">
-      <aside className="hidden w-[264px] shrink-0 border-r border-line bg-raised lg:block">{sidebar}</aside>
-      {mobileOpen && (
-        <div className="fixed inset-0 z-40 lg:hidden">
-          <div className="absolute inset-0 bg-nacht/50" onClick={() => setMobileOpen(false)} />
-          <aside className="absolute inset-y-0 left-0 w-[280px] bg-raised shadow-2xl">
-            <button className="absolute right-3 top-4 rounded p-1 hover:bg-sunken" onClick={() => setMobileOpen(false)} aria-label="Close menu">
-              <X className="size-5" />
-            </button>
-            {sidebar}
-          </aside>
+    <div className="flex h-full flex-col">
+      <header className="z-30 flex h-14 shrink-0 items-center gap-2 bg-nacht px-3 text-white sm:gap-3 lg:px-4 dark:border-b dark:border-line dark:bg-[#0a111e]">
+        <button className="rounded-md p-2 hover:bg-white/10 lg:hidden" onClick={() => setMobileOpen(true)} aria-label={t("nav.open_menu")}>
+          <Menu className="size-5" />
+        </button>
+        <NavLink to="/" className="flex shrink-0 items-center gap-2.5 lg:w-[240px]" aria-label={status?.app_name || "Stackpilot"}>
+          <img src="brand/rhis-icon.svg" alt="" className="size-7 rounded-[7px]" />
+          <span className="hidden leading-tight sm:block">
+            <span className="display block text-[14px] leading-tight">{status?.app_name || "Stackpilot"}</span>
+            <span className="block text-[9.5px] font-semibold uppercase tracking-wider text-white/55">Powered by RHIS</span>
+          </span>
+        </NavLink>
+        <CustomerSwitcher onNavigate={() => setMobileOpen(false)} />
+        <button
+          type="button"
+          onClick={() => setSearchOpen(true)}
+          className="ml-1 hidden h-9 min-w-0 max-w-[380px] flex-1 cursor-pointer items-center gap-2 rounded-md border border-white/15 bg-white/[0.06] px-3 text-left text-[13px] text-white/60 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-lucht md:flex"
+        >
+          <Search className="size-4 shrink-0" />
+          <span className="flex-1 truncate">{t("top.search_ph")}</span>
+          <kbd className="mono rounded border border-white/20 px-1.5 text-[10.5px]">Ctrl K</kbd>
+        </button>
+        <button type="button" onClick={() => setSearchOpen(true)} className="rounded-md p-2 hover:bg-white/10 md:hidden" aria-label={t("top.search")}>
+          <Search className="size-5" />
+        </button>
+        <div className="ml-auto flex items-center gap-2">
+          {isAdmin && !!pending.data?.pending && (
+            <NavLink to="/ai/approvals" className={cn(pill, "border-koraal bg-koraal text-nacht hover:bg-koraal/90")}>
+              <Hand /> <span className="hidden sm:inline">{t("top.approvals", { count: pending.data.pending })}</span><span className="sm:hidden">{pending.data.pending}</span>
+            </NavLink>
+          )}
+          <button type="button" onClick={() => setInfoOpen(true)} className={cn(pill, "hidden sm:flex")} title={t("info.button")}>
+            <Info />
+            <span className="mono">{info.data ? `${info.data.tag}${info.data.channel === "test" ? " · test" : ""}` : "…"}</span>
+            {info.data?.update_available && <span className="rounded-full bg-koraal px-1.5 text-[10px] font-bold uppercase text-nacht">{t("info.update_badge")}</span>}
+          </button>
+          {userMenu}
         </div>
-      )}
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-line bg-surface/85 px-4 backdrop-blur lg:px-8">
-          <button className="rounded-md p-2 hover:bg-sunken lg:hidden" onClick={() => setMobileOpen(true)} aria-label="Menu">
-            <Menu className="size-5" />
-          </button>
-          <div className="flex-1" />
-          <button
-            onClick={() => setPref({ language: i18n.language === "nl" ? "en" : "nl" })}
-            className="cursor-pointer rounded-md border border-line bg-raised px-2.5 py-1.5 text-xs font-bold uppercase hover:bg-sunken"
-            title={t("account.language")}
-          >
-            {i18n.language === "nl" ? "NL" : "EN"}
-          </button>
-          <DM.Root>
-            <DM.Trigger className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-sunken focus:outline-none">
-              <span className="grid size-8 place-items-center rounded-full bg-nacht text-sm font-bold text-white dark:bg-lucht dark:text-nacht">
-                {(user?.full_name || user?.username || "?").slice(0, 1).toUpperCase()}
-              </span>
-              <span className="hidden text-left text-sm leading-tight sm:block">
-                <span className="block font-semibold">{user?.full_name || user?.username}</span>
-                <span className="block text-xs text-muted">{user?.role === "admin" ? t("roles.admin") : t("roles.viewer")}</span>
-              </span>
-              <ChevronDown className="size-4 text-muted" />
-            </DM.Trigger>
-            <DM.Portal>
-              <DM.Content align="end" sideOffset={6} className="z-50 min-w-56 rounded-md border border-line bg-raised p-1 shadow-xl">
-                <DM.Item onSelect={() => navigate("/account")} className="flex cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm outline-none data-[highlighted]:bg-sunken">
-                  <UserIcon className="size-4" /> {t("account.title")}
-                </DM.Item>
-                <DM.Separator className="my-1 h-px bg-line" />
-                <div className="px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-muted">{t("account.theme")}</div>
-                {(["system", "light", "dark"] as const).map((th) => (
-                  <DM.Item key={th} onSelect={() => setPref({ theme: th })} className="flex cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm outline-none data-[highlighted]:bg-sunken">
-                    {th === "light" ? <Sun className="size-4" /> : th === "dark" ? <Moon className="size-4" /> : <Monitor className="size-4" />}
-                    {t(`account.theme_${th}`)}
-                    {user?.theme === th && <span className="ml-auto size-1.5 rounded-full bg-koraal" />}
-                  </DM.Item>
-                ))}
-                <DM.Separator className="my-1 h-px bg-line" />
-                <DM.Item onSelect={logout} className="flex cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm text-offline outline-none data-[highlighted]:bg-sunken">
-                  <LogOut className="size-4" /> {t("auth.logout")}
-                </DM.Item>
-              </DM.Content>
-            </DM.Portal>
-          </DM.Root>
-        </header>
-        <PausedBanner />
-        <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-[1280px] px-4 py-6 lg:px-8 lg:py-8">
-            <Outlet />
+      </header>
+      <ContextBand />
+      <div className="flex min-h-0 flex-1">
+        <aside className="hidden w-[264px] shrink-0 border-r border-line bg-raised lg:block">{sidebar}</aside>
+        {mobileOpen && (
+          <div className="fixed inset-0 z-40 lg:hidden">
+            <div className="absolute inset-0 bg-nacht/50" onClick={() => setMobileOpen(false)} />
+            <aside className="absolute inset-y-0 left-0 flex w-[280px] flex-col bg-raised shadow-2xl">
+              <div className="flex h-14 shrink-0 items-center justify-between px-5">
+                <span className="display text-[14px]">{status?.app_name || "Stackpilot"}</span>
+                <button className="rounded p-1 hover:bg-sunken" onClick={() => setMobileOpen(false)} aria-label={t("nav.close_menu")}>
+                  <X className="size-5" />
+                </button>
+              </div>
+              <div className="min-h-0 flex-1">{sidebar}</div>
+            </aside>
           </div>
-        </main>
+        )}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <PausedBanner />
+          <main className="flex-1 overflow-y-auto">
+            <div className="mx-auto w-full max-w-[1280px] px-4 py-6 lg:px-8 lg:py-8">
+              <Outlet />
+            </div>
+          </main>
+        </div>
       </div>
       <InfoDialog open={infoOpen} onOpenChange={setInfoOpen} />
+      <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} pages={pages} />
+    </div>
+  );
+}
+
+/** The band under the top bar: which customer the whole app is limited to. */
+function ContextBand() {
+  const { t } = useTranslation();
+  const { customerId, setCustomer } = useCustomer();
+  const list = useCustomers();
+  const loc = useLocation();
+  const current = list.data?.find((c) => c.id === customerId);
+  if (!current) return null;
+  const color = CUSTOMER_CSS[current.color] ?? "var(--lucht)";
+  const onPage = loc.pathname === `/customers/${current.id}`;
+  return (
+    <div
+      className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b-2 px-4 py-1.5 text-[13px] lg:px-5"
+      style={{ borderBottomColor: color, background: `color-mix(in srgb, ${color} 16%, var(--surface-raised))` }}
+      role="status"
+    >
+      <span className="size-2.5 shrink-0 rounded-full" style={{ background: color }} />
+      <span className="min-w-0">
+        <Trans i18nKey="top.band_working_in" values={{ name: current.name }} components={{ b: <b /> }} />
+        <span className="hidden text-muted sm:inline"> {t("top.band_filtered")}</span>
+      </span>
+      <span className="ml-auto flex gap-4 font-semibold">
+        {!onPage && <NavLink to={`/customers/${current.id}`} className="hover:underline">{t("top.band_overview")}</NavLink>}
+        <button type="button" className="cursor-pointer font-semibold hover:underline" onClick={() => setCustomer("")}>{t("top.band_show_all")}</button>
+      </span>
     </div>
   );
 }

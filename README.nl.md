@@ -197,7 +197,7 @@ zie **[installatie](docs/install.md)** (Engels).
 - `main` → productiereleases `vX.Y.Z`
 - `test` → testbuilds `vX.Y.Z-test.N` (prereleases)
 
-Wissel van kanaal en update via **Info & updates** onderaan het menu.
+Wissel van kanaal en update via **Info & updates** (het versienummer in de bovenbalk).
 
 ## Ontwikkelen
 
