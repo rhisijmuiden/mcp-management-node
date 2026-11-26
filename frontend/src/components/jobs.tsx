@@ -26,7 +26,8 @@ export function JobBadge({ status }: { status: string }) {
   return status === "success" ? <Badge tone="online"><CheckCircle2 className="size-3.5" /> {t("common.success")}</Badge>
     : status === "failed" ? <Badge tone="offline"><XCircle className="size-3.5" /> {t("common.failed")}</Badge>
       : status === "partial" ? <Badge tone="warning">{t("tasks.status_partial")}</Badge>
-        : <Badge tone="warning" dot>{t("common.running")}</Badge>;
+        : status === "waiting" ? <Badge tone="info" dot>{t("tasks.status_waiting")}</Badge>
+          : <Badge tone="warning" dot>{t("common.running")}</Badge>;
 }
 
 export function JobView({ jobId, onDone }: { jobId: string; onDone?: (j: NodeJob) => void }) {

@@ -173,6 +173,9 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "auto_status": True,  # in progress at the start, completed at the end (a linked runbook decides itself)
         "default_minutes": 120,  # length of a new change
         "ical_token": "",  # staff feed of every customer; empty: off
+        # v0.24.0: work that Stackpilot does itself is written to the calendar as well, with its origin.
+        "record_tasks": True,  # scheduled tasks that change machines (updates, commands)
+        "record_recovery": True,  # automatic recovery (fixed or attempted)
     },
     "m365": {
         # Phase 19: Microsoft 365 / Entra ID tenants per customer (see services/m365.py).

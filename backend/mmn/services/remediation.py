@@ -677,6 +677,11 @@ async def sync(now: datetime | None = None) -> int:
         events.publish("remediation.changed", {"finished": len(finished)})
     for aid in finished:
         await notify_attempt(aid)
+    if finished:
+        try:
+            await record_changes(finished)
+        except Exception:  # noqa: BLE001
+            log.exception("recording automatic recovery in the change calendar")
     if tripped:
         await notify_paused()
     return len(finished)
@@ -922,6 +927,42 @@ def reason_text(r: dict[str, Any], lang: str = "en") -> str:
         return t(lang, f"remediation.reason_{code}", **{k: v for k, v in p.items() if isinstance(v, (str, int, float))})
     except (KeyError, IndexError, ValueError):
         return code
+
+
+async def record_changes(attempt_ids: list[str]) -> int:
+    """Automatic recovery that fixed or tried something goes to the customer's change calendar (origin:
+    recovery), so every change Stackpilot made is there (v0.24.0)."""
+    from mmn.i18n import t
+    from mmn.services import changes
+    from mmn.services.settings_store import get_setting
+
+    n = 0
+    with tenancy.unrestricted():
+        async with sessionmaker()() as db:
+            if not (await changes.settings(db)).get("record_recovery", True):
+                return 0
+            general = await get_setting(db, "general")
+            for aid in attempt_ids:
+                a = await db.get(RemediationAttempt, aid)
+                if a is None or not a.customer_id or a.status not in ("succeeded", "failed"):
+                    continue
+                e = await db.get(Environment, a.customer_id)
+                if e is None:
+                    continue
+                lang = (e.report or {}).get("lang") or general["default_language"]
+                ok = a.status == "succeeded"
+                ch = await changes.record_work(
+                    db, customer_id=e.id, title=t(lang, "change.recovery_title", problem=(a.problem or a.rule_name)[:150]),
+                    kind="change", impact="minor", origin="recovery",
+                    origin_ref=f"{a.rule_name}: {a.target}" if a.target else a.rule_name,
+                    node_ids=[a.node_id] if a.node_id else [], by="Automatic recovery", starts_at=a.created_at,
+                    requested_at=a.created_at,
+                    minutes=max(1, int(((a.finished_at or a.created_at) - a.created_at).total_seconds() // 60)))
+                await changes.finish_work(db, ch, ok=ok, note=t(lang, "change.recovery_ok" if ok else
+                                                                "change.recovery_failed"), end=a.finished_at)
+                n += 1
+            await db.commit()
+    return n
 
 
 async def notify_attempt(attempt_id: str) -> None:

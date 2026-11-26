@@ -22,7 +22,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mmn.db import sessionmaker
-from mmn.models import Node, NodeJob, ScheduledTask, TaskRun
+from mmn.i18n import t as tr
+from mmn.models import Environment, Node, NodeJob, ScheduledTask, TaskRun
 from mmn.services import agent_hub, events, guests, nodes
 from mmn.services.agent_hub import AgentError
 from mmn.services.nodes import NodeError
@@ -30,7 +31,9 @@ from mmn.services.settings_store import get_setting
 
 log = logging.getLogger("mmn.tasks")
 
-KINDS = ("ct_community_update", "ct_apt_upgrade", "node_updates", "template_sync", "custom_command")
+KINDS = ("ct_community_update", "ct_apt_upgrade", "node_updates", "template_sync", "custom_command", "pve_maintenance")
+# Scheduled tasks that change machines: written to the change calendar of every customer they work for.
+RECORDED = ("ct_community_update", "ct_apt_upgrade", "node_updates", "custom_command")
 GUEST_KINDS = ("ct_community_update", "ct_apt_upgrade")
 SNAP_PREFIX = {"ct_community_update": "mmn-upd", "ct_apt_upgrade": "mmn-apt", "custom_command": "mmn-cmd"}
 SKIP_CODE = 99  # a script exits with this to mean "not applicable here"
@@ -55,11 +58,20 @@ class OptionsIn(BaseModel):
     run_on: Literal["ct", "node"] = "ct"
     timeout: int = Field(default=3600, ge=60, le=6 * 3600)
     parallel_nodes: int = Field(default=4, ge=1, le=50)
+    # Proxmox maintenance (pve_maintenance, v0.24.0): see services/maintenance.py.
+    reboot: Literal["if_required", "always", "never"] = "if_required"
+    guest_handling: Literal["migrate", "shutdown"] = "migrate"
+    migrate_back: bool = True
+    respect_window: bool = True
+    approval: Literal["policy", "always", "never"] = "policy"
+    boot_timeout: int = Field(default=20, ge=5, le=120)
+    report: bool = True
 
 
 class TaskIn(BaseModel):
     name: str = Field(min_length=1, max_length=200)
-    kind: Literal["ct_community_update", "ct_apt_upgrade", "node_updates", "template_sync", "custom_command"]
+    kind: Literal["ct_community_update", "ct_apt_upgrade", "node_updates", "template_sync", "custom_command",
+                  "pve_maintenance"]
     enabled: bool = True
     cron: str = Field(min_length=9, max_length=100)
     targets: TargetsIn = Field(default_factory=TargetsIn)
@@ -92,7 +104,8 @@ def run_out(r: TaskRun) -> dict[str, Any]:
     res = r.results or []
     return {"id": r.id, "task_id": r.task_id, "name": r.name, "kind": r.kind, "status": r.status, "trigger": r.trigger,
             "requested_by": r.requested_by, "started_at": r.started_at, "finished_at": r.finished_at, "results": res,
-            "counts": {k: sum(1 for x in res if x.get("status") == k) for k in ("success", "failed", "skipped")}}
+            "counts": {k: sum(1 for x in res if x.get("status") == k) for k in ("success", "failed", "skipped")},
+            "customer_ids": list(r.customer_ids or []), "approval_id": r.approval_id}
 
 
 def _validate(body: TaskIn) -> None:
@@ -106,6 +119,10 @@ def _validate(body: TaskIn) -> None:
         raise NodeError("choose at least one node")
     if body.targets.scope == "tag" and not body.targets.tag:
         raise NodeError("enter a tag")
+    if body.kind == "pve_maintenance" and body.targets.scope not in ("all", "environments", "nodes"):
+        raise NodeError("Proxmox maintenance works on customers or Proxmox nodes")
+    if body.kind == "pve_maintenance" and body.targets.scope == "environments" and not body.targets.environment_ids:
+        raise NodeError("choose at least one customer")
 
 
 async def save_task(db: AsyncSession, body: TaskIn, task: ScheduledTask | None = None,
@@ -158,6 +175,9 @@ async def resolve_targets(db: AsyncSession, kind: str, targets: dict[str, Any], 
             return n.id in t.node_ids or n.name in t.node_ids
         return True
 
+    if kind == "pve_maintenance":
+        return [{"kind": "node", "node_id": n.id, "node": n.name, "os": n.kind, "label": n.name}
+                for n in all_nodes if n.kind == "proxmox" and node_ok(n)]
     guest_level = kind in GUEST_KINDS or (kind == "custom_command" and options.get("run_on", "ct") == "ct")
     if not guest_level:
         has_sh = bool((options.get("command") or "").strip())
@@ -233,7 +253,8 @@ async def run_task(task_id: str, *, trigger: str = "manual", requested_by: str |
             return await templates.sync(environment_ids=tg.environment_ids if tg.scope == "environments" else None,
                                         node_ids=tg.node_ids if tg.scope == "nodes" else None, trigger=trigger,
                                         requested_by=requested_by, task_id=tid, name=name)
-        running = (await db.execute(select(TaskRun).where(TaskRun.task_id == t.id, TaskRun.status == "running"))
+        running = (await db.execute(select(TaskRun).where(TaskRun.task_id == t.id,
+                                                          TaskRun.status.in_(("running", "waiting"))))
                    ).scalars().first()
         if running:
             raise NodeError("this task is still running")
@@ -243,7 +264,12 @@ async def run_task(task_id: str, *, trigger: str = "manual", requested_by: str |
         t.last_run_at = datetime.now(UTC)
         await db.commit()
         run_id = run.id
-    agent_hub.spawn(_run(run_id, task_id, requested_by))
+    if t.kind == "pve_maintenance":
+        from mmn.services import maintenance
+
+        agent_hub.spawn(maintenance.run_maintenance(run_id, task_id, trigger=trigger, requested_by=requested_by))
+    else:
+        agent_hub.spawn(_run(run_id, task_id, requested_by))
     events.publish("task.run", {"run_id": run_id, "task_id": task_id, "started": True})
     return run_id
 
@@ -418,8 +444,57 @@ async def finish_run(run_id: str, results: list[dict[str, Any]]) -> None:
         mail_to = list(task.mail_to or []) if task else []
         mail_on = task.mail_on if task else "never"
     events.publish("task.run", {"run_id": run_id, "done": True, "status": status})
+    try:
+        await record_changes(run_id)
+    except Exception:  # noqa: BLE001
+        log.exception("recording task run %s in the change calendar", run_id)
     if mail_to and (mail_on == "always" or (mail_on == "failure" and status != "success")):
         await _mail_report(run_id, mail_to)
+
+
+async def record_changes(run_id: str) -> int:
+    """Write a finished run of a task that changed machines to the change calendar of every customer it worked
+    for (origin: schedule), with what it did. Maintenance runs record themselves. Returns how many."""
+    from mmn.services import changes
+
+    async with sessionmaker()() as db:
+        run = await db.get(TaskRun, run_id)
+        if run is None or run.kind not in RECORDED:
+            return 0
+        if not (await changes.settings(db)).get("record_tasks", True):
+            return 0
+        rows = [r for r in run.results or [] if r.get("node_id") and r.get("status") in ("success", "failed")]
+        if not rows:
+            return 0
+        node_rows = {n.id: n for n in (await db.execute(select(Node).where(
+            Node.id.in_({r["node_id"] for r in rows})))).scalars()}
+        per: dict[str, list[dict[str, Any]]] = {}
+        for r in rows:
+            n = node_rows.get(r["node_id"])
+            if n is not None:
+                per.setdefault(n.environment_id, []).append(r)
+        general = await get_setting(db, "general")
+        n_rec = 0
+        for cid, items in per.items():
+            e = await db.get(Environment, cid)
+            if e is None:
+                continue
+            lang = (e.report or {}).get("lang") or general["default_language"]
+            ok = sum(1 for r in items if r["status"] == "success")
+            bad = len(items) - ok
+            title = tr(lang, f"task.change_{run.kind}")
+            note = tr(lang, "task.change_note", ok=ok, failed=bad)
+            minutes = max(1, int(((run.finished_at or run.started_at) - run.started_at).total_seconds() // 60))
+            ch = await changes.record_work(
+                db, customer_id=cid, title=title, kind="update" if run.kind != "custom_command" else "maintenance",
+                impact="minor", origin="schedule", origin_ref=run.name,
+                node_ids=list(dict.fromkeys(r["node_id"] for r in items)), task_run_id=run.id, task_id=run.task_id,
+                by=run.requested_by or f"task:{run.name}", starts_at=run.started_at, minutes=minutes,
+                requested_at=run.started_at)
+            await changes.finish_work(db, ch, ok=ok > 0, note=note, end=run.finished_at)
+            n_rec += 1
+        await db.commit()
+        return n_rec
 
 
 async def _mail_report(run_id: str, to: list[str]) -> None:

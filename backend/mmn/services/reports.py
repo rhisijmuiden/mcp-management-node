@@ -30,7 +30,10 @@ from mmn.services.settings_store import get_setting
 log = logging.getLogger("mmn.reports")
 
 PERIOD_RE = re.compile(r"^(\d{4})-(0[1-9]|1[0-2])$")
-DEFAULTS = {"enabled": False, "day": 1, "recipients": [], "lang": "en", "include_ai": True, "include_costs": False}
+DEFAULTS = {"enabled": False, "day": 1, "recipients": [], "lang": "en", "include_ai": True, "include_costs": False,
+            # v0.24.0: the report after every Proxmox maintenance run (services/maintenance.py); empty
+            # recipients: the monthly report's.
+            "maintenance_enabled": True, "maintenance_recipients": [], "maintenance_on": "always"}
 
 _jinja = JinjaEnv(loader=FileSystemLoader(Path(__file__).resolve().parent.parent / "report_templates"),
                   autoescape=select_autoescape(["html"]))

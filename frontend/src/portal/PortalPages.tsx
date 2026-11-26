@@ -1,17 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarPlus, CalendarRange, CheckCircle2, Clock, Copy, HelpCircle, Inbox, Laptop, LifeBuoy, MessageSquare, Plus, Send, Server, Sparkles, UserRound, Wrench } from "lucide-react";
+import { CalendarPlus, CalendarRange, CheckCircle2, Clock, Copy, FileText, HelpCircle, Inbox, Laptop, LifeBuoy, MessageSquare, Plus, Send, Server, Sparkles, UserRound, Wrench } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
+import { Dialog } from "@/components/ui/dialog";
 import { Field, Input, Segmented, Select, Textarea } from "@/components/ui/form";
 import { Alert, Badge, EmptyState, PageHeader, Spinner, Stat } from "@/components/ui/misc";
 import { errorMessage } from "@/lib/api";
 import { cn, formatDate, timeAgo } from "@/lib/utils";
 import { PriorityBadge, StatusBadge, type Priority, type TicketStatus } from "@/pages/Tickets";
-import { STATUS_TONE, whenText, type ChangeStatus } from "@/pages/Changes";
+import { OriginBadge, STATUS_TONE, whenText, type ChangeStatus, type Origin } from "@/pages/Changes";
 import { pget, ppatch, ppost } from "./api";
 import { usePortal } from "./PortalApp";
 
@@ -303,12 +304,50 @@ export function PortalAccountPage() {
 interface PChange {
   id: string; ref: string; title: string; description: string | null; kind: string; impact: "none" | "minor" | "degraded" | "outage";
   status: ChangeStatus; starts_at: string; ends_at: string; machines: { id: string; name: string }[]; outcome_note: string | null;
+  origin: Origin; origin_ref: string | null; requested_at: string | null; automatic: boolean; has_report: boolean;
+}
+
+interface PReport {
+  title: string; intro: string; summary: string | null; timeline_label: string; timezone: string; state: string; date: string | null;
+  lines: { time: string; text: string; level: string | null }[];
+}
+
+const DOT: Record<string, string> = { ok: "bg-online", warning: "bg-warning", error: "bg-offline", info: "bg-muted" };
+
+/** The report of the work Stackpilot did for a change: a timeline in plain words. */
+function PortalReport({ id, onClose }: { id: string; onClose: () => void }) {
+  const { t } = useTranslation();
+  const q = useQuery({ queryKey: ["portal-change-report", id], queryFn: () => pget<PReport>(`changes/${id}/report`) });
+  const r = q.data;
+  return (
+    <Dialog open onOpenChange={(v) => !v && onClose()} wide title={r?.title ?? t("portal.changes_report")} description={r?.date ?? undefined}
+      footer={<Button onClick={onClose}>{t("common.close")}</Button>}>
+      {q.isLoading ? <Spinner /> : q.isError || !r ? <Alert tone="offline">{errorMessage(q.error, t)}</Alert> : (
+        <div className="space-y-4">
+          <p className="text-sm">{r.intro}</p>
+          {r.summary && <p className="text-sm font-semibold">{r.summary}</p>}
+          <div className="text-sm font-bold">{r.timeline_label}</div>
+          <ol className="border-l border-line">
+            {r.lines.map((x, i) => (
+              <li key={i} className="flex gap-3 py-1.5 pl-4">
+                <span className={cn("-ml-[21px] mt-1.5 size-2.5 shrink-0 rounded-full ring-4 ring-raised", DOT[x.level ?? "info"] ?? "bg-muted")} />
+                <span className="mono w-12 shrink-0 text-[13px] font-bold">{x.time}</span>
+                <span className="text-sm">{x.text}</span>
+              </li>
+            ))}
+          </ol>
+          <p className="text-xs text-muted">{t("portal.changes_tz", { tz: r.timezone })}</p>
+        </div>
+      )}
+    </Dialog>
+  );
 }
 
 function PortalChangeItem({ c }: { c: PChange }) {
   const { t, i18n } = useTranslation();
   const s = new Date(c.starts_at);
   const done = c.status === "completed" || c.status === "failed" || c.status === "cancelled";
+  const [report, setReport] = useState(false);
   return (
     <li className="flex gap-4 px-5 py-4">
       <div className={cn("grid w-14 shrink-0 place-items-center self-start rounded-lg border border-line py-1.5 text-center", done ? "bg-sunken text-muted" : "bg-info-soft")}>
@@ -319,13 +358,17 @@ function PortalChangeItem({ c }: { c: PChange }) {
         <div className="flex flex-wrap items-center gap-2">
           <span className={cn("font-semibold", c.status === "cancelled" && "line-through")}>{c.title}</span>
           <Badge tone={STATUS_TONE[c.status]} dot>{t(`chg.st.${c.status}`)}</Badge>
+          <OriginBadge c={c} />
         </div>
         <div className="text-sm text-muted">{whenText(c, i18n.language)} · {t(`chg.kind.${c.kind}`)} · <span className="mono">{c.ref}</span></div>
+        <div className="text-xs text-muted">{t("portal.changes_requested", { at: formatDate(c.requested_at, i18n.language) })}{c.origin_ref ? ` · ${c.origin_ref}` : ""}{c.automatic ? ` · ${t("chg.automatic")}` : ""}</div>
         {c.status !== "cancelled" && <div className="mt-1 text-sm"><span className="text-muted">{t("portal.changes_impact")}:</span> {t(`chg.impact.${c.impact}`)}</div>}
         {c.machines.length > 0 && <div className="text-sm"><span className="text-muted">{t("portal.changes_systems")}:</span> {c.machines.map((m) => m.name).join(", ")}</div>}
         {c.description && !done && <p className="mt-2 whitespace-pre-wrap text-sm">{c.description}</p>}
         {c.outcome_note && done && <p className="mt-2 whitespace-pre-wrap text-sm"><span className="text-muted">{t("portal.changes_result")}:</span> {c.outcome_note}</p>}
+        {c.has_report && <Button size="sm" variant="secondary" className="mt-2" onClick={() => setReport(true)}><FileText /> {t("portal.changes_view_report")}</Button>}
       </div>
+      {report && <PortalReport id={c.id} onClose={() => setReport(false)} />}
     </li>
   );
 }

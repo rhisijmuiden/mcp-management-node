@@ -107,6 +107,8 @@ class SettingsIn(BaseModel):
     recipients: Literal["contacts", "portal", "both", "none"] = "both"
     auto_status: bool = True
     default_minutes: int = Field(default=120, ge=5, le=60 * 24 * 14)
+    record_tasks: bool = True
+    record_recovery: bool = True
 
 
 def _settings_out(cfg: dict[str, Any], base: str) -> dict[str, Any]:
@@ -268,6 +270,10 @@ class ChangeIn(BaseModel):
     run_runbook: bool = False
     notify: bool = True
     notify_before: list[int] | None = Field(default=None, max_length=changes.MAX_NOTICES)
+    origin: Literal["manual", "ticket", "issue", "schedule", "ai", "recovery"] | None = None
+    origin_ref: str | None = Field(default=None, max_length=300)
+    ticket_id: str | None = Field(default=None, max_length=40)
+    requested_at: str | None = Field(default=None, max_length=40)
 
 
 class ChangeUpdate(BaseModel):
@@ -285,6 +291,10 @@ class ChangeUpdate(BaseModel):
     notify: bool | None = None
     notify_before: list[int] | None = Field(default=None, max_length=changes.MAX_NOTICES)
     outcome_note: str | None = Field(default=None, max_length=5000)
+    origin: Literal["manual", "ticket", "issue", "schedule", "ai", "recovery"] | None = None
+    origin_ref: str | None = Field(default=None, max_length=300)
+    ticket_id: str | None = Field(default=None, max_length=40)
+    requested_at: str | None = Field(default=None, max_length=40)
 
 
 @router.post("", status_code=201)
@@ -296,6 +306,9 @@ async def create(body: ChangeIn, request: Request, db: AsyncSession = Depends(ge
         fields.pop("ends_at")
     if fields.get("minutes") is None:
         fields.pop("minutes")
+    for k in ("origin", "origin_ref", "ticket_id", "requested_at"):
+        if fields.get(k) is None:
+            fields.pop(k, None)
     try:
         ch = await changes.save_change(db, None, customer_id=body.customer_id, by=admin.username, **fields)
     except changes.ChangeError as ex:
@@ -317,7 +330,8 @@ async def update(cid: str, body: ChangeUpdate, request: Request, db: AsyncSessio
                  admin: User = Depends(require_admin)):
     ch = await _change(db, cid)
     fields = body.model_dump(exclude_unset=True)
-    for k in ("title", "starts_at", "ends_at", "kind", "impact", "node_ids", "run_runbook", "notify"):
+    for k in ("title", "starts_at", "ends_at", "kind", "impact", "node_ids", "run_runbook", "notify", "origin",
+              "requested_at"):
         if k in fields and fields[k] is None:
             fields.pop(k)
     try:

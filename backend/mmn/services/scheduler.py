@@ -408,6 +408,12 @@ async def start() -> None:
     except Exception:  # noqa: BLE001
         log.exception("recovering runbook runs")
     try:
+        from mmn.services import maintenance
+
+        await maintenance.recover()
+    except Exception:  # noqa: BLE001
+        log.exception("recovering maintenance runs")
+    try:
         await reload_nightly_jobs()
     except Exception:  # noqa: BLE001
         log.exception("scheduling the nightly checks")

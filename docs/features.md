@@ -571,13 +571,20 @@ notices that keep the customer informed.
   runbook the run decides whether it completed or failed. Finish by hand with a note for the customer.
 - **Calendar.** A month view with every change (and, optionally, the scheduled task runs), the coming changes and the
   maintenance window of every customer; on a phone an agenda.
+- **Where it came from (v0.24.0).** Every change has an origin, shown in the app and to the customer in the portal:
+  manual, a ticket (linked, with its number), an issue (an alert or a finding), a schedule, the AI assistant or
+  automatic recovery, and when (and by whom) it was requested. Work Stackpilot does itself is recorded
+  automatically: every Proxmox maintenance run (with its timeline report, also in the portal), scheduled tasks that
+  change machines and automatic recovery (the last two can be switched off in the settings). A change that was planned
+  for a scheduled task is picked up by that task's run instead of a new one.
 - **Customer portal and iCal.** Customers see their planned and recent maintenance under *Maintenance* in the
   portal. A secret iCal link per customer (also shown in their portal) and one for staff with every customer can be
   subscribed to in Outlook, Google or Apple Calendar; drafts and internal notes never appear in them, cancelled
   changes disappear from the calendar.
 
 Over MCP, with the scope `changes`: `list_changes`, `get_change`, `get_change_calendar` and `check_change_slot`;
-with `changes_admin` also `save_change`, `set_change_status` and `send_change_notice`.
+with `changes_admin` also `save_change` (with `origin`, `ticket` and `requested_at`), `set_change_status` and
+`send_change_notice`. Maintenance reports: `get_maintenance_report`.
 
 ### Costs & licences
 
@@ -704,6 +711,29 @@ A custom command on machines has a **bash script for Linux** and/or a **PowerShe
 workstations; every machine runs the script of its own OS and machines without one are not targets. On Windows
 (agent v0.15.0 or later) the script runs as a .ps1 file under the agent's account (LocalSystem), with its output in
 the run; `exit 99` means "not applicable here" and marks the machine as skipped.
+
+#### Proxmox maintenance (v0.24.0)
+
+The task kind **Proxmox maintenance** maintains the Proxmox VE nodes of one or more customers, one cluster and one node
+at a time, for example every Saturday night at 01:45:
+
+1. **Checks before**: every node online and the cluster quorate. A problem stops the maintenance before anything
+   changes.
+2. **Maintenance window and approval**: a scheduled run outside the customer's maintenance window does nothing; when
+   the customer's AI policy (or the task) asks for approval, the run asks an admin in the Approvals inbox and waits
+   until the window closes. *Run now* in the app always starts.
+3. **Per node**: the updates are installed. When a restart is needed (or always, as you choose), the running machines
+   move to another online node of the cluster (live for VMs); a machine that can't move is **shut down cleanly in
+   reverse start-up order**. The node restarts, Stackpilot waits until it is back and the cluster is quorate, starts the
+   machines in their **Proxmox start-up order** (`order=`, with the `up=` delay; Proxmox starts the *onboot* ones
+   itself) and moves the others back. A node that does not come back stops the rest of that cluster.
+4. **Checks after**: every node online, quorum, and every machine that ran before runs again.
+
+Every step lands on a **timeline in plain words** ("01:45 Checks done: 2 servers online, 14 machines running",
+"01:52 pve1: 3 machines shut down cleanly", ...). After the run every customer gets a **maintenance report** with that
+timeline in its own language (English or Dutch) at its **maintenance report recipients** (Customers → Reports: as many
+addresses as you like; empty means the monthly report's recipients), after every run or only when something needs
+attention. The run page shows the same timeline per customer and can mail the report again.
 
 ### Deployments from GitHub
 

@@ -386,11 +386,52 @@ async def list_runs(task_id: str | None = None, limit: int = Query(30, ge=1, le=
 
 
 @router.get("/api/task-runs/{run_id}")
-async def get_run(run_id: str, db: AsyncSession = Depends(get_db), _: User = Depends(current_user)):
+async def get_run(run_id: str, lang: str = Query("en", pattern=r"^(en|nl)$"), db: AsyncSession = Depends(get_db),
+                  _: User = Depends(current_user)):
     r = await db.get(TaskRun, run_id)
     if r is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
-    return tasks.run_out(r)
+    out = tasks.run_out(r)
+    if r.kind == "pve_maintenance":
+        from mmn.models import Environment
+        from mmn.services import maintenance
+
+        envs = {e.id: e for e in (await db.execute(select(Environment).where(
+            Environment.id.in_(r.customer_ids or [])))).scalars()}
+        out["maintenance"] = maintenance.run_view(r, envs, lang, await maintenance.tz_of(db))
+    return out
+
+
+class ResendIn(BaseModel):
+    to: list[str] | None = Field(default=None, max_length=20)
+
+
+@router.post("/api/task-runs/{run_id}/report/{customer_id}")
+async def resend_report(run_id: str, customer_id: str, body: ResendIn, request: Request,
+                        db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
+    """Mail the maintenance report of one customer (again), to its report recipients or to ``to``."""
+    from mmn.models import Environment
+    from mmn.services import maintenance
+
+    r = await db.get(TaskRun, run_id)
+    e = await db.get(Environment, customer_id)
+    if r is None or e is None or r.kind != "pve_maintenance" or customer_id not in (r.customer_ids or []):
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    if r.status in ("running", "waiting"):
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="the run is not finished yet")
+    saved = next((x for x in r.reports or [] if x.get("customer_id") == customer_id), {})
+    rep = maintenance.build_report(r, e, maintenance._lang(e), await maintenance.tz_of(db))
+    to = [x.strip().lower() for x in body.to or [] if x and "@" in x] or None
+    res = await maintenance.send_report(db, r, e, rep["state"], saved.get("stats") or rep["stats"], to=to)
+    if res.get("ok"):
+        keep = [x for x in r.reports or [] if x.get("customer_id") != customer_id]
+        r.reports = [*keep, {**saved, **res}]
+    await audit(db, "maintenance.report", user=admin, target=e.name, ip=client_ip(request), run=run_id,
+                success=bool(res.get("ok")), sent=len(res.get("to") or []))
+    await db.commit()
+    if not res.get("ok"):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=res.get("error") or "send_failed")
+    return {"sent_to": res["to"]}
 
 
 class ScheduleSettingsIn(BaseModel):

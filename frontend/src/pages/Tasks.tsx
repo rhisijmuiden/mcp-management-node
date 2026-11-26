@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarClock, ChevronDown, ChevronRight, Clock, Eye, History, Pencil, Play, Plus, Trash2 } from "lucide-react";
+import { CalendarClock, ChevronDown, ChevronRight, Clock, Eye, FileText, History, Mail, Pencil, Play, Plus, Trash2, Wrench } from "lucide-react";
 import { Fragment, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams } from "react-router";
@@ -15,11 +15,14 @@ import { Alert, Badge, EmptyState, PageHeader, Spinner } from "@/components/ui/m
 import { Table, Td, Th, Tr } from "@/components/ui/table";
 import { del, errorMessage, get, post, put } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import type { Guest, ScheduledTask, TaskKind, TaskOptions, TaskRun, TaskTarget, TaskTargets } from "@/lib/types";
-import { formatDate, timeAgo } from "@/lib/utils";
+import type { Guest, MaintenanceReport, ScheduledTask, TaskKind, TaskOptions, TaskRun, TaskTarget, TaskTargets } from "@/lib/types";
+import { cn, formatDate, timeAgo } from "@/lib/utils";
 
-const KINDS: TaskKind[] = ["ct_apt_upgrade", "ct_community_update", "node_updates", "template_sync", "custom_command"];
-const CRON_PRESETS = ["0 3 * * *", "30 2 * * *", "0 4 * * 0", "0 5 1 * *", "0 */6 * * *"];
+const KINDS: TaskKind[] = ["pve_maintenance", "ct_apt_upgrade", "ct_community_update", "node_updates", "template_sync", "custom_command"];
+const CRON_PRESETS = ["0 3 * * *", "30 2 * * *", "0 4 * * 0", "0 5 1 * *", "0 */6 * * *", "45 1 * * 6"];
+const MAINT_DEFAULTS: Partial<TaskOptions> = {
+  reboot: "if_required", guest_handling: "migrate", migrate_back: true, respect_window: true, approval: "policy", boot_timeout: 20, report: true,
+};
 
 const guestKind = (k: TaskKind, o: TaskOptions) => k === "ct_apt_upgrade" || k === "ct_community_update" || (k === "custom_command" && o.run_on === "ct");
 
@@ -38,7 +41,7 @@ interface Draft {
 const newDraft = (): Draft => ({
   name: "", kind: "ct_apt_upgrade", enabled: true, cron: "0 3 * * *",
   targets: { scope: "all", environment_ids: [], node_ids: [], guests: [], tag: null, exclude_vmids: [] },
-  options: { snapshot: true, rollback: true, keep_snapshots: 3, command: null, run_on: "ct", timeout: 3600, parallel_nodes: 4 },
+  options: { snapshot: true, rollback: true, keep_snapshots: 3, command: null, run_on: "ct", timeout: 3600, parallel_nodes: 4, ...MAINT_DEFAULTS },
   mail_to: "", mail_on: "always",
 });
 
@@ -72,6 +75,7 @@ function TaskDialog({ draft, onClose, timezone }: { draft: Draft; onClose: () =>
   });
   const toggle = <T,>(list: T[], v: T) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
   const hasGuest = (node_id: string, vmid: number) => d.targets.guests.some((g) => g.node_id === node_id && g.vmid === vmid);
+  const maint = d.kind === "pve_maintenance";
   const scopes: TaskTargets["scope"][] = onGuests ? ["all", "environments", "nodes", "guests", "tag"] : ["all", "environments", "nodes"];
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()} wide title={d.id ? t("tasks.edit") : t("tasks.new")}
@@ -133,7 +137,7 @@ function TaskDialog({ draft, onClose, timezone }: { draft: Draft; onClose: () =>
           )}
           {d.targets.scope === "nodes" && (
             <div className="grid gap-2 sm:grid-cols-3">
-              {nodes.data?.filter((n) => n.capabilities.includes("guests") || !onGuests).map((n) => <Checkbox key={n.id} checked={d.targets.node_ids.includes(n.id)} onCheckedChange={() => setT({ node_ids: toggle(d.targets.node_ids, n.id) })} label={n.name} description={anyMachine ? `${n.environment_name ?? ""} · ${n.kind}` : n.environment_name} />)}
+              {nodes.data?.filter((n) => (n.capabilities.includes("guests") || !onGuests) && (!maint || n.kind === "proxmox")).map((n) => <Checkbox key={n.id} checked={d.targets.node_ids.includes(n.id)} onCheckedChange={() => setT({ node_ids: toggle(d.targets.node_ids, n.id) })} label={n.name} description={anyMachine ? `${n.environment_name ?? ""} · ${n.kind}` : n.environment_name} />)}
             </div>
           )}
           {d.targets.scope === "guests" && (guests.isLoading ? <Spinner /> : (
@@ -168,13 +172,42 @@ function TaskDialog({ draft, onClose, timezone }: { draft: Draft; onClose: () =>
           </div>
         )}
 
-        <div className="grid gap-3 sm:grid-cols-2">
+        {maint && (
+          <div className="space-y-3 rounded-md border border-line p-4">
+            <div className="text-sm font-bold">{t("tasks.maint.title")}</div>
+            <p className="text-xs text-muted">{t("tasks.maint.desc")}</p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label={t("tasks.maint.reboot")}>
+                <Select value={d.options.reboot ?? "if_required"} onChange={(e) => setO({ reboot: e.target.value as TaskOptions["reboot"] })}>
+                  {(["if_required", "always", "never"] as const).map((x) => <option key={x} value={x}>{t(`tasks.maint.reboot_${x}`)}</option>)}
+                </Select>
+              </Field>
+              <Field label={t("tasks.maint.guests")}>
+                <Select value={d.options.guest_handling ?? "migrate"} onChange={(e) => setO({ guest_handling: e.target.value as TaskOptions["guest_handling"] })}>
+                  {(["migrate", "shutdown"] as const).map((x) => <option key={x} value={x}>{t(`tasks.maint.guests_${x}`)}</option>)}
+                </Select>
+              </Field>
+              <Field label={t("tasks.maint.approval")}>
+                <Select value={d.options.approval ?? "policy"} onChange={(e) => setO({ approval: e.target.value as TaskOptions["approval"] })}>
+                  {(["policy", "always", "never"] as const).map((x) => <option key={x} value={x}>{t(`tasks.maint.approval_${x}`)}</option>)}
+                </Select>
+              </Field>
+              <Field label={t("tasks.maint.boot_timeout")}><Input type="number" min={5} max={120} value={d.options.boot_timeout ?? 20} onChange={(e) => setO({ boot_timeout: Math.min(120, Math.max(5, Number(e.target.value) || 20)) })} /></Field>
+            </div>
+            {d.options.guest_handling !== "shutdown" && <Checkbox checked={d.options.migrate_back !== false} onCheckedChange={(v) => setO({ migrate_back: v })} label={t("tasks.maint.migrate_back")} description={t("tasks.maint.migrate_back_hint")} />}
+            <Checkbox checked={d.options.respect_window !== false} onCheckedChange={(v) => setO({ respect_window: v })} label={t("tasks.maint.window")} description={t("tasks.maint.window_hint")} />
+            <Checkbox checked={d.options.report !== false} onCheckedChange={(v) => setO({ report: v })} label={t("tasks.maint.report")} description={t("tasks.maint.report_hint")} />
+          </div>
+        )}
+
+        {!maint && <div className="grid gap-3 sm:grid-cols-2">
           <Field label={t("tasks.timeout")}><Input type="number" min={1} max={360} value={Math.round(d.options.timeout / 60)} onChange={(e) => setO({ timeout: Math.max(60, (Number(e.target.value) || 1) * 60) })} /></Field>
           <Field label={t("tasks.parallel")} hint={t("tasks.parallel_hint")}><Input type="number" min={1} max={50} value={d.options.parallel_nodes} onChange={(e) => setO({ parallel_nodes: Number(e.target.value) || 1 })} /></Field>
-        </div>
+        </div>}
 
         <div className="space-y-3 rounded-md border border-line p-4">
           <div className="text-sm font-bold">{t("tasks.report")}</div>
+          {maint && <p className="text-xs text-muted">{t("tasks.maint.staff_report_hint")}</p>}
           <div className="grid gap-3 sm:grid-cols-3">
             <Field label={t("tasks.mail_to")} hint={t("tasks.mail_to_hint")} className="sm:col-span-2"><Input value={d.mail_to} onChange={(e) => set({ mail_to: e.target.value })} placeholder="ops@example.nl" /></Field>
             <Field label={t("tasks.mail_on")}>
@@ -303,10 +336,11 @@ export function TasksPage() {
 export function TaskRunPage() {
   const { t, i18n } = useTranslation();
   const { id = "" } = useParams();
+  const lang = i18n.language === "nl" ? "nl" : "en";
   const run = useQuery({
-    queryKey: ["task-run", id],
-    queryFn: () => get<TaskRun>(`api/task-runs/${id}`),
-    refetchInterval: (q) => (q.state.data?.status === "running" ? 3000 : false),
+    queryKey: ["task-run", id, lang],
+    queryFn: () => get<TaskRun>(`api/task-runs/${id}?lang=${lang}`),
+    refetchInterval: (q) => (q.state.data?.status === "running" || q.state.data?.status === "waiting" ? 3000 : false),
   });
   const [open, setOpen] = useState<number | null>(null);
   if (run.isLoading) return <Spinner />;
@@ -325,6 +359,8 @@ export function TaskRunPage() {
           </div>
         ))}
       </div>
+      {r.status === "waiting" && <Alert tone="info" className="mb-5">{t("tasks.maint.waiting")} <Link to="/ai/approvals" className="font-semibold underline">{t("tasks.maint.to_approvals")}</Link></Alert>}
+      {r.maintenance?.customers.map((m) => <MaintenanceTimeline key={m.customer_id} run={r} report={m} />)}
       <Card>
         <CardHeader icon={<History />} title={t("tasks.results")} description={r.status === "running" ? t("tasks.running_hint") : undefined} />
         {!r.results.length ? <CardBody>{r.status === "running" ? <Spinner /> : <span className="text-sm text-muted">{t("tasks.no_targets")}</span>}</CardBody> : (
@@ -356,5 +392,53 @@ export function TaskRunPage() {
         )}
       </Card>
     </>
+  );
+}
+
+const LEVEL_DOT: Record<string, string> = { ok: "bg-online", warning: "bg-warning", error: "bg-offline", info: "bg-muted" };
+const STATE_TONE = { ok: "online", warning: "warning", failed: "offline", skipped: "neutral" } as const;
+
+/** The timeline of a Proxmox maintenance run for one customer, as the customer reads it in the report. */
+function MaintenanceTimeline({ run, report: m }: { run: TaskRun; report: MaintenanceReport }) {
+  const { t, i18n } = useTranslation();
+  const { user } = useAuth();
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [to, setTo] = useState("");
+  const busy = run.status === "running" || run.status === "waiting";
+  const send = useMutation({
+    mutationFn: () => post<{ sent_to: string[] }>(`api/task-runs/${run.id}/report/${m.customer_id}`, { to: to.split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean) }),
+    onSuccess: (r) => { toast.success(t("rep.sent_to", { to: r.sent_to.join(", ") })); setOpen(false); qc.invalidateQueries({ queryKey: ["task-run", run.id] }); },
+    onError: (e) => toast.error(errorMessage(e, t)),
+  });
+  return (
+    <Card className="mb-5">
+      <CardHeader icon={<Wrench />} title={<span className="flex flex-wrap items-center gap-2">{m.customer_name}{!busy && <Badge tone={STATE_TONE[m.state]} dot>{t(`tasks.maint.state_${m.state}`)}</Badge>}</span>}
+        description={busy ? t("tasks.running_hint") : m.intro}
+        action={user?.role === "admin" && !busy && <Button size="sm" variant="secondary" onClick={() => { setTo(""); setOpen(true); }}><Mail /> {t("tasks.maint.send")}</Button>} />
+      <CardBody className="space-y-4">
+        {m.summary && !busy && <p className="text-sm font-semibold">{m.summary}</p>}
+        {!m.lines.length ? <p className="text-sm text-muted">{busy ? <Spinner /> : t("tasks.no_targets")}</p> : (
+          <ol className="relative space-y-0 border-l border-line pl-0">
+            {m.lines.map((x, i) => (
+              <li key={i} className="flex gap-3 py-1.5 pl-4">
+                <span className={cn("-ml-[21px] mt-1.5 size-2.5 shrink-0 rounded-full ring-4 ring-raised", LEVEL_DOT[x.level ?? "info"] ?? "bg-muted")} />
+                <span className="mono w-12 shrink-0 text-[13px] font-bold">{x.time}</span>
+                <span className={cn("text-sm", x.level === "error" && "text-offline", x.level === "warning" && "text-warning")}>{x.text}</span>
+              </li>
+            ))}
+          </ol>
+        )}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
+          <span>{t("tasks.maint.tz", { tz: m.timezone })}</span>
+          {m.sent_at ? <span><FileText className="mr-1 inline size-3.5" />{t("tasks.maint.sent", { to: (m.sent_to ?? []).join(", "), at: formatDate(m.sent_at, i18n.language) })}</span>
+            : !busy && m.send_error ? <span className="text-offline">{t(`tasks.maint.send_err_${m.send_error}`, { defaultValue: m.send_error })}</span> : null}
+        </div>
+      </CardBody>
+      <Dialog open={open} onOpenChange={setOpen} title={t("tasks.maint.send")} description={m.customer_name}
+        footer={<><Button onClick={() => setOpen(false)}>{t("common.cancel")}</Button><Button variant="primary" loading={send.isPending} onClick={() => send.mutate()}><Mail /> {t("rep.send")}</Button></>}>
+        <Field label={t("rep.recipients")} hint={t("tasks.maint.send_hint")}><Textarea value={to} onChange={(e) => setTo(e.target.value)} className="min-h-20" /></Field>
+      </Dialog>
+    </Card>
   );
 }

@@ -1374,7 +1374,47 @@
     "run_not_found": "This run was not found.",
     "command_linux": "Script for Linux (bash)",
     "command_windows": "Script for Windows (PowerShell)",
-    "command_windows_hint": "Runs on Windows servers and workstations as a PowerShell script under the agent account (LocalSystem). Every machine runs the script of its own OS; a machine without one is skipped. Needs agent v0.15.0 or later."
+    "command_windows_hint": "Runs on Windows servers and workstations as a PowerShell script under the agent account (LocalSystem). Every machine runs the script of its own OS; a machine without one is skipped. Needs agent v0.15.0 or later.",
+    "kind_pve_maintenance": "Proxmox maintenance",
+    "kind_pve_maintenance_hint": "Updates the Proxmox nodes one at a time. When a node has to restart, its machines move to another node (or are shut down cleanly), the node restarts and everything starts again in its start-up order. Checks before and after; every customer gets a report with a timeline.",
+    "preset_45_1_6": "Saturday night at 01:45",
+    "status_waiting": "Waiting for approval",
+    "maint": {
+      "title": "Maintenance",
+      "desc": "One cluster and one node at a time. Before: all nodes online and quorum. After: every machine that ran before runs again.",
+      "reboot": "Restart nodes",
+      "reboot_if_required": "Only when the updates need it",
+      "reboot_always": "Always",
+      "reboot_never": "Never (updates only)",
+      "guests": "Running machines during a restart",
+      "guests_migrate": "Move to another node, else shut down cleanly",
+      "guests_shutdown": "Shut down cleanly and start again",
+      "approval": "Approval",
+      "approval_policy": "As the customer's AI policy says",
+      "approval_always": "Always ask an admin first",
+      "approval_never": "Never ask",
+      "boot_timeout": "Wait for a node to come back (minutes)",
+      "migrate_back": "Move machines back afterwards",
+      "migrate_back_hint": "Machines that moved go back to their own node once it is up again.",
+      "window": "Only inside the maintenance window",
+      "window_hint": "A scheduled run outside the customer's window does nothing. Run now in the app always starts.",
+      "report": "Mail the customer a report",
+      "report_hint": "In the customer's language, to the report recipients set under Customers → Reports.",
+      "staff_report_hint": "This is the technical summary for your own team. The customer gets its own report in plain words.",
+      "waiting": "This run waits for an admin's approval before it changes anything.",
+      "to_approvals": "Open Approvals",
+      "state_ok": "Completed",
+      "state_warning": "Completed with remarks",
+      "state_failed": "Did not go as planned",
+      "state_skipped": "Not carried out",
+      "send": "Mail report",
+      "send_hint": "Empty: the customer's report recipients.",
+      "tz": "Times in {{tz}}",
+      "sent": "Report sent to {{to}} on {{at}}",
+      "send_err_mail_off": "Report not sent: the mail server is off",
+      "send_err_no_recipients": "Report not sent: the customer has no report recipients",
+      "send_err_send_failed": "Report could not be sent"
+    }
   },
   "net": {
     "title": "Network",
@@ -2575,7 +2615,8 @@
       "runbook": "Step {{step}} of runbook {{runbook}}",
       "recovery": "Automatic recovery ({{recovery}}): step {{step}} of runbook {{runbook}}",
       "vault": "Uses a secret from the password vault: always needs approval",
-      "m365": "Changes a Microsoft 365 user: always needs approval"
+      "m365": "Changes a Microsoft 365 user: always needs approval",
+      "maintenance": "Scheduled Proxmox maintenance (updates and restarts)"
     },
     "toast": {
       "new": "{{who}} asks for approval: {{tool}}",
@@ -3165,7 +3206,14 @@
     "send_hint": "The PDF and the HTML version are attached.",
     "sent_to": "Mailed to {{to}}",
     "include_costs": "Include costs",
-    "include_costs_desc": "Adds this month's statement and what runs out soon (from Costs & licences)."
+    "include_costs_desc": "Adds this month's statement and what runs out soon (from Costs & licences).",
+    "maint": "Maintenance reports",
+    "maint_desc": "After every Proxmox maintenance run: what was done, with a timeline, in plain words.",
+    "maint_on": "Send",
+    "maint_on_always": "After every run",
+    "maint_on_issues": "Only when something needs attention",
+    "maint_recipients": "Maintenance report recipients",
+    "maint_recipients_hint": "One address per line, as many as you want. Empty: the recipients of the monthly report."
   },
   "opt": {
     "node_offline": {
@@ -4655,7 +4703,11 @@
     "changes_copied": "Link copied",
     "changes_impact": "Expected impact",
     "changes_systems": "Systems",
-    "changes_result": "Result"
+    "changes_result": "Result",
+    "changes_report": "Report",
+    "changes_tz": "Times in {{tz}}.",
+    "changes_requested": "Requested {{at}}",
+    "changes_view_report": "View report"
   },
   "doc": {
     "title": "Documentation",
@@ -5823,7 +5875,21 @@
       "window": "Maintenance window",
       "links": "Linked",
       "outcome": "Outcome",
-      "outcome_hint": "Sent to the customer in the notice afterwards."
+      "outcome_hint": "Sent to the customer in the notice afterwards.",
+      "origin": "Origin",
+      "origin_hint": "Why this change is done; the customer sees it in the portal.",
+      "requested_at": "Requested on",
+      "requested_at_hint": "Empty: now.",
+      "ticket": "Ticket",
+      "origin_ref": "Reference",
+      "origin_ref_hint": "For example the alert, the finding or who asked for it.",
+      "origin_ref_ph_manual": "Asked by phone by the office manager",
+      "origin_ref_ph_ticket": "#1234",
+      "origin_ref_ph_issue": "Disk almost full on the file server",
+      "origin_ref_ph_schedule": "Monthly maintenance",
+      "origin_ref_ph_ai": "Proposed by the AI assistant",
+      "origin_ref_ph_recovery": "Service restarted automatically",
+      "report": "Report"
     },
     "none": "None",
     "disabled": "off",
@@ -5905,7 +5971,11 @@
       "feed_off": "Off",
       "feed_on": "Make a link",
       "feed_new": "New link (the old one stops)",
-      "feed_disable": "Turn off"
+      "feed_disable": "Turn off",
+      "record_tasks": "Record scheduled tasks",
+      "record_tasks_hint": "Updates and commands that scheduled tasks carry out appear in the calendar of every customer they work for (maintenance runs always do).",
+      "record_recovery": "Record automatic recovery",
+      "record_recovery_hint": "Problems that Stackpilot fixed (or tried to fix) itself appear in the calendar as well."
     },
     "cset": {
       "title": "Per customer",
@@ -5920,6 +5990,17 @@
       "extra_hint": "Get every notice of this customer, e.g. their IT contact or your own service desk.",
       "feed": "Calendar feed for the customer",
       "feed_desc": "A secret link to the customer's own changes (no drafts or internal notes); also shown in their portal."
-    }
+    },
+    "origin": {
+      "manual": "Manual",
+      "ticket": "Ticket",
+      "issue": "Issue",
+      "schedule": "Schedule",
+      "ai": "AI assistant",
+      "recovery": "Automatic recovery"
+    },
+    "automatic": "recorded by Stackpilot",
+    "requested": "Requested {{at}} by {{by}}",
+    "view_report": "View the timeline report"
   }
 }

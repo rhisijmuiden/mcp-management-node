@@ -399,3 +399,28 @@ async def portal_changes(request: Request, db: AsyncSession = Depends(get_db), u
     return {"upcoming": upcoming, "past": past, "maintenance_window": u.customer.maintenance_window,
             "timezone": str(await changes.tz_of(db)),
             "ical_url": f"{base}/api/changes/ical/{c['ical_token']}.ics" if c.get("ical_token") else None}
+
+
+@router.get("/changes/{change_id}/report")
+async def portal_change_report(change_id: str, db: AsyncSession = Depends(get_db),
+                               u: PortalUser = Depends(portal_user)):
+    """The report of work Stackpilot did for a change (a maintenance run: the timeline in plain words), in the
+    portal user's language."""
+    from mmn.models import Change, Environment, TaskRun
+    from mmn.services import maintenance
+
+    with own(u):
+        ch = await db.get(Change, change_id)
+        if ch is None or ch.customer_id != u.customer_id or ch.status == "draft" or not ch.task_run_id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="not_found")
+        r = await db.get(TaskRun, ch.task_run_id)
+        e = await db.get(Environment, u.customer_id)
+        if r is None or e is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="not_found")
+        lang = u.language if u.language in ("en", "nl") else maintenance._lang(e)
+        tz = await maintenance.tz_of(db)
+        if r.kind == maintenance.KIND:
+            rep = maintenance.build_report(r, e, lang, tz)
+        else:
+            rep = await maintenance.task_report(db, r, e, lang, tz)
+    return {k: rep[k] for k in ("title", "intro", "summary", "timeline_label", "lines", "timezone", "state", "date")}
