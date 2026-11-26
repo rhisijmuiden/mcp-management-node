@@ -393,3 +393,57 @@ async def test_pbs_commands(monkeypatch):
         raise AssertionError("expected an error")
     except pbs.NodeError:
         pass
+
+
+VEEAM_OUT = ('NOPWSH\r\n{"v":1,"ps":"7.6.3","jobs":{"name":"Hyper-V - Productie VM\'s","type":"Hyper-V Backup",'
+             '"scheduled":true,"running":false,"last_result":"Success"},"vms":['
+             '{"name":"RNN-APP01","job":"Hyper-V - Productie VM\'s","type":"Hyper-V Backup","points":31,'
+             '"last":"%(ok)s","size":53288632320,"task":{"status":"Success","at":"%(ok)s","reason":""}},'
+             '{"name":"RNN-SQL01","job":"Hyper-V - Productie VM\'s","type":"Hyper-V Backup","points":31,'
+             '"last":"%(old)s","size":1,"task":{"status":"Failed","at":"%(ok)s","reason":"Disk full"}},'
+             '{"name":"RNN-RDS01","job":"Hyper-V - Productie VM\'s","type":"Hyper-V Backup","points":3,'
+             '"last":"%(ok)s","size":1,"task":null},'
+             '{"name":"Roeda","job":"Entra ID - Tenant Backup","type":"Entra ID Tenant Backup","points":30,'
+             '"last":"%(ok)s"}],"errors":[]}')
+
+
+def test_veeam_server_coverage():
+    from mmn.services import protection as p
+
+    now = datetime(2026, 11, 27, 7, 0, tzinfo=UTC)
+    ok, old = (now - timedelta(hours=9)).isoformat(), (now - timedelta(hours=33)).isoformat()
+    vs = p.parse_veeam(VEEAM_OUT % {"ok": ok, "old": old})
+    assert vs["version"] == "7.6.3" and len(vs["jobs"]) == 1 and len(vs["vms"]) == 4
+    assert p.parse_veeam('{"errors":"module: not found"}')["errors"] == ["module: not found"]
+    assert any("pwsh" in x for x in p.parse_veeam('NOPWSH\n{"errors":["module: x"]}')["errors"])
+
+    bck_id, app_id = "b" * 32, "a" * 32
+    machines = [
+        {"key": f"machine:{bck_id}", "kind": "machine", "machine_id": bck_id, "name": "RNN-BCK01", "role": "server",
+         "guest": None, "local": {"wsb": {"installed": False}, "veeam_server": vs,
+                                  "agents": [{"name": "VeeamBackupSvc", "display": "Veeam Backup Service"}]}},
+        {"key": f"machine:{app_id}", "kind": "machine", "machine_id": app_id, "name": "rnn-app01.roeda.local",
+         "role": "server", "guest": None, "local": {"wsb": {"installed": False}, "agents": []}},
+    ]
+    pol = {**p.DEFAULT_POLICY}
+    idx = p.veeam_index(machines)
+    bck = p.classify_machine(machines[0], pol, now, {}, idx)
+    assert bck["status"] == "backup_server" and bck["method"] == "veeam_server" and bck["veeam"]["vms"] == 4
+    app = p.classify_machine(machines[1], pol, now, {}, idx)
+    assert app["status"] == "ok" and app["method"] == "veeam_br" and app["last_backup"] == ok
+    assert app["veeam"]["server"] == "RNN-BCK01" and app["veeam"]["points"] == 31
+    # without the index (older callers) the machine has no backup
+    assert p.classify_machine(machines[1], pol, now, {})["status"] == "none"
+
+    extra = {r["name"]: r for r in p.veeam_items(machines, idx, pol, now)}
+    assert set(extra) == {"RNN-SQL01", "RNN-RDS01"}  # APP01 is a machine, Entra ID is no machine
+    assert extra["RNN-SQL01"]["status"] == "failed" and extra["RNN-SQL01"]["detail"] == "Disk full"
+    assert extra["RNN-RDS01"]["status"] == "ok" and extra["RNN-RDS01"]["machine_id"] == bck_id
+    key = extra["RNN-RDS01"]["key"]
+    assert p.KEY_RE.match(key) and key == f"veeam:{bck_id}:rnn-rds01"
+    assert p.veeam_items(machines, idx, {**pol, "exclude": [key]}, now)[0]["status"] in ("excluded", "failed")
+
+    assert p.classify_veeam_vm({"last": old, "task": {"status": "Success", "at": old}}, 26, now)[0] == "stale"
+    assert p.classify_veeam_vm({"last": None, "task": None}, 26, now)[0] == "never"
+    assert p.classify_veeam_vm({"last": ok, "task": {"status": "Warning", "at": ok, "reason": "w"}}, 26, now) == ("ok", "w")
+    assert len(p.veeam_wrapper()) < 12000

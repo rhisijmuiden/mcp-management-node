@@ -1380,22 +1380,39 @@ export interface CoverageGuest {
   status: CoverageStatus;
 }
 
+export interface CoverageVeeam {
+  server?: string | null;
+  server_id?: string | null;
+  job?: string | null;
+  points?: number | null;
+  size?: number | null;
+  last_full?: string | null;
+  running?: boolean | null;
+  result?: string | null;
+  result_at?: string | null;
+  jobs?: number;
+  vms?: number;
+  failed_jobs?: string[];
+  version?: string | null;
+}
+
 export interface CoverageMachine {
   key: string;
-  kind: "machine";
+  kind: "machine" | "veeam_vm";
   machine_id: string;
   name: string;
-  os: "linux" | "windows";
+  os: "linux" | "windows" | null;
   role: "server" | "workstation";
-  online: boolean;
+  online: boolean | null;
   error: string | null;
   guest: { key: string; vmid: number; cluster: string } | null;
   status: CoverageStatus;
-  method: "wsb" | "veeam" | "guest" | "external" | "pbs" | null;
+  method: "wsb" | "veeam" | "veeam_br" | "veeam_server" | "guest" | "external" | "pbs" | null;
   last_backup: string | null;
   age_hours: number | null;
   detail: string | null;
   system_state: boolean | null;
+  veeam?: CoverageVeeam | null;
   local: { checked_at?: string; wsb?: { installed?: boolean; policy?: boolean; schedule?: string[]; volumes?: string[]; target?: string; versions?: number } } | null;
 }
 

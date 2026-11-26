@@ -2215,7 +2215,9 @@ async def list_backup_coverage(customer: str, refresh: bool = False, problems_on
     (ok, stale, failed, no_job, never, none, external, backup_server, excluded, not_monitored), last
     backup, age in hours, size, the jobs that cover it, the storages and the last error; plus the
     backup jobs, backup storages, Proxmox Backup Servers and the customer's backup policy (SLA).
-    Items carry a `key` for set_backup_policy (exclude). `refresh` collects it again now (up to a
+    Machines backed up by Veeam Backup & Replication (as Hyper-V/VMware VMs) carry method "veeam_br"
+    and a `veeam` block (server, job, restore points, size); Veeam VMs without an agent are items of
+    kind "veeam_vm". Items carry a `key` for set_backup_policy (exclude). `refresh` collects it again now (up to a
     minute); otherwise it is at most 30 minutes old. `problems_only` leaves out the good items."""
     from mmn.services import nodes, protection
 

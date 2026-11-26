@@ -240,13 +240,19 @@ function MachineRow({ m, admin, onExclude }: { m: CoverageMachine; admin: boolea
   const wsb = m.local?.wsb;
   return (
     <Tr>
-      <Td><Link to={m.role === "workstation" ? `/workstations/${m.machine_id}` : `/servers/${m.machine_id}`} className="font-bold hover:underline">{m.name}</Link><div className="text-xs text-muted">{t(`prot.role_${m.role}`)} · {m.os === "windows" ? "Windows" : "Linux"}{!m.online ? ` · ${t("prot.offline")}` : ""}</div></Td>
+      <Td>
+        {m.kind === "veeam_vm"
+          ? <><span className="font-bold">{m.name}</span><div className="text-xs text-muted">{t("prot.veeam_vm_only", { server: m.veeam?.server ?? "?" })}</div></>
+          : <><Link to={m.role === "workstation" ? `/workstations/${m.machine_id}` : `/servers/${m.machine_id}`} className="font-bold hover:underline">{m.name}</Link><div className="text-xs text-muted">{t(`prot.role_${m.role}`)} · {m.os === "windows" ? "Windows" : "Linux"}{!m.online ? ` · ${t("prot.offline")}` : ""}</div></>}
+      </Td>
       <Td><StatusBadge status={m.status} />{m.error && <div className="mt-1 max-w-72 text-xs text-muted">{m.error}</div>}</Td>
       <Td className="text-sm">
         {m.method ? t(`prot.method_${m.method}`) : "–"}
         {m.method === "guest" && m.guest && <div className="text-xs text-muted">{t("prot.as_guest", { vmid: m.guest.vmid, cluster: m.guest.cluster })}</div>}
         {m.method === "wsb" && <div className="text-xs text-muted">{[wsb?.schedule?.length ? t("prot.wsb_at", { times: wsb.schedule.join(", ") }) : null, m.system_state ? t("prot.wsb_system_state") : t("prot.wsb_no_system_state")].filter(Boolean).join(" · ")}</div>}
-        {m.detail && m.method !== "wsb" && <div className="max-w-72 text-xs text-muted">{m.detail}</div>}
+        {m.method === "veeam_br" && m.veeam && <div className="text-xs text-muted">{[t("prot.veeam_via", { server: m.veeam.server ?? "?", job: m.veeam.job ?? "?" }), t("prot.veeam_points", { count: m.veeam.points ?? 0 }), m.veeam.size ? formatBytes(m.veeam.size) : null, m.veeam.running ? t("prot.veeam_running") : null].filter(Boolean).join(" · ")}</div>}
+        {m.method === "veeam_server" && m.veeam && <div className="text-xs text-muted">{t("prot.veeam_server_info", { jobs: m.veeam.jobs ?? 0, vms: m.veeam.vms ?? 0 })}{m.veeam.failed_jobs?.length ? <span className="text-offline"> · {t("prot.veeam_failed_jobs", { jobs: m.veeam.failed_jobs.join(", ") })}</span> : null}</div>}
+        {m.detail && m.method !== "wsb" && <div className={`max-w-72 text-xs ${m.status === "failed" ? "text-offline" : "text-muted"}`}>{m.detail}</div>}
         {m.detail && m.method === "wsb" && m.status === "failed" && <div className="text-xs text-offline">{t("prot.wsb_error", { code: m.detail })}</div>}
       </Td>
       <Td className="text-sm"><Age iso={m.last_backup} hours={m.age_hours} /></Td>

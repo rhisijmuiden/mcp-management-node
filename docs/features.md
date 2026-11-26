@@ -441,6 +441,11 @@ approval, whatever the policies say.
 - **Servers and workstations**: Windows Server Backup (policy, system state, last result), Veeam and other backup
   agents through the Windows agent; backup tools, timers and cron jobs on Linux. A machine that is a Proxmox guest is
   covered by the guest's backup.
+- **Veeam Backup & Replication**: on a Veeam server (v12 or v13) the agent reads the jobs, the last sessions with the
+  result per VM and the restore points per VM, read-only through PowerShell 7 (`pwsh`, needed by the Veeam module of
+  v13). Hyper-V and VMware VMs are matched by name to the customer's machines, so they show their last restore point,
+  the job and the number of points; VMs without a Stackpilot agent appear as items of their own. A failed VM run after
+  the last good point is "failed", an old point is "too old". Nothing in Veeam is changed.
 - **Policy per customer**: maximum age in hours (SLA, default 26), alerts for failed and missing backups, whether
   workstations count, extra mail recipients and excluded items.
 - **Actions**: back up now, restore a whole guest (new VMID next to the original, or over the existing guest after
