@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { toast } from "sonner";
 import { CopyButton } from "@/components/CopyButton";
 import { useCustomer, useCustomers } from "@/components/customers";
@@ -110,7 +110,9 @@ export function TicketsPage() {
   const { t } = useTranslation();
   const { user } = useAuth();
   const admin = user?.role === "admin";
-  const [tab, setTab] = useState("tickets");
+  const [params, setParams] = useSearchParams();
+  const tab = params.get("tab") === "accounts" ? "accounts" : "tickets";
+  const setTab = (v: string) => setParams(v === "tickets" ? {} : { tab: v }, { replace: true });
   const [creating, setCreating] = useState(false);
   const counts = useQuery({ queryKey: ["ticket-counts"], queryFn: () => get<Counts>("api/tickets/counts") });
   const c = counts.data;
@@ -130,11 +132,9 @@ export function TicketsPage() {
         <Tabs.List className="mb-5 inline-flex flex-wrap rounded-md border border-line bg-sunken p-0.5">
           <Tabs.Trigger value="tickets" className={tabCls}>{t("tk.tab_tickets")}</Tabs.Trigger>
           <Tabs.Trigger value="accounts" className={tabCls}>{t("tk.tab_accounts")}</Tabs.Trigger>
-          {admin && <Tabs.Trigger value="settings" className={tabCls}>{t("tk.tab_settings")}</Tabs.Trigger>}
         </Tabs.List>
         <Tabs.Content value="tickets"><TicketList /></Tabs.Content>
         <Tabs.Content value="accounts"><PortalAccounts admin={admin} /></Tabs.Content>
-        {admin && <Tabs.Content value="settings"><PortalSettingsCard /></Tabs.Content>}
       </Tabs.Root>
       {creating && <NewTicketDialog onClose={() => setCreating(false)} />}
     </div>
@@ -661,6 +661,17 @@ function AccountDialog({ account, onClose }: { account: PortalUser | null; onClo
 }
 
 /* ------------------------------------------------------------------ settings */
+/** Settings → Customer portal (moved out of Tickets in v0.26.0). */
+export function PortalSettingsPage() {
+  const { t } = useTranslation();
+  return (
+    <div>
+      <PageHeader title={t("nav.portal_settings")} description={t("tk.portal_settings_desc")} />
+      <PortalSettingsCard />
+    </div>
+  );
+}
+
 function PortalSettingsCard() {
   const { t } = useTranslation();
   const qc = useQueryClient();

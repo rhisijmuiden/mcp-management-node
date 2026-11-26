@@ -35,6 +35,7 @@ Stackpilot is built in phases. Each phase is one pull request and one minor rele
 | – | v0.23.0 | Monthly report: "Work performed" overview for the customer (what was done, by whom, how long, result), EN + NL |
 | – | v0.24.0 | Proxmox maintenance runs (checks, updates, moving or shutting down machines, restarts in start-up order) with a timeline report per customer; origin of every change in the change calendar |
 | – | v0.25.0 | New navigation: top bar with customer switcher (what is linked per customer), Ctrl+K search and a band showing the customer you work in; left menu regrouped by task with Integrations and Settings at the bottom |
+| – | v0.26.0 | Customer overview with a tile for everything linked and "what is not set up yet"; Integrations page with step-by-step guides (GitHub, Microsoft 365, UniFi, MCP servers, AI apps, agents, mail, app backups); view the customer portal as a customer (read only); portal settings moved to Settings |
 
 ## What each phase added
 

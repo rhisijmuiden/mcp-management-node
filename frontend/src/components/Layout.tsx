@@ -49,6 +49,7 @@ import {
   Wrench,
   Sunrise,
   Languages,
+  Eye,
   Search,
   BookOpenCheck, HeartPulse, Radar, CloudCog, LifeBuoy, BookText, LockKeyhole, Award, Flame, Waypoints, Wallet, CalendarRange,
 } from "lucide-react";
@@ -58,7 +59,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { post, get, patch } from "@/lib/api";
 import { applyTheme, localStorageSet, useAuth } from "@/lib/auth";
 import type { SystemInfo } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { appUrl, cn } from "@/lib/utils";
 import { InfoDialog } from "./InfoDialog";
 import { CUSTOMER_CSS, CustomerSwitcher, useCustomer, useCustomers } from "./customers";
 import { CommandPalette, type PageEntry } from "./CommandPalette";
@@ -357,6 +358,7 @@ export function Layout() {
   const footerItems: Item[] = [
     {
       icon: <Plug />, label: t("nav.section.integrations"), children: [
+        { to: "/integrations", icon: <Plug />, label: t("nav.integrations_all") },
         { to: "/admin/agents", icon: <Plug />, label: t("nav.agents"), admin: true },
         { to: "/ai/connections", icon: <Bot />, label: t("nav.ai_connections") },
         { to: "/ai/tokens", icon: <KeyRound />, label: t("nav.api_tokens") },
@@ -373,6 +375,7 @@ export function Layout() {
         { to: "/admin/users", icon: <Users />, label: t("nav.users"), admin: true },
         { to: "/admin/backups", icon: <DatabaseBackup />, label: t("nav.backups"), admin: true },
         { to: "/admin/notifications", icon: <Bell />, label: t("nav.notifications"), admin: true },
+        { to: "/admin/portal", icon: <Eye />, label: t("nav.portal_settings"), admin: true },
         { to: "/admin/web-server", icon: <Globe />, label: t("nav.web_server"), admin: true },
         { to: "/admin/audit", icon: <ScrollText />, label: t("nav.audit"), admin: true },
         { to: "/admin/general", icon: <Settings />, label: t("nav.general"), admin: true },
@@ -515,6 +518,11 @@ export function Layout() {
             <NavLink to="/ai/approvals" className={cn(pill, "border-koraal bg-koraal text-nacht hover:bg-koraal/90")}>
               <Hand /> <span className="hidden sm:inline">{t("top.approvals", { count: pending.data.pending })}</span><span className="sm:hidden">{pending.data.pending}</span>
             </NavLink>
+          )}
+          {isAdmin && customerId && (
+            <a href={appUrl(`/portal?preview=${encodeURIComponent(customerId)}`)} target="_blank" rel="noreferrer" className={cn(pill, "hidden md:flex")} title={t("top.view_as_customer_hint")}>
+              <Eye /> {t("top.view_as_customer")}
+            </a>
           )}
           <button type="button" onClick={() => setInfoOpen(true)} className={cn(pill, "hidden sm:flex")} title={t("info.button")}>
             <Info />

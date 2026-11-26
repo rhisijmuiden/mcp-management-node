@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from mmn.api.deps import client_ip, current_user, require_admin
 from mmn.db import get_db
 from mmn.models import Environment, User
-from mmn.services import customers, nodes
+from mmn.services import customer_links, customers, nodes
 from mmn.services.audit import audit
 
 router = APIRouter(prefix="/api/customers", tags=["customers"])
@@ -74,6 +74,12 @@ async def delete_customer(cid: str, request: Request, db: AsyncSession = Depends
 @router.get("/{cid}/overview")
 async def customer_overview(cid: str, db: AsyncSession = Depends(get_db), user: User = Depends(current_user)):
     return await customers.overview(db, await _get(db, cid), user_id=user.id)
+
+
+@router.get("/{cid}/links")
+async def customer_links_(cid: str, db: AsyncSession = Depends(get_db), user: User = Depends(current_user)):
+    """What is linked to the customer and what is not set up yet (tiles on the customer overview)."""
+    return await customer_links.links(db, await _get(db, cid), user_id=user.id)
 
 
 @router.post("/{cid}/scan")

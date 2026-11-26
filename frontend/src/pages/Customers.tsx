@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { LinkedTiles, SetupChecklist } from "@/components/CustomerLinks";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { toast } from "sonner";
 import { CopyButton } from "@/components/CopyButton";
@@ -225,22 +226,12 @@ function CustomerWorkstations({ customerId, admin, onAdd }: { customerId: string
 function OverviewTab({ d, admin, onTab }: { d: CustomerOverview; admin: boolean; onTab: (t: Tab) => void }) {
   const { t } = useTranslation();
   const [q, setQ] = useState("");
-  const tot = d.totals;
   const c = d.customer;
   const rows = d.machines.filter((m) => !q || `${m.name} ${m.os ?? ""} ${m.hostname ?? ""}`.toLowerCase().includes(q.toLowerCase()));
   const unifiRows = d.unifi.filter((u) => !q || u.name.toLowerCase().includes(q.toLowerCase()));
-  const tile = (tab: Tab, label: string, value: ReactNode, hint: ReactNode, tone: "info" | "warning" | "online" | "offline" | "accent", icon: ReactNode) => (
-    <button type="button" onClick={() => onTab(tab)} className="cursor-pointer text-left"><Stat label={label} value={value} hint={hint} tone={tone} icon={icon} /></button>
-  );
   return (
     <>
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        {tile("proxmox", "Proxmox", t("cust.nodes_n", { count: tot.proxmox.total }), t("cust.guests_n", { count: tot.proxmox.guests ?? 0 }), tot.proxmox.online < tot.proxmox.total ? "offline" : "info", <Server />)}
-        {tile("servers", t("cust.tab_servers"), tot.servers.total, t("srv.k_split", { linux: tot.servers.linux, windows: tot.servers.windows }), tot.servers.attention ? "warning" : "info", <Monitor />)}
-        {tile("workstations", t("cust.workstations"), tot.workstations.total, tot.workstations.with_updates ? t("cust.need_updates", { count: tot.workstations.with_updates }) : t("cust.up_to_date"), tot.workstations.with_updates ? "warning" : "info", <Laptop />)}
-        {tile("network", t("cust.tab_network"), t("cust.sites_n", { count: tot.network.sites }), tot.network.connections ? t("cust.unifi_devices", { count: tot.network.devices }) : t("cust.no_unifi"), tot.network.errors || tot.network.offline ? "warning" : "info", <Wifi />)}
-        {tile("overview", t("cust.col_alerts"), tot.alerts, tot.alerts ? t("cust.alerts_open") : t("cust.no_alerts"), tot.alerts ? "warning" : "online", <AlertTriangle />)}
-      </div>
+      <LinkedTiles customerId={c.id} />
       <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-6">
           <ScanCard customer={c} admin={admin} />
@@ -279,6 +270,7 @@ function OverviewTab({ d, admin, onTab }: { d: CustomerOverview; admin: boolean;
           )}
         </div>
         <div className="space-y-6">
+          <SetupChecklist customerId={c.id} />
           <AiAccessCard d={d} onTab={onTab} />
           <AskCard name={c.name} />
           <Card>

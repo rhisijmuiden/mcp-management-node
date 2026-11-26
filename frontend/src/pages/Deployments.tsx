@@ -118,7 +118,7 @@ export function DeployFields({ f, set, editing }: { f: DeployForm; set: (p: Part
   );
 }
 
-export function GithubConnect({ compact }: { compact?: boolean }) {
+export function GithubConnect({ compact, guide = true }: { compact?: boolean; guide?: boolean }) {
   const { t, i18n } = useTranslation();
   const qc = useQueryClient();
   const gh = useGithub();
@@ -134,7 +134,8 @@ export function GithubConnect({ compact }: { compact?: boolean }) {
   return (
     <Card>
       <CardHeader icon={<GitBranch />} title={t("dep.gh_title")} description={s?.configured ? t("dep.gh_connected", { login: s.login ?? "?", ago: timeAgo(s.checked_at, i18n.language) }) : t("dep.gh_hint")}
-        action={s?.configured && <Button size="sm" variant="ghost" onClick={() => save.mutate(null)}>{t("dep.gh_disconnect")}</Button>} />
+        action={s?.configured ? <Button size="sm" variant="ghost" onClick={() => save.mutate(null)}>{t("dep.gh_disconnect")}</Button>
+          : guide && <Link to="/integrations?setup=github" className="text-sm font-semibold text-accent-text hover:underline">{t("intg.github.how")}</Link>} />
       {(!s?.configured || !compact) && (
         <CardBody className="flex flex-wrap items-end gap-3">
           <Field label={s?.configured ? t("dep.gh_replace") : t("dep.gh_token")} hint={t("dep.gh_token_hint")} className="min-w-72 flex-1">

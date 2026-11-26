@@ -49,10 +49,19 @@ through the [MCP tools](mcp-tools.md), within the limits you set.
 | Maintenance | Backups, Updates & software, Monitoring & uptime, Certificates & firewall, Change calendar |
 | Automation | Runbooks, Deployments, Scheduled tasks, Automatic recovery |
 | Knowledge & admin | Documentation, Password vault, Costs & licences |
-| Integrations (bottom) | Agents & pairing, Connected AI, API tokens, MCP hub, UniFi consoles, Mail server |
-| Settings (bottom) | AI policies, Tool catalog, AI sessions, Users, App backups, Notifications, Web server & proxy, Audit log, General |
+| Integrations (bottom) | All integrations, Agents & pairing, Connected AI, API tokens, MCP hub, UniFi consoles, Mail server |
+| Settings (bottom) | AI policies, Tool catalog, AI sessions, Users, App backups, Notifications, Customer portal, Web server & proxy, Audit log, General |
 
 Old addresses keep working, so links in mails and reports still open the right page.
+
+**Integrations** shows every connection with its state: GitHub, Microsoft 365, UniFi, MCP servers, AI apps, agents,
+the mail server and app backups. **Set up step by step** opens a guide with numbered steps, direct links to the
+right page at GitHub or Microsoft, what to tick there, and the place in Stackpilot to finish. The GitHub guide
+explains a fine-grained token (one per owner, *All repositories*, Read and write on Administration, Contents, Pull
+requests, Issues, Actions, Workflows, Webhooks, Secrets, Variables, Environments, Deployments, Pages and Commit
+statuses) so Stackpilot can do almost everything, including creating repositories, and the classic alternative with
+a pre-filled link. The token is pasted in the last step.
+
 
 ## Customers
 
@@ -63,7 +72,14 @@ customer too, for your own environment.
 
 - **Customers** lists every customer with status, machines online, network, pending updates, alerts and the
   maintenance window.
-- The **customer switcher** at the top of the menu limits every page of the app to one customer.
+- The **customer switcher** in the top bar limits every page of the app to one customer.
+- The **Overview** tab starts with a tile for everything linked to the customer: Proxmox, servers, workstations,
+  UniFi, Microsoft 365, MCP servers, deployments, backups, open tickets, AI access, documentation and vault, the
+  customer portal and uptime checks. A dashed tile is not set up yet and opens the step-by-step guide. Next to it,
+  **What is not set up yet?** lists what is missing (machines offline, backup problems, no maintenance window, SLA,
+  contact or notes, no uptime checks, no portal accounts, no app backup target), each with a link to fix it.
+- **View as customer** (top bar, admins) opens the customer portal of the picked customer in a new tab, exactly as
+  the customer's managers see it, under a coral band. It is read only: nothing can be sent in the customer's name.
 - Each **customer page** has the tabs Overview, Proxmox, Servers, Workstations, Network, AI access, Contacts & notes
   and Reports. **Add machine** adds a Proxmox VE node, a server or a workstation straight to that customer; existing
   machines can be moved under **Manage** on the machine's page.
