@@ -1046,7 +1046,7 @@ export interface FanOutRow<T> {
   error?: string;
 }
 
-export interface WinEvent { time: string; log: string; level: string; provider: string; id: number; message: string }
+export interface WinEvent { time: string; log: string; level: string; provider: string; id: number; message: string; /** set when the event is the agent's own restart after a self-update */ expected_restart?: string }
 
 export interface LogSearchResult {
   source: "journal" | "eventlog" | "files";

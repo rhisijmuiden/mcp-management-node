@@ -11,6 +11,7 @@ import (
 
 	"github.com/rhisijmuiden/stackpilot/agent/internal/client"
 	"github.com/rhisijmuiden/stackpilot/agent/internal/config"
+	"github.com/rhisijmuiden/stackpilot/agent/internal/restartlog"
 	"github.com/rhisijmuiden/stackpilot/agent/internal/winsvc"
 )
 
@@ -26,6 +27,14 @@ func runPlatform(fn func(ctx context.Context)) bool {
 	// 7031; it is expected. A scheduled task armed just before is the safety net in case the
 	// recovery does not start it.
 	client.RestartExitCode = 1
+	// Remember the restart and say so in the Application log: the 7031 event that follows is
+	// then marked as expected when Stackpilot reads the event log.
+	client.OnUpdateRestart = func(version string) {
+		if err := restartlog.Record(config.StateDir, version, time.Now()); err != nil {
+			log.Printf("recording the update restart: %v", err)
+		}
+		winsvc.LogUpdateRestart(version)
+	}
 	client.BeforeRestart = func() {
 		if err := winsvc.ArmRestartTask(); err != nil {
 			log.Printf("restart safety task: %v", err)

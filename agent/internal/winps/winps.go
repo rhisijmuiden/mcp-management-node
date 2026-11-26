@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf16"
+
+	"github.com/rhisijmuiden/stackpilot/agent/internal/proctree"
 )
 
 // Prelude makes PowerShell print UTF-8 and stop on errors unless a command says otherwise.
@@ -52,6 +54,7 @@ func Output(ctx context.Context, timeout time.Duration, script string) (string, 
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, Exe(), Args(script)...)
+	proctree.Setup(cmd)
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	err := cmd.Run()

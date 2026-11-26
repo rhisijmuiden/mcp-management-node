@@ -14,6 +14,8 @@ import (
 
 	"golang.org/x/sys/windows/registry"
 
+	"github.com/rhisijmuiden/stackpilot/agent/internal/config"
+	"github.com/rhisijmuiden/stackpilot/agent/internal/restartlog"
 	"github.com/rhisijmuiden/stackpilot/agent/internal/winps"
 )
 
@@ -209,16 +211,6 @@ func Journal(ctx context.Context, q JournalQuery) (ExecResult, error) {
 	return psRun(ctx, 120*time.Second, script), nil
 }
 
-// Event is one entry of the Windows Event Log.
-type Event struct {
-	Time     string `json:"time"`
-	Log      string `json:"log"`
-	Level    string `json:"level"`
-	Provider string `json:"provider"`
-	ID       int    `json:"id"`
-	Message  string `json:"message"`
-}
-
 // Events returns Event Log entries as structured data.
 func Events(ctx context.Context, q JournalQuery) ([]Event, error) {
 	script, err := eventScript(q, true)
@@ -229,6 +221,7 @@ func Events(ctx context.Context, q JournalQuery) ([]Event, error) {
 	if err := psJSON(ctx, 120*time.Second, script, &out); err != nil {
 		return nil, err
 	}
+	markUpdateRestarts(out, restartlog.Load(config.StateDir))
 	return out, nil
 }
 

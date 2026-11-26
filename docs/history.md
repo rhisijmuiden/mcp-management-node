@@ -258,4 +258,6 @@ Dutch or English. The status follows the clock or the linked runbook run. The cu
 maintenance, and there are secret iCal feeds per customer and for staff. Seven MCP tools and the token scopes
 `changes` and `changes_admin`. No agent update is needed.
 
-Bug fix releases in between (v0.2.1, v0.6.1, v0.6.2, v0.7.1) are listed on the releases page.
+Bug fix releases in between (v0.2.1, v0.6.1, v0.6.2, v0.7.1, v0.27.1) are listed on the releases page. v0.27.1: the
+Windows agent marks its own restart after a self-update (event 7031) as expected in the event log, and a command
+that times out now stops together with the processes it started.

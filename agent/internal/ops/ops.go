@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rhisijmuiden/stackpilot/agent/internal/proctree"
 	"github.com/rhisijmuiden/stackpilot/agent/internal/winps"
 )
 
@@ -71,6 +72,7 @@ func run(ctx context.Context, timeout time.Duration, name string, args ...string
 	defer cancel()
 	start := time.Now()
 	cmd := exec.CommandContext(ctx, name, args...)
+	proctree.Setup(cmd)
 	cmd.Env = append(os.Environ(), "LC_ALL=C.UTF-8", "SYSTEMD_PAGER=", "PAGER=cat", "DEBIAN_FRONTEND=noninteractive")
 	var out, errb limitedBuf
 	cmd.Stdout, cmd.Stderr = &out, &errb
@@ -87,6 +89,7 @@ func run(ctx context.Context, timeout time.Duration, name string, args ...string
 	}
 	if ctx.Err() == context.DeadlineExceeded {
 		r.TimedOut = true
+		r.Stderr += fmt.Sprintf("\n[stackpilot] timed out after %d s: the command and the processes it started were stopped. Run it again with a larger timeout (at most 1800 s).", int(timeout.Seconds()))
 	}
 	return r
 }
