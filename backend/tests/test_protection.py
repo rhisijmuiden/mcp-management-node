@@ -232,6 +232,11 @@ async def test_backup_management(admin_client, client, live_server):  # noqa: F8
         cov = d["backups"]["coverage"]
         assert cov["considered"] == 4 and cov["failed"] == 1
         assert any(x["status"] == "failed" and x["item"].startswith("VM 200") for x in cov["items"])
+        # The report renders with coverage items (regression: `cov.items` hit dict.items in Jinja).
+        tz = reports.ZoneInfo("UTC")
+        html = reports.render_html(d, tz)
+        assert "VM 200" in html and "back-up" in html
+        assert reports.render_pdf(reports._jsonable(d), tz).startswith(b"%PDF")
 
         runner.cancel()
 
