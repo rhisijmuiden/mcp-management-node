@@ -43,6 +43,8 @@ const UnifiConnectionsPage = lazy(() => import("@/pages/Unifi").then((m) => ({ d
 const NetworkPage = lazy(() => import("@/pages/Network").then((m) => ({ default: m.NetworkPage })));
 const SdnDesignerPage = lazy(() => import("@/pages/SdnDesigner").then((m) => ({ default: m.SdnDesignerPage })));
 const TicketsPage = lazy(() => import("@/pages/Tickets").then((m) => ({ default: m.TicketsPage })));
+const PortalSettingsPage = lazy(() => import("@/pages/Tickets").then((m) => ({ default: m.PortalSettingsPage })));
+const IntegrationsPage = lazy(() => import("@/pages/Integrations").then((m) => ({ default: m.IntegrationsPage })));
 const TicketDetailPage = lazy(() => import("@/pages/Tickets").then((m) => ({ default: m.TicketDetailPage })));
 const DocsPage = lazy(() => import("@/pages/Docs").then((m) => ({ default: m.DocsPage })));
 const DocDetailPage = lazy(() => import("@/pages/Docs").then((m) => ({ default: m.DocDetailPage })));
@@ -156,6 +158,8 @@ export default function App() {
         <Route path="admin/notifications" element={<RequireAuth admin><NotificationsPage /></RequireAuth>} />
         <Route path="admin/web-server" element={<RequireAuth admin><WebServerPage /></RequireAuth>} />
         <Route path="admin/audit" element={<RequireAuth admin><AuditPage /></RequireAuth>} />
+        <Route path="integrations" element={<L><IntegrationsPage /></L>} />
+        <Route path="admin/portal" element={<RequireAuth admin><L><PortalSettingsPage /></L></RequireAuth>} />
         <Route path="admin/general" element={<RequireAuth admin><GeneralPage /></RequireAuth>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

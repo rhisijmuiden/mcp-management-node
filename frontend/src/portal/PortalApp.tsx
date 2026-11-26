@@ -1,8 +1,8 @@
 import * as DM from "@radix-ui/react-dropdown-menu";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarRange, ChevronDown, Inbox, LifeBuoy, LogOut, Menu, Monitor, Moon, Plus, Sun, UserRound, X } from "lucide-react";
+import { CalendarRange, ChevronDown, Eye, Inbox, LifeBuoy, LogOut, Menu, Monitor, Moon, Plus, Sun, UserRound, X } from "lucide-react";
 import { createContext, useContext, useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { useTranslation } from "react-i18next";
+import { Trans, useTranslation } from "react-i18next";
 import { Link, Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useSearchParams } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Field, Input } from "@/components/ui/form";
@@ -10,9 +10,9 @@ import { Alert, Spinner } from "@/components/ui/misc";
 import i18n from "@/i18n";
 import { errorMessage } from "@/lib/api";
 import { applyTheme, localStorageGet, localStorageSet } from "@/lib/auth";
-import { cn } from "@/lib/utils";
+import { appUrl, cn } from "@/lib/utils";
 import { AuthShell } from "@/pages/AuthPages";
-import { pget, ppatch, ppost, setPortalUnauthorizedHandler, type PortalMe, type PortalStatus } from "./api";
+import { endPreview, pget, ppatch, ppost, setPortalUnauthorizedHandler, type PortalMe, type PortalStatus } from "./api";
 import { PortalAccountPage, PortalChangesPage, PortalHomePage, PortalNewTicketPage, PortalTicketPage } from "./PortalPages";
 
 /* ------------------------------------------------------------------ session */
@@ -194,6 +194,7 @@ function PortalLayout() {
     { to: "/portal/account", icon: <UserRound />, label: t("portal.nav.account") },
   ];
   const logout = async () => {
+    if (status?.preview) return exitPreview();
     await ppost("logout");
     qc.removeQueries({ queryKey: ["portal-tickets"] });
     await refresh();
@@ -202,7 +203,7 @@ function PortalLayout() {
   const setLang = async (lang: string) => {
     localStorageSet("mmn-lang", lang);
     i18n.changeLanguage(lang);
-    await ppatch("me", { language: lang });
+    if (!status?.preview) await ppatch("me", { language: lang });
     await refresh();
   };
   const setTheme = (th: string) => { localStorageSet("mmn-theme", th); applyTheme(th); };
@@ -233,8 +234,24 @@ function PortalLayout() {
       </div>
     </div>
   );
+  const exitPreview = () => {
+    const cid = me?.customer_id;
+    endPreview();
+    qc.clear();
+    window.location.assign(appUrl(cid ? `/customers/${cid}` : "/"));
+  };
   return (
-    <div className="flex h-full">
+    <div className="flex h-full flex-col">
+      {status?.preview && (
+        <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b-2 border-koraal bg-accent-soft px-4 py-2 text-[13px]" role="status">
+          <Eye className="size-4 shrink-0 text-accent-text" />
+          <span className="min-w-0 flex-1">
+            <Trans i18nKey="portal.preview_band" values={{ name: me?.customer_name ?? "" }} components={{ b: <b /> }} />
+          </span>
+          <button type="button" onClick={exitPreview} className="cursor-pointer font-bold text-accent-text hover:underline">{t("portal.preview_exit")}</button>
+        </div>
+      )}
+      <div className="flex min-h-0 flex-1">
       <aside className="hidden w-[264px] shrink-0 border-r border-line bg-raised lg:block">{sidebar}</aside>
       {open && (
         <div className="fixed inset-0 z-40 lg:hidden">
@@ -287,6 +304,7 @@ function PortalLayout() {
         <main className="flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-[1080px] px-4 py-6 lg:px-8 lg:py-8"><Outlet /></div>
         </main>
+      </div>
       </div>
     </div>
   );

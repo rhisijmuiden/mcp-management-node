@@ -20,11 +20,11 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mmn.api.auth import _secure_cookie
-from mmn.api.deps import SAFE_METHODS, client_ip
+from mmn.api.deps import SAFE_METHODS, client_ip, get_session
 from mmn.api.ratelimit import RateLimiter, forgot_limiter, login_limiter
 from mmn.config import get_settings
 from mmn.db import get_db
-from mmn.models import PortalSession, PortalToken, PortalUser, Ticket
+from mmn.models import Environment, PortalSession, PortalToken, PortalUser, Role, Ticket
 from mmn.security import (
     MIN_PASSWORD_LENGTH,
     hash_password,
@@ -96,9 +96,40 @@ async def _enabled(db: AsyncSession) -> None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="portal_disabled")
 
 
+PREVIEW_HEADER = "x-portal-preview"
+
+
+async def _preview_user(request: Request, db: AsyncSession) -> PortalUser | None:
+    """"View as customer" (v0.26.0): a signed-in admin sees the portal of one customer, read only.
+
+    The admin's own session cookie is checked; the portal user is a manager of that customer that only exists for
+    this request (never stored), so the admin sees exactly what the customer's managers see.
+    """
+    cid = request.headers.get(PREVIEW_HEADER)
+    if not cid:
+        return None
+    sess = await get_session(request, db)
+    if sess is None or sess.user.role != Role.admin:
+        return None
+    e = await db.get(Environment, cid)
+    if e is None:
+        return None
+    u = PortalUser(id="preview", customer_id=e.id, email=sess.user.email or sess.user.username,
+                   full_name=sess.user.full_name or sess.user.username, role="manager",
+                   language=sess.user.language if sess.user.language in ("en", "nl") else "en",
+                   is_active=True, password_hash="!")
+    u.customer = e
+    return u
+
+
 async def portal_user(request: Request, db: AsyncSession = Depends(get_db),
                       sess: PortalSession | None = Depends(portal_session)) -> PortalUser:
     if sess is None:
+        preview = await _preview_user(request, db)
+        if preview is not None:
+            if request.method not in SAFE_METHODS:
+                raise HTTPException(status.HTTP_403_FORBIDDEN, detail="portal_preview_read_only")
+            return preview
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="not_authenticated")
     if request.method not in SAFE_METHODS:
         cookie = request.cookies.get(PORTAL_CSRF, "")
@@ -150,10 +181,13 @@ class MeIn(BaseModel):
 
 
 @router.get("/status")
-async def portal_status(db: AsyncSession = Depends(get_db), sess: PortalSession | None = Depends(portal_session)):
+async def portal_status(request: Request, db: AsyncSession = Depends(get_db),
+                        sess: PortalSession | None = Depends(portal_session)):
     general = await get_setting(db, "general")
     cfg = await get_setting(db, "portal")
-    return {"enabled": bool(cfg.get("enabled", True)), "authenticated": sess is not None,
+    preview = sess is None and await _preview_user(request, db) is not None
+    return {"enabled": bool(cfg.get("enabled", True)) or preview, "authenticated": sess is not None or preview,
+            "preview": preview,
             "app_name": general["app_name"], "default_language": general["default_language"],
             "mail_enabled": (await get_setting(db, "mail"))["enabled"]}
 
@@ -406,7 +440,7 @@ async def portal_change_report(change_id: str, db: AsyncSession = Depends(get_db
                                u: PortalUser = Depends(portal_user)):
     """The report of work Stackpilot did for a change (a maintenance run: the timeline in plain words), in the
     portal user's language."""
-    from mmn.models import Change, Environment, TaskRun
+    from mmn.models import Change, TaskRun
     from mmn.services import maintenance
 
     with own(u):
