@@ -961,8 +961,20 @@ export interface MonAlert {
 
 export interface MonitoringSettings { enabled: boolean; mail_to: string[]; cpu_pct: number; cpu_minutes: number; mem_pct: number; disk_pct: number; storage_pct: number; offline_minutes: number; smart: boolean; wearout_pct: number; unifi?: boolean }
 
-export interface GithubStatus { configured: boolean; login: string | null; checked_at: string | null }
-export interface GithubRepo { full_name: string; private: boolean; default_branch: string; description: string; pushed_at: string | null; html_url: string; archived: boolean }
+export interface GithubAccount {
+  id: string; name: string; login: string | null; token_kind: "fine_grained" | "classic"; scopes: string[];
+  expires_at: string | null; expires_in_days: number | null; expiring: boolean; status: "ok" | "error";
+  last_error: string | null; checked_at: string | null; created_at: string;
+}
+export interface GithubStatus { configured: boolean; login: string | null; checked_at: string | null; accounts?: GithubAccount[] }
+export interface GithubRepo { full_name: string; private: boolean; default_branch: string; description: string; pushed_at: string | null; html_url: string; archived: boolean; account_id?: string; in_library?: boolean }
+export type RepoKind = "product" | "customer" | "tooling";
+export interface RepoAccess { customer_id: string; customer: string | null; can_deploy: boolean; ai_read: boolean }
+export interface LibraryRepo {
+  id: string; full_name: string; account_id: string | null; kind: RepoKind; owner_customer_id: string | null;
+  owner_customer: string | null; description: string; private: boolean; default_branch: string; html_url: string;
+  notes: string; access: RepoAccess[]; deployments: number; created_by: string | null; created_at: string;
+}
 export type DeployPreset = "script" | "python" | "node" | "static" | "custom";
 
 export interface Deployment {
@@ -973,6 +985,8 @@ export interface Deployment {
   branch_prod: string;
   branch_test: string;
   branch: string;
+  target: "container" | "server";
+  customer_id: string | null;
   node_id: string | null;
   vmid: number;
   path: string;

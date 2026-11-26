@@ -32,6 +32,7 @@ import {
   Users,
   X,
   Rocket,
+  FolderGit2,
   ServerCog,
   FileSearch,
   ShieldCheck,
@@ -340,7 +341,12 @@ export function Layout() {
       title: t("nav.section.automation"),
       items: [
         { to: "/runbooks", icon: <BookOpenCheck />, label: t("nav.runbooks"), badge: runbookInput.data?.waiting_input },
-        { to: "/deployments", icon: <Rocket />, label: t("nav.deployments") },
+        {
+          icon: <Rocket />, label: t("nav.software"), children: [
+            { to: "/repos", icon: <FolderGit2 />, label: t("nav.repos") },
+            { to: "/deployments", icon: <Rocket />, label: t("nav.deployments") },
+          ],
+        },
         { to: "/tasks", icon: <CalendarClock />, label: t("nav.tasks") },
         { to: "/remediation", icon: <HeartPulse />, label: t("nav.remediation") },
       ],

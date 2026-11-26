@@ -502,7 +502,8 @@ class ConfigBackup(Base):
 
 
 class Deployment(Base):
-    """A GitHub repository deployed natively into an LXC container (production or test branch)."""
+    """A GitHub repository deployed natively into an LXC container or (v0.27.0) a Linux server, production or
+    test branch."""
 
     __tablename__ = "deployments"
 
@@ -513,7 +514,10 @@ class Deployment(Base):
     branch_prod: Mapped[str] = mapped_column(String(100), default="main")
     branch_test: Mapped[str] = mapped_column(String(100), default="test")
     node_id: Mapped[str | None] = mapped_column(ForeignKey("nodes.id", ondelete="SET NULL"), nullable=True, index=True)
-    vmid: Mapped[int] = mapped_column(Integer)
+    vmid: Mapped[int] = mapped_column(Integer)  # 0 for a server
+    target: Mapped[str] = mapped_column(String(16), default="container")  # container | server
+    customer_id: Mapped[str | None] = mapped_column(ForeignKey("environments.id", ondelete="SET NULL"), nullable=True,
+                                                    index=True)
     path: Mapped[str] = mapped_column(String(255))
     preset: Mapped[str] = mapped_column(String(32), default="script")
     setup_cmd: Mapped[str] = mapped_column(Text, default="")
@@ -530,6 +534,63 @@ class Deployment(Base):
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class GithubAccount(Base):
+    """A GitHub token (v0.27.0): your own account or an organisation, several next to each other."""
+
+    __tablename__ = "github_accounts"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    name: Mapped[str] = mapped_column(String(100))
+    token_enc: Mapped[str] = mapped_column(Text)
+    login: Mapped[str | None] = mapped_column(String(100), nullable=True)  # the user the token belongs to
+    token_kind: Mapped[str] = mapped_column(String(16), default="fine_grained")  # fine_grained | classic
+    scopes: Mapped[list] = mapped_column(JsonType, default=list)  # classic tokens: X-OAuth-Scopes
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="ok")  # ok | error
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Repo(Base):
+    """A repository in the software library (v0.27.0), with the customers that may use it."""
+
+    __tablename__ = "repos"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    full_name: Mapped[str] = mapped_column(String(200), unique=True)  # owner/name
+    account_id: Mapped[str | None] = mapped_column(ForeignKey("github_accounts.id", ondelete="SET NULL"),
+                                                   nullable=True, index=True)
+    kind: Mapped[str] = mapped_column(String(16), default="product")  # product | customer | tooling
+    owner_customer_id: Mapped[str | None] = mapped_column(ForeignKey("environments.id", ondelete="SET NULL"),
+                                                          nullable=True, index=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    private: Mapped[bool] = mapped_column(Boolean, default=True)
+    default_branch: Mapped[str] = mapped_column(String(100), default="main")
+    html_url: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    access: Mapped[list[RepoAccess]] = relationship(back_populates="repo", cascade="all, delete-orphan",
+                                                    lazy="selectin")
+
+
+class RepoAccess(Base):
+    """Rights of one customer on one repository."""
+
+    __tablename__ = "repo_access"
+    __table_args__ = (UniqueConstraint("repo_id", "customer_id", name="uq_repo_access"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    repo_id: Mapped[str] = mapped_column(ForeignKey("repos.id", ondelete="CASCADE"), index=True)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("environments.id", ondelete="CASCADE"), index=True)
+    can_deploy: Mapped[bool] = mapped_column(Boolean, default=True)
+    ai_read: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    repo: Mapped[Repo] = relationship(back_populates="access")
 
 
 class DeploymentRun(Base):

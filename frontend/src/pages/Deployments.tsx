@@ -14,19 +14,19 @@ import { Alert, Badge, EmptyState, PageHeader, Spinner } from "@/components/ui/m
 import { Table, Td, Th, Tr } from "@/components/ui/table";
 import { del, errorMessage, get, post, put } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import type { DeployPreset, Deployment, DeploymentRun, GithubRepo, GithubStatus, Guest } from "@/lib/types";
+import type { DeployPreset, Deployment, DeploymentRun, GithubAccount, GithubRepo, GithubStatus, Guest, NodeInfo } from "@/lib/types";
 import { cn, formatDate, timeAgo } from "@/lib/utils";
 
 /* ------------------------------------------------------------------ shared form */
 export interface DeployForm {
   name: string; repo: string; channel: "prod" | "test"; branch_prod: string; branch_test: string;
-  node_id: string; vmid: number; path: string; preset: DeployPreset; setup_cmd: string; deploy_cmd: string;
+  target: "container" | "server"; node_id: string; vmid: number; path: string; preset: DeployPreset; setup_cmd: string; deploy_cmd: string;
   service: string; env: string | null; auto_deploy: "off" | "webhook" | "poll"; snapshot: boolean; rollback: boolean; mail_to: string[];
 }
 
 export const deployDefaults = (d?: Deployment | null): DeployForm => ({
   name: d?.name ?? "", repo: d?.repo ?? "", channel: d?.channel ?? "prod", branch_prod: d?.branch_prod ?? "main", branch_test: d?.branch_test ?? "test",
-  node_id: d?.node_id ?? "", vmid: d?.vmid ?? 0, path: d?.path ?? "", preset: d?.preset ?? "script", setup_cmd: d?.setup_cmd ?? "", deploy_cmd: d?.deploy_cmd ?? "bash ./deploy/install.sh",
+  target: d?.target ?? "container", node_id: d?.node_id ?? "", vmid: d?.vmid ?? 0, path: d?.path ?? "", preset: d?.preset ?? "script", setup_cmd: d?.setup_cmd ?? "", deploy_cmd: d?.deploy_cmd ?? "bash ./deploy/install.sh",
   service: d?.service ?? "", env: d ? null : "", auto_deploy: d?.auto_deploy ?? "off", snapshot: d?.snapshot ?? true, rollback: d?.rollback ?? true, mail_to: d?.mail_to ?? [],
 });
 
@@ -34,7 +34,7 @@ export function deployBody(f: DeployForm) {
   return { ...f, path: f.path || null, service: f.service || null, env: f.env };
 }
 
-export const useGithub = () => useQuery({ queryKey: ["github"], queryFn: () => get<GithubStatus>("api/github") });
+export const useGithub = () => useQuery({ queryKey: ["github", "status"], queryFn: () => get<GithubStatus>("api/github") });
 
 /** Repo, branches, preset, commands, env and auto-deploy. Used by the deployment dialog and the Create dialog's GitHub tab. */
 export function DeployFields({ f, set, editing }: { f: DeployForm; set: (p: Partial<DeployForm>) => void; editing?: boolean }) {
@@ -110,38 +110,82 @@ export function DeployFields({ f, set, editing }: { f: DeployForm; set: (p: Part
         <Segmented value={f.auto_deploy} onChange={(v) => set({ auto_deploy: v })} options={[{ value: "off", label: t("dep.auto_off") }, { value: "webhook", label: t("dep.auto_webhook") }, { value: "poll", label: t("dep.auto_poll") }]} />
       </Field>
       <p className="-mt-2 text-xs text-muted">{t(`dep.auto_${f.auto_deploy}_hint`)}</p>
-      <div className="flex flex-wrap gap-6">
+      {f.target === "server" ? <p className="text-xs text-muted">{t("dep.server_no_snapshot")}</p> : <div className="flex flex-wrap gap-6">
         <Checkbox checked={f.snapshot} onCheckedChange={(v) => set({ snapshot: v })} label={t("dep.snapshot")} description={t("dep.snapshot_hint")} />
         <Checkbox checked={f.rollback} onCheckedChange={(v) => set({ rollback: v })} label={t("dep.rollback")} description={t("dep.rollback_hint")} />
-      </div>
+      </div>}
     </div>
   );
 }
 
+/** The GitHub tokens (v0.27.0: several, e.g. your own account and an organisation). `compact` only shows
+ * itself when nothing is connected or a token needs attention. */
 export function GithubConnect({ compact, guide = true }: { compact?: boolean; guide?: boolean }) {
   const { t, i18n } = useTranslation();
   const qc = useQueryClient();
-  const gh = useGithub();
+  const accounts = useQuery({ queryKey: ["github", "accounts"], queryFn: () => get<GithubAccount[]>("api/github/accounts") });
   const [token, setToken] = useState("");
-  const save = useMutation({
-    mutationFn: (v: string | null) => put<GithubStatus>("api/github", { token: v }),
-    onSuccess: () => { setToken(""); qc.invalidateQueries({ queryKey: ["github"] }); qc.invalidateQueries({ queryKey: ["gh-repos"] }); toast.success(t("dep.gh_saved")); },
+  const [name, setName] = useState("");
+  const [adding, setAdding] = useState(false);
+  const refresh = () => { for (const k of ["github", "gh-repos", "gh-remote", "integrations"]) qc.invalidateQueries({ queryKey: [k] }); };
+  const add = useMutation({
+    mutationFn: () => post<GithubAccount>("api/github/accounts", { name: name || null, token }),
+    onSuccess: (a) => { setToken(""); setName(""); setAdding(false); refresh(); toast.success(t("gh.added", { login: a.login ?? "?" })); },
     onError: (e) => toast.error(errorMessage(e, t)),
   });
-  if (gh.isLoading) return <Spinner />;
-  const s = gh.data;
-  if (s?.configured && compact) return null;
+  const check = useMutation({
+    mutationFn: (a: GithubAccount) => post<GithubAccount>(`api/github/accounts/${a.id}/check`, {}),
+    onSuccess: (a) => { refresh(); if (a.status === "ok") toast.success(t("gh.check_ok")); else toast.error(a.last_error ?? t("gh.check_bad")); },
+    onError: (e) => toast.error(errorMessage(e, t)),
+  });
+  const remove = useMutation({
+    mutationFn: (a: GithubAccount) => del(`api/github/accounts/${a.id}`),
+    onSuccess: () => { refresh(); toast.success(t("gh.removed")); },
+    onError: (e) => toast.error(errorMessage(e, t)),
+  });
+  if (accounts.isLoading) return <Spinner />;
+  const list = accounts.data ?? [];
+  const attention = list.some((a) => a.status === "error" || a.expiring);
+  if (compact && list.length && !attention) return null;
+  const showForm = adding || !list.length;
   return (
     <Card>
-      <CardHeader icon={<GitBranch />} title={t("dep.gh_title")} description={s?.configured ? t("dep.gh_connected", { login: s.login ?? "?", ago: timeAgo(s.checked_at, i18n.language) }) : t("dep.gh_hint")}
-        action={s?.configured ? <Button size="sm" variant="ghost" onClick={() => save.mutate(null)}>{t("dep.gh_disconnect")}</Button>
-          : guide && <Link to="/integrations?setup=github" className="text-sm font-semibold text-accent-text hover:underline">{t("intg.github.how")}</Link>} />
-      {(!s?.configured || !compact) && (
-        <CardBody className="flex flex-wrap items-end gap-3">
-          <Field label={s?.configured ? t("dep.gh_replace") : t("dep.gh_token")} hint={t("dep.gh_token_hint")} className="min-w-72 flex-1">
-            <Input type="password" value={token} onChange={(e) => setToken(e.target.value)} autoComplete="off" placeholder="github_pat_…" />
+      <CardHeader icon={<GitBranch />} title={t("gh.title")} description={list.length ? t("gh.desc", { count: list.length }) : t("dep.gh_hint")}
+        action={<div className="flex items-center gap-3">
+          {guide && <Link to="/integrations?setup=github" className="text-sm font-semibold text-accent-text hover:underline">{t("intg.github.how")}</Link>}
+          {list.length > 0 && !adding && <Button size="sm" onClick={() => setAdding(true)}><Plus /> {t("gh.add")}</Button>}
+        </div>} />
+      {list.length > 0 && (
+        <CardBody className="space-y-0 py-1">
+          {list.map((a) => (
+            <div key={a.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line py-2.5 last:border-0">
+              <span className={cn("size-2 shrink-0 rounded-full", a.status === "error" ? "bg-offline" : a.expiring ? "bg-warning" : "bg-online")} />
+              <div className="min-w-0 flex-1">
+                <div className="font-semibold">{a.name}{a.login && a.login !== a.name && <span className="ml-1.5 font-normal text-muted">@{a.login}</span>}</div>
+                <div className="text-xs text-muted">
+                  {t(`gh.kind_${a.token_kind}`)}
+                  {a.expires_at ? ` · ${a.expires_in_days !== null && a.expires_in_days < 0 ? t("gh.expired") : t("gh.expires", { date: formatDate(a.expires_at, i18n.language) })}` : ` · ${t("gh.no_expiry")}`}
+                  {a.checked_at ? ` · ${t("gh.checked", { ago: timeAgo(a.checked_at, i18n.language) })}` : ""}
+                </div>
+                {a.status === "error" && <div className="text-xs text-offline">{a.last_error}</div>}
+                {a.status === "ok" && a.expiring && <div className="text-xs text-warning">{t("gh.expiring", { count: Math.max(0, a.expires_in_days ?? 0) })}</div>}
+              </div>
+              <Button size="sm" variant="ghost" loading={check.isPending && check.variables?.id === a.id} onClick={() => check.mutate(a)}>{t("gh.check")}</Button>
+              <Button size="icon" variant="ghost" aria-label={t("common.delete")} onClick={() => remove.mutate(a)}><Trash2 /></Button>
+            </div>
+          ))}
+        </CardBody>
+      )}
+      {showForm && (
+        <CardBody className="flex flex-wrap items-end gap-3 border-t border-line">
+          <Field label={t("gh.name")} hint={t("gh.name_hint")} className="w-56">
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("gh.name_ph")} />
           </Field>
-          <Button variant="primary" disabled={!token} loading={save.isPending} onClick={() => save.mutate(token)}>{t("common.save")}</Button>
+          <Field label={t("dep.gh_token")} hint={t("dep.gh_token_hint")} className="min-w-72 flex-1">
+            <Input type="password" value={token} onChange={(e) => setToken(e.target.value)} autoComplete="off" placeholder="github_pat_… / ghp_…" />
+          </Field>
+          {list.length > 0 && <Button onClick={() => setAdding(false)}>{t("common.cancel")}</Button>}
+          <Button variant="primary" disabled={!token} loading={add.isPending} onClick={() => add.mutate()}>{t("gh.connect")}</Button>
         </CardBody>
       )}
     </Card>
@@ -190,7 +234,7 @@ export function DeploymentsPage() {
                       <div className="mono text-sm">{d.repo}</div>
                       <div className="flex items-center gap-1.5 text-xs text-muted"><GitBranch className="size-3" /> {d.branch} <Badge tone={d.channel === "prod" ? "accent" : "info"}>{d.channel === "prod" ? t("dep.prod") : t("dep.test")}</Badge></div>
                     </Td>
-                    <Td className="text-sm">CT {d.vmid}<div className="mono text-xs text-muted">{d.path}</div></Td>
+                    <Td className="text-sm">{d.target === "server" ? <TargetName dep={d} /> : `CT ${d.vmid}`}<div className="mono text-xs text-muted">{d.path}</div></Td>
                     <Td className="text-sm">{t(`dep.auto_${d.auto_deploy}`)}</Td>
                     <Td><RunStatus status={d.last_status} /><div className="text-xs text-muted">{d.last_run_at ? timeAgo(d.last_run_at, i18n.language) : ""}{d.last_sha ? ` · ${d.last_sha.slice(0, 7)}` : ""}</div></Td>
                     <Td className="whitespace-nowrap text-right">
@@ -219,6 +263,9 @@ function DeploymentDialog({ dep, onClose }: { dep: Deployment | null; onClose: (
   const set = (p: Partial<DeployForm>) => setF((o) => ({ ...o, ...p }));
   const cts = useQuery({ queryKey: ["guests", "lxc-pick"], queryFn: () => get<Guest[]>("api/guests"), staleTime: 30_000 });
   const lxcs = (cts.data ?? []).filter((g) => g.type === "lxc").sort((a, b) => a.vmid - b.vmid);
+  const srv = useQuery({ queryKey: ["nodes", "all"], queryFn: () => get<NodeInfo[]>("api/nodes"), staleTime: 30_000 });
+  const servers = (srv.data ?? []).filter((n) => n.kind === "linux" && n.role !== "workstation").sort((a, b) => a.name.localeCompare(b.name));
+  const ready = f.target === "server" ? !!f.node_id : !!(f.node_id && f.vmid);
   const save = useMutation({
     mutationFn: () => (dep ? put<Deployment>(`api/deployments/${dep.id}`, deployBody(f)) : post<Deployment>("api/deployments", deployBody(f))),
     onSuccess: (d) => { qc.invalidateQueries({ queryKey: ["deployments"] }); qc.invalidateQueries({ queryKey: ["deployment", d.id] }); toast.success(t("dep.saved")); onClose(); if (!dep) nav(`/deployments/${d.id}`); },
@@ -226,18 +273,38 @@ function DeploymentDialog({ dep, onClose }: { dep: Deployment | null; onClose: (
   });
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()} xl title={dep ? t("dep.edit") : t("dep.new")} description={t("dep.dialog_hint")}
-      footer={<><Button onClick={onClose}>{t("common.cancel")}</Button><Button variant="primary" loading={save.isPending} disabled={!f.name || !f.repo || !f.node_id || !f.vmid} onClick={() => save.mutate()}>{t("common.save")}</Button></>}>
+      footer={<><Button onClick={onClose}>{t("common.cancel")}</Button><Button variant="primary" loading={save.isPending} disabled={!f.name || !f.repo || !ready} onClick={() => save.mutate()}>{t("common.save")}</Button></>}>
       <div className="space-y-4">
-        <Field label={t("dep.container")} hint={t("dep.container_hint")}>
-          <Select value={f.node_id && f.vmid ? `${f.node_id}|${f.vmid}` : ""} onChange={(e) => { const [n, v] = e.target.value.split("|"); set({ node_id: n ?? "", vmid: Number(v) || 0 }); }}>
-            <option value="">…</option>
-            {lxcs.map((g) => <option key={`${g.node_id}-${g.vmid}`} value={`${g.node_id}|${g.vmid}`}>{g.vmid} · {g.name} ({g.node}){g.status !== "running" ? ` · ${g.status}` : ""}</option>)}
-          </Select>
+        <Field label={t("dep.target_kind")}>
+          <Segmented value={f.target} onChange={(v) => set({ target: v as DeployForm["target"], node_id: "", vmid: 0 })}
+            options={[{ value: "container", label: t("dep.target_container") }, { value: "server", label: t("dep.target_server") }]} />
         </Field>
+        {f.target === "container" ? (
+          <Field label={t("dep.container")} hint={t("dep.container_hint")}>
+            <Select value={f.node_id && f.vmid ? `${f.node_id}|${f.vmid}` : ""} onChange={(e) => { const [n, v] = e.target.value.split("|"); set({ node_id: n ?? "", vmid: Number(v) || 0 }); }}>
+              <option value="">…</option>
+              {lxcs.map((g) => <option key={`${g.node_id}-${g.vmid}`} value={`${g.node_id}|${g.vmid}`}>{g.vmid} · {g.name} ({g.node}){g.environment ? ` · ${g.environment}` : ""}{g.status !== "running" ? ` · ${g.status}` : ""}</option>)}
+            </Select>
+          </Field>
+        ) : (
+          <Field label={t("dep.server")} hint={t("dep.server_hint")}>
+            <Select value={f.node_id} onChange={(e) => set({ node_id: e.target.value, vmid: 0, snapshot: false, rollback: false })}>
+              <option value="">…</option>
+              {servers.map((n) => <option key={n.id} value={n.id}>{n.name}{n.environment_name ? ` · ${n.environment_name}` : ""}</option>)}
+            </Select>
+          </Field>
+        )}
+        <Alert tone="info">{t("dep.rights_hint")} <Link to="/repos" className="font-semibold underline">{t("nav.repos")}</Link></Alert>
         <DeployFields f={f} set={set} editing={!!dep} />
       </div>
     </Dialog>
   );
+}
+
+function TargetName({ dep }: { dep: Deployment }) {
+  const n = useQuery({ queryKey: ["nodes", "all"], queryFn: () => get<NodeInfo[]>("api/nodes"), staleTime: 60_000 });
+  const name = n.data?.find((x) => x.id === dep.node_id)?.name ?? "server";
+  return dep.node_id ? <Link to={`/servers/${dep.node_id}`} className="hover:underline">{name}</Link> : <>{name}</>;
 }
 
 /* ------------------------------------------------------------------ detail */
@@ -284,7 +351,7 @@ export function DeploymentDetailPage() {
               <Row k={t("dep.channel")} v={<Badge tone={d.channel === "prod" ? "accent" : "info"}>{d.channel === "prod" ? t("dep.prod") : t("dep.test")}</Badge>} />
               <Row k={t("dep.branch_prod")} v={<span className="mono">{d.branch_prod}</span>} />
               <Row k={t("dep.branch_test")} v={<span className="mono">{d.branch_test}</span>} />
-              <Row k={t("dep.target")} v={d.node_id ? <Link className="hover:underline" to={`/proxmox/guests/${d.node_id}/${d.vmid}`}>CT {d.vmid}</Link> : `CT ${d.vmid}`} />
+              <Row k={t("dep.target")} v={d.target === "server" ? <TargetName dep={d} /> : d.node_id ? <Link className="hover:underline" to={`/proxmox/guests/${d.node_id}/${d.vmid}`}>CT {d.vmid}</Link> : `CT ${d.vmid}`} />
               <Row k={t("dep.path")} v={<span className="mono">{d.path}</span>} />
               <Row k={t("dep.preset")} v={t(`dep.preset_${d.preset}`)} />
               {d.service && <Row k={t("dep.service")} v={<span className="mono">{d.service}</span>} />}

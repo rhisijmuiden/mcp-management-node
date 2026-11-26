@@ -263,8 +263,9 @@ Network: `get_bridge_map` (which guests are on which bridge/VLAN), `get_node_net
 dry_run=false plus `confirm`, saves a backup and rolls back automatically on failure
 (`list_config_backups`, `restore_config_backup`). Cluster: `get_ha_status`, `set_ha_resource`,
 replication, Proxmox backup jobs and storage. Monitoring: `get_monitoring`, `get_node_metrics`,
-`list_alerts`, `get_disk_smart`. GitHub deployments into containers: `list_deployments`,
-`list_github_repos`, `save_deployment`, `run_deployment`.
+`list_alerts`, `get_disk_smart`. Software: `list_software_repos` (the library: which repository may go to
+which customer), `create_github_repo`, `link_repo_to_customer`, `list_github_repos`; deployments into
+containers or onto Linux servers: `list_deployments`, `save_deployment`, `run_deployment`.
 
 Backups per customer: `list_backup_coverage` (every guest, server and workstation with its last backup,
 age, failures and status against the customer's SLA; start here for "is everything backed up"), then
@@ -2553,8 +2554,9 @@ async def get_disk_smart(node: str, disk: str) -> dict:
 # ------------------------------------------------------------------ GitHub deployments
 @tool("read", RO)
 async def list_deployments() -> list[dict]:
-    """GitHub repositories deployed into containers: repo, channel (prod/test) and branch, target
-    container, last commit and status, automatic deploys."""
+    """GitHub repositories deployed into containers or onto Linux servers: repo, channel (prod/test)
+    and branch, target (container with vmid, or server), customer, last commit and status, automatic
+    deploys."""
     from mmn.services import deploy
 
     async with sessionmaker()() as db:
@@ -2575,33 +2577,117 @@ async def get_deployment(deployment: str) -> dict:
 
 
 @tool("deploy", RO, all_customers=True)
-async def list_github_repos(query: str | None = None) -> list[dict]:
-    """Repositories the connected GitHub token can read (name, default branch, last push)."""
-    from mmn.services import deploy
+async def list_github_repos(query: str | None = None, account: str | None = None) -> list[dict]:
+    """Repositories the connected GitHub tokens can read (name, default branch, last push, which
+    account, and `in_library`: already in the software library). `account` limits it to one token."""
+    from mmn.services import github_library
 
     async with sessionmaker()() as db:
         try:
-            return _jsonable(await deploy.list_repos(db, query))
+            return _jsonable(await github_library.remote_repos(db, account, query))
         except Exception as e:
             raise ToolDenied(str(e)) from e
 
 
+@tool("read", RO)
+async def list_software_repos(customer: str | None = None) -> list[dict]:
+    """The software library: repositories with their kind (product: own software for several
+    customers; customer: made for one customer; tooling), the owning customer, which customers may
+    deploy it (can_deploy) or let the AI read it (ai_read), and how many deployments use it. A token
+    tied to customers only sees the repositories linked to them. `customer` filters on one customer."""
+    from mmn.services import github_library
+
+    async with sessionmaker()() as db:
+        items = await github_library.library(db)
+    if customer:
+        e = await _customer_env(customer)
+        items = [r for r in items if r["owner_customer_id"] == e.id or any(a["customer_id"] == e.id
+                                                                           for a in r["access"])]
+    return _jsonable(items)
+
+
+@tool("deploy", WRITE, all_customers=True)
+async def create_github_repo(name: str, description: str = "", private: bool = True, owner: str | None = None,
+                             account: str | None = None, kind: str = "product", customer: str | None = None,
+                             test_branch: bool = True, gitignore: str | None = None) -> dict:
+    """Create a new repository on GitHub and add it to the software library. `owner` is the token's
+    user (default) or an organisation; `account` picks the GitHub token when there are several.
+    kind product/tooling, or customer (then `customer` is required and only that customer may use
+    it). With `customer` for a product the repository is also linked to that customer. A `test`
+    branch is made next to main for the test channel. `gitignore` is a GitHub template such as
+    Python or Node. After this, work in the repository with the github__* tools of the MCP hub."""
+    from mmn.services import github_library as gl
+
+    cust = await _customer_env(customer) if customer else None
+    p = current_principal()
+    try:
+        body = gl.CreateIn(name=name, description=description, private=private, owner=owner, account_id=None,
+                           kind=kind, owner_customer_id=cust.id if cust and kind == "customer" else None,
+                           test_branch=test_branch, gitignore=gitignore,
+                           customers=[gl.AccessIn(customer_id=cust.id)] if cust else [])
+    except ValueError as e:
+        raise ToolDenied(str(e)) from e
+    async with sessionmaker()() as db:
+        try:
+            if account:
+                body.account_id = (await gl.get_account(db, account)).id
+            r = await gl.create_repo(db, body, p.username if p else None)
+            await db.commit()
+            return _jsonable(await gl.repo_view(db, r))
+        except gl.GitHubError as e:
+            raise ToolDenied(str(e)) from e
+
+
 @tool("deploy", WRITE)
-async def save_deployment(name: str, repo: str, node: str, guest: str, deploy_cmd: str, channel: str = "prod",
-                          branch_prod: str = "main", branch_test: str = "test", path: str | None = None,
-                          setup_cmd: str = "", service: str | None = None, auto_deploy: str = "off",
-                          snapshot: bool = True, rollback: bool = True) -> dict:
-    """Create or change a deployment: GitHub `repo` (owner/name) into container `guest` on `node`.
+async def link_repo_to_customer(repo: str, customer: str, can_deploy: bool = True, ai_read: bool = False,
+                                remove: bool = False) -> dict:
+    """Link a repository of the software library (owner/name) to a customer, or change or remove
+    (`remove`) the link. can_deploy: it may be deployed onto that customer's containers and servers;
+    ai_read: an AI token of that customer may read it. A customer repository can only be linked to
+    its own customer. A repository that is not in the library yet is imported first."""
+    from mmn.services import github_library as gl
+
+    cust = await _customer_env(customer)
+    async with sessionmaker()() as db:
+        try:
+            try:
+                r = await gl.get_repo(db, repo)
+            except gl.GitHubError:
+                (r,) = await gl.import_repos(db, gl.ImportIn(full_names=[repo]))
+            await gl.link(db, r, cust.id, can_deploy=can_deploy, ai_read=ai_read, remove=remove)
+            await db.commit()
+            return _jsonable(await gl.repo_view(db, r))
+        except gl.GitHubError as e:
+            raise ToolDenied(str(e)) from e
+
+
+@tool("deploy", WRITE)
+async def save_deployment(name: str, repo: str, node: str, deploy_cmd: str, guest: str | None = None,
+                          channel: str = "prod", branch_prod: str = "main", branch_test: str = "test",
+                          path: str | None = None, setup_cmd: str = "", service: str | None = None,
+                          auto_deploy: str = "off", snapshot: bool = True, rollback: bool = True) -> dict:
+    """Create or change a deployment: GitHub `repo` (owner/name) into container `guest` on Proxmox
+    node `node`, or, without `guest`, straight onto Linux server `node` (no snapshot there). The
+    repository must be released for that customer in the software library (link_repo_to_customer).
     channel prod uses branch_prod, test uses branch_test. deploy_cmd runs in the checkout (path,
     default /opt/<name>) on every deploy, setup_cmd only on the first. service is restarted after.
     auto_deploy: off, webhook (GitHub push) or poll (checks every 5 minutes)."""
     from mmn.services import deploy, nodes
 
-    n, g = await _guest(guest, node)
+    if guest:
+        n, g = await _guest(guest, node)
+        target, vmid = "container", g["vmid"]
+    else:
+        async with sessionmaker()() as db:
+            try:
+                n = await nodes.get_node(db, node)
+            except nodes.NodeError as e:
+                raise ToolDenied(str(e)) from e
+        target, vmid = "server", 0
     p = current_principal()
     try:
         body = deploy.DeploymentIn(name=name, repo=repo, channel=channel, branch_prod=branch_prod,
-                                   branch_test=branch_test, node_id=n.id, vmid=g["vmid"], path=path,
+                                   branch_test=branch_test, target=target, node_id=n.id, vmid=vmid, path=path,
                                    preset="custom", setup_cmd=setup_cmd, deploy_cmd=deploy_cmd, service=service,
                                    auto_deploy=auto_deploy, snapshot=snapshot, rollback=rollback)
     except ValueError as e:

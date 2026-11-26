@@ -347,7 +347,14 @@ async def test_phase4(admin_client, client, live_server, monkeypatch):  # noqa: 
                 return {"commit": {"sha": "b" * 40}}
             raise deploy.GitHubError("not found")
 
-        monkeypatch.setattr(deploy, "github_get", fake_github)
+        import httpx
+
+        from mmn.services import github_library
+
+        async def fake_call(method, path, token, *, params=None, json=None):
+            return await fake_github(path, token, params), httpx.Headers({})
+
+        monkeypatch.setattr(github_library, "call", fake_call)
         assert (await c.put("/api/github", json={"token": "ghp_secret_token"})).json()["login"] == "rhis"
         assert (await c.get("/api/github/repos")).json()[0]["full_name"] == "rhis/camview"
         det = (await c.get("/api/github/detect", params={"repo": "rhis/camview", "branch": "main"})).json()
