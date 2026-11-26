@@ -16,7 +16,7 @@ export interface CustomerLinks {
   customer_id: string;
   tiles: {
     proxmox: Counts; servers: Counts; workstations: Counts;
-    network: { connections: number; errors: number; devices: number };
+    network: { connections: number; errors: number; devices: number; fabrics?: number; fabric_unlinked?: number };
     m365: { tenants: number; errors: number; names: string[] };
     mcp: { servers: number; enabled: number; shared: number; errors: number };
     deployments: { total: number; failed: number; repos: string[] };
@@ -56,7 +56,7 @@ export function LinkedTiles({ customerId }: { customerId: string }) {
     { key: "proxmox", icon: <Server />, value: t("links.nodes", { count: d.proxmox.total }), hint: d.proxmox.total ? t("links.online", { online: d.proxmox.online, total: d.proxmox.total }) : t("links.pair"), tone: machine(d.proxmox), to: d.proxmox.total ? "/proxmox" : "/integrations?setup=agents" },
     { key: "servers", icon: <Monitor />, value: d.servers.total, hint: d.servers.total ? t("links.online", { online: d.servers.online, total: d.servers.total }) : t("links.pair"), tone: machine(d.servers), to: d.servers.total ? "/servers" : "/integrations?setup=agents" },
     { key: "workstations", icon: <Laptop />, value: d.workstations.total, hint: d.workstations.total ? t("links.online", { online: d.workstations.online, total: d.workstations.total }) : t("links.pair"), tone: d.workstations.total ? "plain" : "empty", to: d.workstations.total ? "/workstations" : "/integrations?setup=agents" },
-    { key: "network", icon: <Wifi />, value: d.network.connections ? t("links.devices", { count: d.network.devices }) : "–", hint: d.network.connections ? t("links.consoles", { count: d.network.connections }) : t("links.connect"), tone: !d.network.connections ? "empty" : d.network.errors ? "bad" : "ok", to: d.network.connections ? "/unifi/network" : "/integrations?setup=unifi" },
+    { key: "network", icon: <Wifi />, value: d.network.connections ? t("links.devices", { count: d.network.devices }) : "–", hint: d.network.fabric_unlinked ? t("links.fabric_unlinked", { count: d.network.fabric_unlinked }) : d.network.fabrics ? t("links.fabrics", { count: d.network.fabrics, consoles: d.network.connections }) : d.network.connections ? t("links.consoles", { count: d.network.connections }) : t("links.connect"), tone: !d.network.connections ? "empty" : d.network.errors ? "bad" : d.network.fabric_unlinked ? "warn" : "ok", to: d.network.fabric_unlinked ? "/unifi/fabrics" : d.network.connections ? "/unifi/network" : "/integrations?setup=unifi" },
     { key: "m365", icon: <CloudCog />, value: d.m365.tenants ? d.m365.names.join(", ") : "–", hint: d.m365.tenants ? (d.m365.errors ? t("links.errors", { count: d.m365.errors }) : t("links.connected")) : t("links.connect"), tone: !d.m365.tenants ? "empty" : d.m365.errors ? "bad" : "ok", to: d.m365.tenants ? "/m365" : "/integrations?setup=m365" },
     { key: "mcp", icon: <Network />, value: d.mcp.servers, hint: t("links.mcp_hint", { shared: d.mcp.shared }), tone: d.mcp.errors ? "bad" : d.mcp.servers ? "ok" : "plain", to: d.mcp.servers ? "/ai/hub" : "/integrations?setup=mcp" },
     { key: "deployments", icon: <Rocket />, value: d.deployments.total, hint: d.deployments.repos.length ? d.deployments.repos.join(", ") : t("links.none"), tone: d.deployments.failed ? "bad" : d.deployments.total ? "ok" : "plain", to: "/deployments" },

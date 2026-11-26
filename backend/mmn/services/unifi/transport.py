@@ -114,6 +114,10 @@ def _error_for(status: int, body: Any, label: str) -> UnifiError:
     where = f"{label}: " if label else ""
     if status == 401:
         return UnifiError(f"{where}the API key was rejected (HTTP 401)", "unauthorized", status)
+    if status == 403 and "owner" in msg.lower():
+        return UnifiError(f"{where}the API key was not made by the owner of this console (HTTP 403). Create the key "
+                          f"in UniFi Site Manager while signed in as the owner, or inside the UniFi Fabric that holds "
+                          f"the console", "not_owner", status)
     if status == 403:
         return UnifiError(f"{where}the API key has no permission for this (read-only key?) {msg}".strip(),
                           "forbidden", status)
@@ -195,6 +199,10 @@ async def request(t: Target, method: str, path: str, *, params: dict[str, Any] |
     if len(text) > MAX_BODY:
         raise UnifiError("the response is too large", "too_large")
     data = _decode(text)
+    if "/v1/connector/" in url and status in (502, 503):
+        raise UnifiError(f"{t.label + ': ' if t.label else ''}the UniFi cloud connector cannot reach this console "
+                         f"(HTTP {status}). It must be online, adopted in UniFi Site Manager and run UniFi OS 5.0.9 or "
+                         f"newer, and the key must have the Network scope for it", "connector", status)
     if status >= 400 or status == 0:
         raise _error_for(status, data, t.label)
     return data

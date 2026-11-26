@@ -284,7 +284,8 @@ Update), `run_command` (sh on Linux, PowerShell on Windows) and `copy_data` betw
 
 UniFi (Network, Site Manager cloud and Access, per customer): start with `get_unifi_overview` (all
 gateways, switches and APs with status, uplink, firmware and clients, WiFi with VLAN, events) or
-`list_unifi_connections`. Troubleshooting: `diagnose_wifi_client` ("why can't this laptop get on WiFi"),
+`list_unifi_connections`. UniFi Fabrics (one Site Manager key per Fabric, consoles linked through the
+cloud connector): `list_unifi_fabrics`, `sync_unifi_fabric`. Troubleshooting: `diagnose_wifi_client` ("why can't this laptop get on WiFi"),
 `find_firmware_updates`, `check_guest_isolation` ("is guest isolated from the LAN"), `list_unifi_clients`,
 `get_unifi_device`, `list_unifi_events` (offline, WAN failover). Doors: `list_doors`, `get_access_log`
 ("who opened the server room last night"), `list_door_schedules`. Actions (restart a device,
@@ -2955,6 +2956,72 @@ async def get_unifi_cloud(connection: str | None = None, isp_metrics: bool = Fal
         return out
 
     return await _with_db(run)
+
+
+@tool("unifi", RO)
+async def list_unifi_fabrics(customer: str | None = None) -> list[dict]:
+    """UniFi Fabrics per customer: Site Manager keys made inside a Fabric. Per Fabric every console with its
+    state, version, installed apps, sites (ISP, WAN uptime), device/offline counts and the Network connection
+    that reaches it through the cloud connector, or why it cannot be linked (self-hosted Network Server, no
+    Network app). Consoles that are not linked yet have linkable=true; link them with sync_unifi_fabric."""
+    from mmn.services import nodes
+    from mmn.services.unifi import service as uf
+
+    async def run(db):
+        env_id = (await nodes.get_environment(db, customer)).id if customer else None
+        return await uf.list_fabrics(db, env_id)
+
+    try:
+        return await _with_db(run)
+    except nodes.NodeError as e:
+        raise ToolDenied(str(e)) from e
+
+
+@tool("unifi_admin", WRITE)
+async def sync_unifi_fabric(fabric: str, link: bool = True, consoles: list[str] | None = None) -> dict:
+    """Read the consoles of a UniFi Fabric now and, with link=true, add a Network connection through the
+    cloud connector for consoles that have none yet (all of them, or only `consoles`: names or host ids).
+    Consoles that are already linked, self-hosted or without the Network app are skipped. The new
+    connections are polled straight away. Adds nothing on the consoles themselves."""
+    from mmn.services.unifi import service as uf
+    from mmn.services.unifi.transport import UnifiError
+
+    c = await _uconn(fabric, "site_manager")
+    if not c.fabric:
+        raise ToolDenied(f"{c.name} is not marked as a UniFi Fabric key; edit the connection under UniFi")
+    try:
+        await uf.poll(c.id)
+    except UnifiError as e:
+        raise _uerr(e) from e
+    linked: dict = {"linked": [], "skipped": []}
+    async with sessionmaker()() as db:
+        cur = await uf.get_connection(db, c.id)
+        if link:
+            ids = None
+            if consoles:
+                hosts = (cur.snapshot or {}).get("hosts") or []
+                ids = []
+                for ref in consoles:
+                    r = ref.strip().lower()
+                    m = [h["id"] for h in hosts if r in (str(h["id"]).lower(), str(h["name"]).lower())]
+                    ids += m or [ref]
+            try:
+                linked = await uf.link_fabric(db, cur, ids)
+            except UnifiError as e:
+                raise _uerr(e) from e
+            await db.commit()
+    for x in linked["linked"]:
+        try:
+            await uf.poll(x["id"])
+        except UnifiError:
+            pass
+    async with sessionmaker()() as db:
+        conns = await uf.list_connections(db)
+        view = uf.fabric_out(next(x for x in conns if x.id == c.id), conns)
+    return _jsonable({**linked, "fabric": view["name"], "totals": view["totals"],
+                      "consoles": [{"id": h["id"], "name": h["name"], "state": h["state"],
+                                    "linked": (h["linked"] or {}).get("name"), "reason": h["reason"]}
+                                   for h in view["hosts"]]})
 
 
 @tool("unifi_admin", DESTRUCTIVE)

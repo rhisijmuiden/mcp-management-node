@@ -33,6 +33,7 @@ from mmn.services import agent_hub, protection
 from mmn.services.customers import ai_access, machine_type
 from mmn.services.settings_store import get_setting
 from mmn.services.tickets import OPEN_STATUSES
+from mmn.services.unifi import service as uf
 
 
 async def _count(db: AsyncSession, stmt) -> int:
@@ -48,6 +49,8 @@ async def links(db: AsyncSession, e: Environment, *, user_id: str | None = None)
         return {"total": len(rows), "online": sum(1 for n in rows if agent_hub.is_online(n.id))}
 
     conns = list((await db.execute(select(UnifiConnection).where(UnifiConnection.environment_id == e.id))).scalars())
+    all_unifi = list((await db.execute(select(UnifiConnection))).scalars())
+    fabrics = [uf.fabric_out(c, all_unifi) for c in conns if c.kind == "site_manager" and c.fabric]
     tenants = list((await db.execute(select(M365Tenant).where(M365Tenant.customer_id == e.id))).scalars())
     mcp = list((await db.execute(select(McpUpstream).where(McpUpstream.environment_id == e.id))).scalars())
     shared_mcp = await _count(db, select(func.count()).select_from(McpUpstream)
@@ -74,7 +77,8 @@ async def links(db: AsyncSession, e: Environment, *, user_id: str | None = None)
         "servers": srv,
         "workstations": ws,
         "network": {"connections": len(conns), "errors": sum(1 for c in conns if c.status == "error"),
-                    "devices": sum(((c.snapshot or {}).get("totals") or {}).get("devices") or 0 for c in conns)},
+                    "devices": uf.unifi_totals(conns)["devices"],
+                    "fabrics": len(fabrics), "fabric_unlinked": sum(f["totals"]["unlinked"] for f in fabrics)},
         "m365": {"tenants": len(tenants), "errors": sum(1 for t in tenants if t.status == "error"),
                  "names": [t.name for t in tenants]},
         "mcp": {"servers": len(mcp), "enabled": sum(1 for m in mcp if m.enabled), "shared": shared_mcp,
