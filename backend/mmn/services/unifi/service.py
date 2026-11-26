@@ -15,7 +15,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mmn.db import sessionmaker
-from mmn.models import Node, UnifiConnection, UnifiEvent
+from mmn.models import Environment, Node, UnifiConnection, UnifiEvent
 from mmn.security import decrypt_secret, encrypt_secret
 from mmn.services.unifi import insights
 from mmn.services.unifi.apis import AccessApi, NetworkApi, SiteManagerApi
@@ -48,6 +48,8 @@ class ConnectionIn(BaseModel):
     console_id: str | None = Field(default=None, max_length=200)
     api_key: str | None = Field(default=None, max_length=500)
     read_only: bool = False
+    fabric: bool = False  # Site Manager key made inside a UniFi Fabric
+    auto_link: bool = True  # link the Fabric's consoles as Network connections by themselves
     tls_mode: str = "verify"
     tls_fingerprint: str | None = Field(default=None, max_length=100)
     enabled: bool = True
@@ -84,6 +86,8 @@ class ConnectionPatch(BaseModel):
     console_id: str | None = Field(default=None, max_length=200)
     api_key: str | None = Field(default=None, max_length=500)  # empty = keep
     read_only: bool | None = None
+    fabric: bool | None = None
+    auto_link: bool | None = None
     tls_mode: str | None = None
     tls_fingerprint: str | None = Field(default=None, max_length=100)
     enabled: bool | None = None
@@ -113,6 +117,8 @@ def default_url(kind: str, url: str | None) -> str | None:
 
 
 async def _validate(db: AsyncSession, c: UnifiConnection) -> None:
+    if c.fabric and c.kind != "site_manager":
+        raise UnifiError("only a Site Manager key can be a UniFi Fabric key", "bad_transport")
     if c.kind == "site_manager" and c.transport == "cloud":
         raise UnifiError("Site Manager connections are direct (or through an agent)", "bad_transport")
     if c.kind == "access" and c.transport == "cloud":
@@ -144,6 +150,7 @@ async def create_connection(db: AsyncSession, body: ConnectionIn) -> UnifiConnec
                         transport=body.transport, agent_node_id=body.agent_node_id or None,
                         cloud_connection_id=body.cloud_connection_id or None, console_id=body.console_id or None,
                         api_key_enc=encrypt_secret((body.api_key or "").strip()), read_only=body.read_only,
+                        fabric=body.fabric and body.kind == "site_manager", auto_link=body.auto_link,
                         tls_mode=body.tls_mode, tls_fingerprint=body.tls_fingerprint or None, enabled=body.enabled)
     if body.transport != "cloud":
         c.base_url = default_url(body.kind, body.base_url)
@@ -163,7 +170,7 @@ async def update_connection(db: AsyncSession, c: UnifiConnection, body: Connecti
             raise UnifiError(f"invalid {k}", "invalid")
         if k == "base_url":
             v = default_url(c.kind, v) if v else None
-        if k == "environment_id" and v is None:
+        if k == "environment_id" and v is None or k in ("fabric", "auto_link") and v is None:
             continue
         setattr(c, k, v if v != "" else None)
     if key:
@@ -203,7 +210,8 @@ def connection_out(c: UnifiConnection) -> dict[str, Any]:
         "id": c.id, "name": c.name, "kind": c.kind, "transport": c.transport, "base_url": c.base_url,
         "environment_id": c.environment_id, "environment_name": c.environment.name if c.environment else None,
         "agent_node_id": c.agent_node_id, "cloud_connection_id": c.cloud_connection_id, "console_id": c.console_id,
-        "has_key": bool(c.api_key_enc), "read_only": c.read_only, "tls_mode": c.tls_mode,
+        "has_key": bool(c.api_key_enc), "read_only": c.read_only, "fabric": bool(c.fabric),
+        "auto_link": bool(c.auto_link), "tls_mode": c.tls_mode,
         "tls_fingerprint": pretty_fingerprint(c.tls_fingerprint) if c.tls_fingerprint else None,
         "enabled": c.enabled, "status": c.status, "last_error": c.last_error, "last_ok_at": c.last_ok_at,
         "last_poll_at": c.last_poll_at, "version": (c.info or {}).get("version"),
@@ -275,13 +283,32 @@ async def test_connection(db: AsyncSession, c: UnifiConnection) -> dict[str, Any
     return res
 
 
+def host_apps(h: dict) -> list[str] | None:
+    """The UniFi applications installed on a console (network, protect, access, ...); None when unknown."""
+    rs = h.get("reportedState") or {}
+    ctl = rs.get("controllers")
+    if not isinstance(ctl, list):
+        return None
+    out = []
+    for x in ctl:
+        if not isinstance(x, dict) or not x.get("name"):
+            continue
+        if str(x.get("installState") or "installed").lower() in ("installed", "") or x.get("isInstalled"):
+            out.append(str(x["name"]).lower())
+    return sorted(set(out))
+
+
 def _host_out(h: dict) -> dict[str, Any]:
     rs = h.get("reportedState") or {}
+    apps = host_apps(h)
+    # The cloud connector reaches UniFi OS consoles; a self-hosted Network Server ("network-server") is not reachable.
+    connector = str(h.get("type") or "console").lower() != "network-server"
     return {"id": h.get("id"), "name": rs.get("name") or rs.get("hostname") or h.get("id"),
             "type": h.get("type"), "ip": h.get("ipAddress"), "state": rs.get("state"),
             "version": rs.get("version"), "firmware": rs.get("firmware_version") or (rs.get("hardware") or {}).get(
                 "firmwareVersion"), "blocked": bool(h.get("isBlocked")),
-            "last_change": h.get("lastConnectionStateChange")}
+            "last_change": h.get("lastConnectionStateChange"), "owner": h.get("owner"), "apps": apps,
+            "network": connector and (apps is None or "network" in apps), "connector": connector}
 
 
 # ------------------------------------------------------------------ polling
@@ -443,6 +470,15 @@ def _diff_events(c: UnifiConnection, old: dict[str, Any], new: dict[str, Any]) -
                                   {"wan": w["name"], "before": pw[w["id"]]["status"], "after": w["status"]}))
     elif c.kind == "site_manager":
         ph = {h["id"]: h for h in old.get("hosts") or []}
+        if c.fabric and "hosts" in old:
+            nh = {h["id"]: h for h in new.get("hosts") or []}
+            for hid in nh.keys() - ph.keys():
+                ev.append(_ev(c, None, "console_joined", "info", None,
+                              f"console {nh[hid]['name']} joined the Fabric {c.name}", {"host": hid}))
+            for hid in ph.keys() - nh.keys():
+                ev.append(_ev(c, None, "console_left", "warning", None,
+                              f"console {ph[hid]['name']} is no longer in the Fabric {c.name} (removed, or the key "
+                              f"no longer covers it)", {"host": hid}))
         for h in new.get("hosts") or []:
             p = ph.get(h["id"])
             if p and p.get("state") != h.get("state") and (p.get("state") or h.get("state")):
@@ -503,8 +539,14 @@ async def poll(connection_id: str) -> dict[str, Any]:
             db.add(UnifiEvent(connection_id=c.id, kind="connection_restored", severity="info", subject=c.name,
                               message=f"{c.name} is reachable again"))
         c.snapshot, c.status, c.last_error, c.last_ok_at = snap, "ok", None, now
+        fabric_auto = c.kind == "site_manager" and c.fabric and c.auto_link and c.enabled
         await db.commit()
-        return snap
+    if fabric_auto:
+        try:
+            await auto_link(connection_id)
+        except Exception:  # noqa: BLE001 - linking must never break the poll
+            log.exception("UniFi Fabric auto-link of %s failed", connection_id)
+    return snap
 
 
 async def poll_all() -> None:
@@ -525,12 +567,178 @@ async def prune_events() -> None:
         await db.commit()
 
 
+# ------------------------------------------------------------------ UniFi Fabric (v0.29.0)
+def cloud_sources(conns: list[UnifiConnection]) -> dict[str, set[str]]:
+    """Which consoles (host ids) each Site Manager connection is the source for, so a console counts once.
+
+    A console reached by a Network connection through the cloud connector is counted by that connection; a console
+    that two keys can both see (a Fabric key and an older account key) is counted by the Fabric key."""
+    covered = {c.console_id for c in conns if c.kind == "network" and c.transport == "cloud" and c.console_id}
+    seen = set(covered)
+    out: dict[str, set[str]] = {}
+    for c in sorted((c for c in conns if c.kind == "site_manager"), key=lambda c: (not c.fabric, c.name.lower())):
+        hosts = {h["id"] for h in (c.snapshot or {}).get("hosts") or []} - seen
+        out[c.id] = hosts
+        seen |= hosts
+    return out
+
+
+def cloud_devices(c: UnifiConnection, src: dict[str, set[str]]) -> list[dict]:
+    """The devices of a Site Manager snapshot that this connection is the source for."""
+    mine = src.get(c.id)
+    devs = (c.snapshot or {}).get("devices") or []
+    return devs if mine is None else [d for d in devs if not d.get("host_id") or d.get("host_id") in mine]
+
+
+def cloud_sites(c: UnifiConnection, src: dict[str, set[str]]) -> list[dict]:
+    mine = src.get(c.id)
+    sites = (c.snapshot or {}).get("sites") or []
+    return sites if mine is None else [s for s in sites if not s.get("host_id") or s.get("host_id") in mine]
+
+
+def unifi_totals(conns: list[UnifiConnection]) -> dict[str, int]:
+    """Devices, offline devices, firmware updates and sites of several connections, every console counted once."""
+    src = cloud_sources(conns)
+    out = {"devices": 0, "offline": 0, "firmware": 0, "sites": 0}
+    for c in conns:
+        if c.kind == "site_manager":
+            devs = cloud_devices(c, src)
+            out["devices"] += len(devs)
+            out["offline"] += sum(1 for d in devs if not d.get("online"))
+            out["firmware"] += sum(1 for d in devs if d.get("firmware_updatable"))
+            out["sites"] += len(cloud_sites(c, src))
+        elif c.kind == "network":
+            tot = (c.snapshot or {}).get("totals") or {}
+            for k in ("devices", "offline", "firmware", "sites"):
+                out[k] += int(tot.get(k) or 0)
+    return out
+
+
+def _unique_name(base: str, taken: set[str]) -> str:
+    base = base[:100].strip()
+    name, n = base, 2
+    while name.lower() in taken:
+        suffix = f" ({n})"
+        name, n = base[:100 - len(suffix)] + suffix, n + 1
+    return name
+
+
+def fabric_out(c: UnifiConnection, conns: list[UnifiConnection]) -> dict[str, Any]:
+    """One Fabric: its consoles with the Network connection that reaches each, and what is not linked yet."""
+    linked = {x.console_id: x for x in conns if x.kind == "network" and x.transport == "cloud" and x.console_id}
+    others = {}
+    for x in conns:
+        if x.kind == "site_manager" and x.id != c.id:
+            for h in (x.snapshot or {}).get("hosts") or []:
+                others.setdefault(h["id"], []).append(x.name)
+    snap = c.snapshot or {}
+    sites_by_host: dict[str, list[dict]] = {}
+    for s in snap.get("sites") or []:
+        sites_by_host.setdefault(s.get("host_id"), []).append(s)
+    devs_by_host: dict[str, list[dict]] = {}
+    for d in snap.get("devices") or []:
+        devs_by_host.setdefault(d.get("host_id"), []).append(d)
+    hosts = []
+    for h in snap.get("hosts") or []:
+        ln = linked.get(h["id"])
+        devs = devs_by_host.get(h["id"]) or []
+        reason = None
+        if not h.get("connector", True):
+            reason = "self_hosted"
+        elif not h.get("network", True):
+            reason = "no_network_app"
+        hosts.append({**h, "linked": {"id": ln.id, "name": ln.name, "status": ln.status,
+                                      "through": ln.cloud_connection_id,
+                                      "customer": ln.environment.name if ln.environment else None} if ln else None,
+                      "linkable": ln is None and reason is None, "reason": reason,
+                      "also_in": others.get(h["id"]) or [],
+                      "sites": [{"id": s["id"], "name": s["name"], "isp": (s.get("isp") or {}).get("name"),
+                                 "wan_uptime": s.get("wan_uptime"), "counts": s.get("counts") or {}}
+                                for s in sites_by_host.get(h["id"]) or []],
+                      "devices": len(devs), "offline": sum(1 for d in devs if not d.get("online"))})
+    hosts.sort(key=lambda h: (h["linked"] is not None, not h["linkable"], str(h["name"]).lower()))
+    devs = snap.get("devices") or []
+    return {"id": c.id, "name": c.name, "environment_id": c.environment_id,
+            "customer": c.environment.name if c.environment else None, "status": c.status,
+            "last_error": c.last_error, "last_ok_at": c.last_ok_at, "auto_link": bool(c.auto_link),
+            "read_only": c.read_only, "enabled": c.enabled, "hosts": hosts,
+            "totals": {"consoles": len(hosts), "linked": sum(1 for h in hosts if h["linked"]),
+                       "unlinked": sum(1 for h in hosts if h["linkable"]),
+                       "sites": len(snap.get("sites") or []), "devices": len(devs),
+                       "offline": sum(1 for d in devs if not d.get("online"))}}
+
+
+async def list_fabrics(db: AsyncSession, environment_id: str | None = None) -> list[dict[str, Any]]:
+    conns = await list_connections(db)
+    return [fabric_out(c, conns) for c in conns
+            if c.kind == "site_manager" and c.fabric and (not environment_id or c.environment_id == environment_id)]
+
+
+async def link_fabric(db: AsyncSession, c: UnifiConnection, host_ids: list[str] | None = None,
+                      environment_id: str | None = None) -> dict[str, Any]:
+    """Create a Network connection through the cloud connector for consoles of the Fabric that have none yet.
+
+    host_ids None = every console that can be linked. Returns the connections made and what was skipped."""
+    if c.kind != "site_manager":
+        raise UnifiError("this is not a Site Manager (Fabric) connection", "wrong_kind")
+    if not (c.snapshot or {}).get("hosts"):
+        raise UnifiError(f"{c.name} has no consoles yet; test or refresh the connection first", "no_site")
+    if environment_id and await db.get(Environment, environment_id) is None:
+        raise UnifiError("customer not found", "not_found")
+    conns = await list_connections(db)
+    view = fabric_out(c, conns)
+    taken = {x.name.lower() for x in conns}
+    want = set(host_ids) if host_ids is not None else None
+    made, skipped = [], []
+    for h in view["hosts"]:
+        if want is not None and h["id"] not in want:
+            continue
+        if not h["linkable"]:
+            if want is not None:
+                skipped.append({"id": h["id"], "name": h["name"],
+                                "reason": "already_linked" if h["linked"] else h["reason"]})
+            continue
+        name = _unique_name(f"{c.name} · {h['name']}", taken)
+        taken.add(name.lower())
+        n = UnifiConnection(environment_id=environment_id or c.environment_id, name=name, kind="network",
+                            transport="cloud", cloud_connection_id=c.id, console_id=h["id"],
+                            read_only=c.read_only, tls_mode="verify", enabled=True)
+        db.add(n)
+        made.append(n)
+    if want is not None:
+        for hid in want - {h["id"] for h in view["hosts"]}:
+            skipped.append({"id": hid, "name": None, "reason": "not_in_fabric"})
+    for n in made:
+        db.add(UnifiEvent(connection_id=c.id, kind="console_linked", severity="info", subject=n.name,
+                          message=f"{n.name} linked through the cloud connector"[:500], detail={"host": n.console_id}))
+    await db.flush()
+    return {"linked": [{"id": n.id, "name": n.name, "console_id": n.console_id} for n in made], "skipped": skipped}
+
+
+async def auto_link(connection_id: str) -> list[str]:
+    """After a poll of a Fabric key with auto-link on: link the consoles that are new, then poll them once."""
+    async with sessionmaker()() as db:
+        c = await db.get(UnifiConnection, connection_id)
+        if c is None or not (c.fabric and c.auto_link):
+            return []
+        res = await link_fabric(db, c)
+        await db.commit()
+    ids = [x["id"] for x in res["linked"]]
+    for cid in ids:
+        try:
+            await poll(cid)
+        except UnifiError as e:
+            log.info("first poll of linked console %s failed: %s", cid, e)
+    return ids
+
+
 # ------------------------------------------------------------------ overviews (from the snapshots)
 async def network_overview(db: AsyncSession, environment_id: str | None = None,
                            connection_id: str | None = None) -> dict[str, Any]:
     conns = [c for c in await list_connections(db, environment_id)
              if c.kind in ("network", "site_manager") and (not connection_id or c.id == connection_id)]
     devices, sites, wifi = [], [], []
+    src = cloud_sources(await list_connections(db))
     for c in conns:
         snap = c.snapshot or {}
         base = {"connection_id": c.id, "connection": c.name, "environment": c.environment.name if c.environment else None}
@@ -543,7 +751,7 @@ async def network_overview(db: AsyncSession, environment_id: str | None = None,
                              "source": "network"} for d in s["devices"]]
                 wifi += [{**base, "site_id": s["id"], "site": s["name"], **w} for w in s.get("wifi") or []]
         else:
-            for s in snap.get("sites") or []:
+            for s in cloud_sites(c, src):
                 cnt = s.get("counts") or {}
                 sites.append({**base, "site_id": s["id"], "site": s["name"], "host": s.get("host_name"),
                               "clients": {"total": (cnt.get("wifiClient") or 0) + (cnt.get("wiredClient") or 0),
@@ -551,9 +759,9 @@ async def network_overview(db: AsyncSession, environment_id: str | None = None,
                                           "guest": cnt.get("guestClient")},
                               "devices": cnt.get("totalDevice"), "offline": cnt.get("offlineDevice"),
                               "wan_uptime": s.get("wan_uptime"), "isp": (s.get("isp") or {}).get("name"),
-                              "cloud": True})
+                              "cloud": True, "fabric": bool(c.fabric)})
             devices += [{**base, "site": d.get("host_name"), **d, "type": _cloud_type(d), "source": "cloud"}
-                        for d in snap.get("devices") or [] if (d.get("product_line") or "network") == "network"]
+                        for d in cloud_devices(c, src) if (d.get("product_line") or "network") == "network"]
     order = {"gateway": 0, "switch": 1, "ap": 2, "other": 3}
     devices.sort(key=lambda d: (d["online"], order.get(d["type"], 9), str(d.get("name")).lower()))
     q = select(UnifiEvent).order_by(UnifiEvent.at.desc()).limit(30)
@@ -703,12 +911,13 @@ async def guest_isolation(db: AsyncSession, c: UnifiConnection, site_id: str) ->
 
 def firmware_report(conns: list[UnifiConnection], device_type: str | None = None) -> list[dict[str, Any]]:
     out = []
+    src = cloud_sources(conns)
     for c in conns:
         snap = c.snapshot or {}
         if c.kind == "network":
             devs = [(s["name"], d) for s in snap.get("sites") or [] for d in s["devices"]]
         elif c.kind == "site_manager":
-            devs = [(d.get("host_name"), {**d, "type": _cloud_type(d)}) for d in snap.get("devices") or []]
+            devs = [(d.get("host_name"), {**d, "type": _cloud_type(d)}) for d in cloud_devices(c, src)]
         else:
             continue
         for site, d in devs:

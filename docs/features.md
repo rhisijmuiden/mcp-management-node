@@ -382,6 +382,18 @@ A connection reaches its console **directly**, **through an agent** in the custo
 forward) or, for Network, **through the Site Manager cloud connector**. Self-signed certificates are pinned by SHA-256
 fingerprint, checked before the key is sent. Mark a connection **read-only** to switch off all actions.
 
+**UniFi Fabrics** (v0.29.0): a Site Manager key made inside a UniFi Fabric only sees the sites and consoles of that
+Fabric. Mark the Site Manager connection as a *Fabric key* and Stackpilot reads every console of the Fabric and links
+each one as a Network connection through the cloud connector, at the same customer: no address, port or agent.
+**UniFi → Fabrics** shows per Fabric every console with its apps, sites (ISP, WAN uptime), devices and the connection
+that reaches it. Consoles that join the Fabric later are linked by themselves (or, with auto-link off, raise an
+alert and are linked with one click); consoles that leave give a warning. A console that two keys can see is counted
+once, and the devices of a linked console come from its Network connection, not twice from the cloud. Self-hosted
+Network Servers and consoles without UniFi Network are listed but not linked. Errors are explained: a key not made by
+the console owner (HTTP 403) and a console the cloud connector cannot reach (offline, not adopted, UniFi OS older than
+5.0.9). Configuration roll-out through Fabrics (Blueprints, Canvas, zero-touch) has no public API yet and is not
+included. MCP: `list_unifi_fabrics`, `sync_unifi_fabric`.
+
 Every 5 minutes the app polls each connection: devices with status, uplink, firmware and clients, WiFi with VLAN, WAN
 state and doors. Differences become **events** (device offline/online, WAN change, uplink change, new firmware) and
 offline devices raise monitoring alerts.

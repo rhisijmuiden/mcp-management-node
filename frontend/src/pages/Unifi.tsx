@@ -1,7 +1,7 @@
 import * as Tabs from "@radix-ui/react-tabs";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  AlertTriangle, ArrowRight, ArrowUpCircle, Bot, Cable, Cloud, DoorClosed, DoorOpen, Fingerprint, KeyRound, Lock, LockOpen,
+  AlertTriangle, ArrowRight, ArrowUpCircle, Bot, Cable, Cloud, DoorClosed, DoorOpen, Fingerprint, KeyRound, Layers3, Link2, Lock, LockOpen,
   MessageSquare, Pencil, Plug, Plus, Power, RefreshCw, Router, Search, ShieldCheck, Siren, Stethoscope, Trash2, Users,
   Wifi, Zap,
 } from "lucide-react";
@@ -22,7 +22,7 @@ import { del, errorMessage, get, patch, post, put } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type {
   NodeInfo, UnifiAccessConn, UnifiClient, UnifiConnection, UnifiDevice, UnifiDeviceDetail, UnifiDiagnosis, UnifiDoor, UnifiEvent,
-  UnifiIsolation, UnifiKind, UnifiLogRow, UnifiOverview,
+  UnifiFabric, UnifiFabricHost, UnifiIsolation, UnifiKind, UnifiLogRow, UnifiOverview,
 } from "@/lib/types";
 import { cn, formatDate, formatDuration, timeAgo } from "@/lib/utils";
 
@@ -783,7 +783,7 @@ export function UnifiConnectionsPage() {
                 {rows.map((c) => (
                   <Tr key={c.id}>
                     <Td><div className="font-bold">{c.name}</div><div className="text-xs text-muted">{c.environment_name}</div></Td>
-                    <Td><KindBadge kind={c.kind} />{c.read_only && <Badge className="ml-1.5">{t("uf.read_only")}</Badge>}</Td>
+                    <Td><KindBadge kind={c.kind} />{c.fabric && <Badge tone="info" className="ml-1.5">Fabric</Badge>}{c.read_only && <Badge className="ml-1.5">{t("uf.read_only")}</Badge>}</Td>
                     <Td className="text-sm"><div>{t(`uf.tr_${c.transport}`)}</div><div className="mono max-w-64 truncate text-[11px] text-muted" title={c.base_url ?? ""}>{c.transport === "cloud" ? c.console_id : c.base_url}</div>
                       {c.tls_mode !== "verify" && c.transport !== "cloud" && <div className="text-[11px] text-muted">{c.tls_mode === "pin" ? <><Fingerprint className="mr-1 inline size-3" />{t("uf.tls_pin")}</> : <span className="text-warning">{t("uf.tls_insecure")}</span>}</div>}
                     </Td>
@@ -831,7 +831,7 @@ function ConnectionDialog({ conn, all, onClose }: { conn: UnifiConnection | null
   const [f, setF] = useState({
     name: conn?.name ?? "", environment_id: conn?.environment_id ?? "", transport: conn?.transport ?? "direct", base_url: conn?.base_url ?? "",
     agent_node_id: conn?.agent_node_id ?? "", cloud_connection_id: conn?.cloud_connection_id ?? "", console_id: conn?.console_id ?? "",
-    api_key: "", read_only: conn?.read_only ?? false, tls_mode: conn?.tls_mode ?? "pin", tls_fingerprint: conn?.tls_fingerprint ?? "", enabled: conn?.enabled ?? true,
+    api_key: "", read_only: conn?.read_only ?? false, fabric: conn?.fabric ?? false, auto_link: conn?.auto_link ?? true, tls_mode: conn?.tls_mode ?? "pin", tls_fingerprint: conn?.tls_fingerprint ?? "", enabled: conn?.enabled ?? true,
   });
   const set = (p: Partial<typeof f>) => setF((x) => ({ ...x, ...p }));
   useEffect(() => { if (!f.environment_id && envs.data?.length) set({ environment_id: envs.data[0].id }); }, [envs.data, f.environment_id]);
@@ -863,6 +863,7 @@ function ConnectionDialog({ conn, all, onClose }: { conn: UnifiConnection | null
       if (r.status === "error") toast.warning(t("uf.saved_error", { error: r.last_error ?? "" }));
       else toast.success(t("uf.saved"));
       qc.invalidateQueries({ queryKey: ["unifi-connections"] }); qc.invalidateQueries({ queryKey: ["unifi-overview"] }); qc.invalidateQueries({ queryKey: ["unifi-access"] });
+      qc.invalidateQueries({ queryKey: ["unifi-fabrics"] });
       onClose();
     },
     onError: (e) => toast.error(errorMessage(e, t)),
@@ -924,6 +925,12 @@ function ConnectionDialog({ conn, all, onClose }: { conn: UnifiConnection | null
             <Input type="password" autoComplete="off" value={f.api_key} onChange={(e) => set({ api_key: e.target.value })} placeholder={conn?.has_key ? "••••••••••••" : ""} className="mono" />
           </Field>
         )}
+        {kind === "site_manager" && (
+          <div className="space-y-3 rounded-md border border-line p-4">
+            <Switch checked={f.fabric} onCheckedChange={(v) => set({ fabric: v })} label={t("uf.f_fabric")} description={t("uf.f_fabric_hint")} />
+            {f.fabric && <Switch checked={f.auto_link} onCheckedChange={(v) => set({ auto_link: v })} label={t("uf.f_auto_link")} description={t("uf.f_auto_link_hint")} />}
+          </div>
+        )}
         <Switch checked={f.read_only} onCheckedChange={(v) => set({ read_only: v })} label={t("uf.f_ro")} description={t("uf.f_ro_hint")} />
         {needsUrl && (
           <div className="space-y-3 rounded-md border border-line p-4">
@@ -949,4 +956,108 @@ function ConnectionDialog({ conn, all, onClose }: { conn: UnifiConnection | null
       </div>
     </Dialog>
   );
+}
+
+/* ------------------------------------------------------------------ Fabrics (v0.29.0) */
+export function UnifiFabricsPage() {
+  const { t, i18n } = useTranslation();
+  const admin = useIsAdmin();
+  const envs = useEnvironments();
+  const qc = useQueryClient();
+  const [env, setEnv] = useState("");
+  const q = useQuery({
+    queryKey: ["unifi-fabrics", env],
+    queryFn: () => get<UnifiFabric[]>(`api/unifi/fabrics${env ? `?environment_id=${env}` : ""}`),
+    refetchInterval: 60_000,
+  });
+  const done = () => {
+    qc.invalidateQueries({ queryKey: ["unifi-fabrics"] }); qc.invalidateQueries({ queryKey: ["unifi-connections"] });
+    qc.invalidateQueries({ queryKey: ["unifi-overview"] });
+  };
+  const sync = useMutation({
+    mutationFn: (f: UnifiFabric) => post<UnifiFabric>(`api/unifi/fabrics/${f.id}/sync`),
+    onSuccess: (r) => { toast.success(t("uf.fab_synced", { count: r.totals.consoles })); done(); },
+    onError: (e) => toast.error(errorMessage(e, t)),
+  });
+  const link = useMutation({
+    mutationFn: (v: { f: UnifiFabric; ids: string[] | null }) => post<{ linked: { id: string; name: string }[]; skipped: unknown[] }>(`api/unifi/fabrics/${v.f.id}/link`, { host_ids: v.ids }),
+    onSuccess: (r) => { toast.success(t("uf.fab_linked", { count: r.linked.length })); done(); },
+    onError: (e) => toast.error(errorMessage(e, t)),
+  });
+  const rows = q.data ?? [];
+  return (
+    <>
+      <PageHeader title={t("uf.fab_title")} description={t("uf.fab_subtitle")}
+        actions={<>
+          <Select value={env} onChange={(e) => setEnv(e.target.value)} className="h-9 w-auto py-0 text-[13px]">
+            <option value="">{t("srv.all_envs")}</option>
+            {envs.data?.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+          </Select>
+          {admin && <Link to="/unifi/connections?add=1"><Button variant="primary"><Plus /> {t("uf.fab_add")}</Button></Link>}
+        </>} />
+      <Alert tone="info" className="mb-6" title={t("uf.fab_how_title")}>{t("uf.fab_how")}</Alert>
+      {q.isLoading ? <Spinner /> : !rows.length ? (
+        <Card>
+          <EmptyState icon={<Layers3 />} title={t("uf.fab_empty")}
+            action={admin && <Link to="/unifi/connections?add=1"><Button variant="primary"><Plus /> {t("uf.fab_add")}</Button></Link>}>{t("uf.fab_empty_text")}</EmptyState>
+        </Card>
+      ) : (
+        <div className="space-y-6">
+          {rows.map((f) => (
+            <Card key={f.id}>
+              <CardHeader icon={<Layers3 />} title={f.name}
+                description={[f.customer, t("uf.fab_counts", { consoles: f.totals.consoles, linked: f.totals.linked, sites: f.totals.sites, devices: f.totals.devices })].filter(Boolean).join(" · ")}
+                action={<div className="flex items-center gap-2">
+                  {f.status === "error" ? <Badge tone="offline" dot>{t("uf.status_error")}</Badge> : f.status === "ok" ? <Badge tone="online" dot>{t("uf.status_ok")}</Badge> : <Badge dot>{t("uf.status_unknown")}</Badge>}
+                  <Badge tone={f.auto_link ? "info" : "neutral"}>{f.auto_link ? t("uf.fab_auto_on") : t("uf.fab_auto_off")}</Badge>
+                  {admin && <Button size="sm" onClick={() => sync.mutate(f)} loading={sync.isPending && sync.variables?.id === f.id}><RefreshCw /> {t("uf.refresh")}</Button>}
+                  {admin && f.totals.unlinked > 0 && <Button size="sm" variant="primary" onClick={() => link.mutate({ f, ids: null })} loading={link.isPending && link.variables?.f.id === f.id && !link.variables.ids}><Link2 /> {t("uf.fab_link_all", { count: f.totals.unlinked })}</Button>}
+                </div>} />
+              {f.status === "error" && <div className="px-5 pb-3"><Alert tone="warning">{f.last_error}</Alert></div>}
+              {f.totals.offline > 0 && <div className="px-5 pb-3"><Alert tone="warning">{t("uf.fab_offline", { count: f.totals.offline })}</Alert></div>}
+              {!f.hosts.length ? <CardBody className="text-sm text-muted">{t("uf.fab_no_hosts")}</CardBody> : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <thead><tr><Th>{t("uf.fab_col_console")}</Th><Th>{t("uf.fab_col_sites")}</Th><Th>{t("uf.fab_col_devices")}</Th><Th>{t("uf.fab_col_link")}</Th><Th /></tr></thead>
+                    <tbody>
+                      {f.hosts.map((h) => (
+                        <Tr key={h.id}>
+                          <Td>
+                            <div className="flex items-center gap-2 font-bold"><HostState h={h} />{h.name}</div>
+                            <div className="text-[11px] text-muted">{[h.version && `UniFi OS ${h.version}`, (h.apps ?? []).join(", ")].filter(Boolean).join(" · ")}</div>
+                            {h.also_in.length > 0 && <div className="text-[11px] text-muted">{t("uf.fab_also_in", { names: h.also_in.join(", ") })}</div>}
+                          </Td>
+                          <Td className="text-sm">
+                            {h.sites.length ? h.sites.map((s) => (
+                              <div key={s.id}>{s.name}<span className="text-xs text-muted">{[s.isp, s.wan_uptime != null && t("uf.fab_wan", { pct: Math.round(s.wan_uptime * 10) / 10 })].filter(Boolean).map((x) => ` · ${x}`).join("")}</span></div>
+                            )) : <span className="text-muted">–</span>}
+                          </Td>
+                          <Td className="text-sm">{h.devices}{h.offline > 0 && <span className="ml-1.5 text-offline">{t("uf.fab_n_offline", { count: h.offline })}</span>}</Td>
+                          <Td className="text-sm">
+                            {h.linked ? (
+                              <div><Link to="/unifi/network" className="font-semibold text-accent-text hover:underline">{h.linked.name}</Link>
+                                <div className="text-[11px] text-muted">{h.linked.status === "error" ? <span className="text-offline">{t("uf.status_error")}</span> : t("uf.tr_cloud")}{h.linked.customer && h.linked.customer !== f.customer ? ` · ${h.linked.customer}` : ""}</div></div>
+                            ) : h.reason ? <span className="text-muted">{t(`uf.fab_reason_${h.reason}`)}</span> : <Badge tone="warning">{t("uf.fab_not_linked")}</Badge>}
+                          </Td>
+                          <Td className="whitespace-nowrap text-right">
+                            {admin && h.linkable && <Button size="sm" onClick={() => link.mutate({ f, ids: [h.id] })} loading={link.isPending && link.variables?.ids?.[0] === h.id}><Link2 /> {t("uf.fab_link")}</Button>}
+                          </Td>
+                        </Tr>
+                      ))}
+                    </tbody>
+                  </Table>
+                </div>
+              )}
+              {f.last_ok_at && <div className="px-5 py-2 text-[11px] text-muted">{t("uf.fab_polled", { ago: timeAgo(f.last_ok_at, i18n.language) })}</div>}
+            </Card>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+function HostState({ h }: { h: UnifiFabricHost }) {
+  const ok = String(h.state ?? "").toLowerCase() === "connected";
+  return <span className={cn("size-2 shrink-0 rounded-full", ok ? "bg-online" : h.state ? "bg-offline" : "bg-muted")} title={h.state ?? ""} />;
 }

@@ -661,6 +661,10 @@ class UnifiConnection(Base):
     console_id: Mapped[str | None] = mapped_column(String(200), nullable=True)  # Site Manager host id
     api_key_enc: Mapped[str | None] = mapped_column(Text, nullable=True)  # Fernet, never returned by the API
     read_only: Mapped[bool] = mapped_column(Boolean, default=False)
+    # v0.29.0: a Site Manager key made inside a UniFi Fabric. Its consoles are discovered and (auto_link) linked as
+    # Network connections through the cloud connector, and consoles that join or leave the Fabric are reported.
+    fabric: Mapped[bool] = mapped_column(Boolean, default=False)
+    auto_link: Mapped[bool] = mapped_column(Boolean, default=True)
     tls_mode: Mapped[str] = mapped_column(String(16), default="verify")  # verify | pin | insecure
     tls_fingerprint: Mapped[str | None] = mapped_column(String(100), nullable=True)  # SHA-256 hex
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)

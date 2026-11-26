@@ -281,7 +281,7 @@ export interface CustomerOverview {
   machines: Machine[];
   unifi: { id: string; name: string; kind: string; status: string; enabled: boolean; last_error: string | null; last_ok_at: string | null; sites: number; totals: Record<string, number> }[];
   alerts: { id: number; node: string | null; severity: string; message: string; started_at: string }[];
-  totals: { proxmox: TypeTotals; servers: TypeTotals; workstations: TypeTotals; network: { connections: number; errors: number; sites: number; devices: number; offline: number; firmware: number }; alerts: number };
+  totals: { proxmox: TypeTotals; servers: TypeTotals; workstations: TypeTotals; network: { connections: number; errors: number; sites: number; devices: number; offline: number; firmware: number; fabrics?: { id: string; name: string; consoles: number; linked: number; unlinked: number }[] }; alerts: number };
   ai_access: CustomerAiAccess[];
 }
 
@@ -1131,6 +1131,8 @@ export interface UnifiConnection {
   console_id: string | null;
   has_key: boolean;
   read_only: boolean;
+  fabric: boolean;
+  auto_link: boolean;
   tls_mode: "verify" | "pin" | "insecure";
   tls_fingerprint: string | null;
   enabled: boolean;
@@ -1141,6 +1143,36 @@ export interface UnifiConnection {
   version: string | null;
   sites: { id: string; name: string }[];
   totals: Record<string, number>;
+}
+export interface UnifiFabricHost {
+  id: string;
+  name: string;
+  type: string | null;
+  ip: string | null;
+  state: string | null;
+  version: string | null;
+  apps: string[] | null;
+  linked: { id: string; name: string; status: string; through: string | null; customer: string | null } | null;
+  linkable: boolean;
+  reason: "self_hosted" | "no_network_app" | null;
+  also_in: string[];
+  sites: { id: string; name: string; isp: string | null; wan_uptime: number | null; counts: Record<string, number> }[];
+  devices: number;
+  offline: number;
+}
+export interface UnifiFabric {
+  id: string;
+  name: string;
+  environment_id: string;
+  customer: string | null;
+  status: "unknown" | "ok" | "error";
+  last_error: string | null;
+  last_ok_at: string | null;
+  auto_link: boolean;
+  read_only: boolean;
+  enabled: boolean;
+  hosts: UnifiFabricHost[];
+  totals: { consoles: number; linked: number; unlinked: number; sites: number; devices: number; offline: number };
 }
 export interface UnifiPort { idx: number; state: string; connector?: string; speed_mbps?: number | null; max_speed_mbps?: number | null; poe?: boolean; poe_state?: string | null }
 export interface UnifiDevice {

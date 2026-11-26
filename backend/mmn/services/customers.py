@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from mmn.models import Alert, ApiToken, Environment, Node, UnifiConnection
 from mmn.services import agent_hub, agent_packages, nodes
+from mmn.services.unifi import service as us
 
 MEM_HIGH = 85.0
 MEM_LOW = 50.0
@@ -83,8 +84,7 @@ async def summaries(db: AsyncSession) -> list[dict[str, Any]]:
         base.update({
             "machines": len(ns), "online": online, "alerts": n_alerts,
             "unifi": {"connections": len(ec), "errors": sum(1 for c in ec if c.status == "error"),
-                      "devices": sum(((c.snapshot or {}).get("totals") or {}).get("devices") or 0 for c in ec),
-                      "firmware": sum(((c.snapshot or {}).get("totals") or {}).get("firmware") or 0 for c in ec)},
+                      "devices": (ut := us.unifi_totals(ec))["devices"], "firmware": ut["firmware"]},
             "status": "empty" if not ns and not ec else ("attention" if attention or n_alerts else "ok"),
         })
         out.append(base)
@@ -120,10 +120,10 @@ async def overview(db: AsyncSession, e: Environment, *, user_id: str | None = No
     px["guests"] = sum(((m["guests"] or {}).get("vms_total") or 0) + ((m["guests"] or {}).get("cts_total") or 0)
                        for m in machines if m["type"] == "proxmox")
     net = {"connections": len(conns), "errors": sum(1 for c in conns if c.status == "error"),
-           "sites": sum(len((c.info or {}).get("sites") or []) for c in conns if c.kind != "access"),
-           "devices": sum(((c.snapshot or {}).get("totals") or {}).get("devices") or 0 for c in conns),
-           "offline": sum(((c.snapshot or {}).get("totals") or {}).get("offline") or 0 for c in conns),
-           "firmware": sum(((c.snapshot or {}).get("totals") or {}).get("firmware") or 0 for c in conns)}
+           **us.unifi_totals(conns)}
+    fabrics = [us.fabric_out(c, conns) for c in conns if c.kind == "site_manager" and c.fabric]
+    net["fabrics"] = [{"id": f["id"], "name": f["name"], "status": f["status"], "auto_link": f["auto_link"],
+                       **f["totals"]} for f in fabrics]
     tokens = await ai_access(db, e.id, user_id)
     return {"customer": nodes.env_out(e), "machines": machines, "unifi": [_unifi_row(c) for c in conns],
             "alerts": alerts,

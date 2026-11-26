@@ -138,6 +138,50 @@ async def events(connection_id: str | None = None, since_hours: int = Query(168,
     return await uf.list_events(db, connection_id, since_hours, kind, limit)
 
 
+# ------------------------------------------------------------------ UniFi Fabric (v0.29.0)
+@router.get("/fabrics")
+async def fabrics(environment_id: str | None = None, db: AsyncSession = Depends(get_db),
+                  _: User = Depends(current_user)):
+    return await uf.list_fabrics(db, environment_id)
+
+
+class FabricLinkIn(BaseModel):
+    host_ids: list[str] | None = Field(default=None, max_length=500)  # None = every console that can be linked
+    environment_id: str | None = None  # another customer for these consoles (default: the Fabric's customer)
+
+
+@router.post("/fabrics/{cid}/link")
+async def link_fabric(cid: str, body: FabricLinkIn, request: Request, db: AsyncSession = Depends(get_db),
+                      admin: User = Depends(require_admin)):
+    c = await _conn(db, cid, "site_manager")
+    try:
+        res = await uf.link_fabric(db, c, body.host_ids, body.environment_id or None)
+    except UnifiError as e:
+        raise _err(e) from e
+    await audit(db, "unifi.fabric.link", user=admin, target=c.name, ip=client_ip(request),
+                linked=[x["name"] for x in res["linked"]] or None)
+    await db.commit()
+    for x in res["linked"]:
+        try:
+            await uf.poll(x["id"])
+        except UnifiError:
+            pass
+    return res
+
+
+@router.post("/fabrics/{cid}/sync")
+async def sync_fabric(cid: str, db: AsyncSession = Depends(get_db), _: User = Depends(require_admin)):
+    """Read the Fabric's consoles now (and link new ones when auto-link is on)."""
+    c = await _conn(db, cid, "site_manager")
+    try:
+        await uf.poll(c.id)
+    except UnifiError as e:
+        raise _err(e) from e
+    db.expire_all()
+    conns = await uf.list_connections(db)
+    return uf.fabric_out(next(x for x in conns if x.id == c.id), conns)
+
+
 # ------------------------------------------------------------------ network
 @router.get("/network/overview")
 async def network_overview(environment_id: str | None = None, connection_id: str | None = None,

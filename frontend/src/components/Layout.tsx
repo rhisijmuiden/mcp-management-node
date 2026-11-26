@@ -5,6 +5,7 @@ import {
   Archive,
   ArrowUpCircle,
   Gauge,
+  Layers3,
   Plug,
   Bell,
   Bot,
@@ -306,6 +307,7 @@ export function Layout() {
           icon: <Wifi />, label: t("nav.section.unifi"), children: [
             { to: "/unifi/network", icon: <Wifi />, label: t("nav.unifi_network") },
             { to: "/unifi/access", icon: <DoorClosed />, label: t("nav.unifi_access") },
+            { to: "/unifi/fabrics", icon: <Layers3 />, label: t("nav.unifi_fabrics") },
           ],
         },
         { to: "/m365", icon: <CloudCog />, label: t("nav.m365"), badge: m365Risk.data || undefined },

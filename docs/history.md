@@ -263,6 +263,11 @@ agent on the Veeam server reads the jobs, sessions and restore points read-only 
 that are backed up as Hyper-V or VMware VMs show their Veeam backup, and VMs without an agent get their own row.
 No agent update is needed.
 
+**v0.29.0** supports UniFi Fabrics: one Site Manager key per Fabric, its consoles discovered and linked through the
+cloud connector at the customer, new and removed consoles reported, every console counted once, and clear errors for
+keys not made by the owner and consoles the connector cannot reach. New page UniFi → Fabrics, a Fabric line on the
+customer tile and the MCP tools `list_unifi_fabrics` and `sync_unifi_fabric`. No agent update is needed.
+
 Bug fix releases in between (v0.2.1, v0.6.1, v0.6.2, v0.7.1, v0.27.1) are listed on the releases page. v0.27.1: the
 Windows agent marks its own restart after a self-update (event 7031) as expected in the event log, and a command
 that times out now stops together with the processes it started.

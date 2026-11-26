@@ -362,9 +362,12 @@ UNIFI_DOWN = {"OFFLINE", "CONNECTION_INTERRUPTED", "ISOLATED"}
 
 async def _unifi_conditions(db: AsyncSession, cfg: MonitoringSettings, now: datetime) -> dict[str, dict[str, Any]]:
     from mmn.models import UnifiConnection
+    from mmn.services.unifi import service as uf
 
     want: dict[str, dict[str, Any]] = {}
-    for c in (await db.execute(select(UnifiConnection).where(UnifiConnection.enabled.is_(True)))).scalars():
+    conns = list((await db.execute(select(UnifiConnection).where(UnifiConnection.enabled.is_(True)))).scalars())
+    sources = uf.cloud_sources(conns)
+    for c in conns:
         src = {"source": f"UniFi {c.name}", "connection_id": c.id}
         if c.status == "error":
             since = c.last_ok_at or c.created_at
@@ -374,7 +377,17 @@ async def _unifi_conditions(db: AsyncSession, cfg: MonitoringSettings, now: date
             continue
         snap = c.snapshot or {}
         devs = [(s.get("name"), d) for s in snap.get("sites") or [] for d in s.get("devices") or []]
-        devs += [(d.get("host_name"), d) for d in snap.get("devices") or []]
+        if c.kind == "site_manager":
+            devs += [(d.get("host_name"), d) for d in uf.cloud_devices(c, sources)]
+            if c.fabric and not c.auto_link:
+                # A console in the Fabric that nothing reaches yet (auto-link is off): ask to link it.
+                for h in uf.fabric_out(c, conns)["hosts"]:
+                    if h["linkable"]:
+                        want[f"unifi:{c.id}:fabric:{h['id']}"] = {
+                            "node_id": None, "kind": "unifi", "severity": "warning",
+                            "detail": {**src, "console": h["name"], "fabric": True},
+                            "message": f"Console {h['name']} in the UniFi Fabric {c.name} is not linked yet; link it "
+                                       f"under UniFi → Fabrics"}
         for site, d in devs:
             if str(d.get("state") or "").upper() in UNIFI_DOWN:
                 want[f"unifi:{c.id}:{d.get('id')}"] = {

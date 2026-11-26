@@ -39,6 +39,7 @@ const DeploymentDetailPage = lazy(() => import("@/pages/Deployments").then((m) =
 const MonitoringPage = lazy(() => import("@/pages/Monitoring").then((m) => ({ default: m.MonitoringPage })));
 const UnifiNetworkPage = lazy(() => import("@/pages/Unifi").then((m) => ({ default: m.UnifiNetworkPage })));
 const UnifiAccessPage = lazy(() => import("@/pages/Unifi").then((m) => ({ default: m.UnifiAccessPage })));
+const UnifiFabricsPage = lazy(() => import("@/pages/Unifi").then((m) => ({ default: m.UnifiFabricsPage })));
 const UnifiConnectionsPage = lazy(() => import("@/pages/Unifi").then((m) => ({ default: m.UnifiConnectionsPage })));
 const NetworkPage = lazy(() => import("@/pages/Network").then((m) => ({ default: m.NetworkPage })));
 const SdnDesignerPage = lazy(() => import("@/pages/SdnDesigner").then((m) => ({ default: m.SdnDesignerPage })));
@@ -138,6 +139,7 @@ export default function App() {
         <Route path="unifi" element={<Navigate to="/unifi/network" replace />} />
         <Route path="unifi/network" element={<L><UnifiNetworkPage /></L>} />
         <Route path="unifi/access" element={<L><UnifiAccessPage /></L>} />
+        <Route path="unifi/fabrics" element={<L><UnifiFabricsPage /></L>} />
         <Route path="unifi/connections" element={<L><UnifiConnectionsPage /></L>} />
         <Route path="servers" element={<ServersPage />} />
         <Route path="workstations" element={<WorkstationsPage />} />
