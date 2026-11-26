@@ -33,6 +33,7 @@ Stackpilot is built in phases. Each phase is one pull request and one minor rele
 | – | v0.22.1 | Fix: numeric weekdays in cron schedules follow standard cron (0 and 7 = Sunday, 6 = Saturday) |
 | – | v0.22.2 | Fix: generating a monthly report failed (Internal Server Error) when the backup coverage listed items |
 | – | v0.23.0 | Monthly report: "Work performed" overview for the customer (what was done, by whom, how long, result), EN + NL |
+| – | v0.24.0 | Proxmox maintenance runs (checks, updates, moving or shutting down machines, restarts in start-up order) with a timeline report per customer; origin of every change in the change calendar |
 
 ## What each phase added
 

@@ -39,6 +39,8 @@ class MailContent:
     muted: list[str]
     button_url: str | None = None
     button_label: str | None = None
+    # A timeline under the paragraphs (maintenance reports): [{"time": "01:45", "text": "...", "level": "ok"}].
+    timeline: list[dict[str, str]] | None = None
 
 
 def render(content: MailContent, *, app: str, lang: str) -> tuple[str, str]:
@@ -46,8 +48,11 @@ def render(content: MailContent, *, app: str, lang: str) -> tuple[str, str]:
     html = _env.get_template("layout.html").render(
         lang=lang, app=app, title=content.title, paragraphs=content.paragraphs, muted=content.muted,
         button_url=content.button_url, button_label=content.button_label, footer=footer,
+        timeline=content.timeline or [],
     )
     text_parts = [content.title, "", *content.paragraphs]
+    if content.timeline:
+        text_parts += ["", *(f"{x.get('time', '')}  {x.get('text', '')}" for x in content.timeline)]
     if content.button_url:
         text_parts += ["", f"{content.button_label}: {content.button_url}"]
     text_parts += ["", *content.muted, "", "--", footer]

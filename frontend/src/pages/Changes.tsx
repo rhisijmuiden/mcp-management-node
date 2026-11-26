@@ -2,11 +2,11 @@ import * as Tabs from "@radix-ui/react-tabs";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle, BellRing, CalendarClock, CalendarDays, CalendarRange, Check, ChevronLeft, ChevronRight, Clock, Copy, Info, Link2,
-  ListChecks, Mail, Pencil, Play, Plus, Server, Settings2, Sparkles, Trash2, X, XCircle,
+  FileText, ListChecks, Mail, Pencil, Play, Plus, Server, Settings2, Sparkles, Trash2, X, XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 import { useCustomer, useCustomers } from "@/components/customers";
 import { tabCls } from "@/components/net";
@@ -27,6 +27,11 @@ type Impact = "none" | "minor" | "degraded" | "outage";
 type Recipients = "contacts" | "portal" | "both" | "none";
 const KINDS: Kind[] = ["maintenance", "update", "change", "migration", "other"];
 const IMPACTS: Impact[] = ["none", "minor", "degraded", "outage"];
+export type Origin = "manual" | "ticket" | "issue" | "schedule" | "ai" | "recovery";
+const ORIGINS: Origin[] = ["manual", "ticket", "issue", "schedule", "ai", "recovery"];
+const ORIGIN_TONE: Record<Origin, "online" | "warning" | "offline" | "info" | "neutral" | "accent"> = {
+  manual: "neutral", ticket: "info", issue: "warning", schedule: "accent", ai: "info", recovery: "online",
+};
 const RECIPIENTS: Recipients[] = ["both", "contacts", "portal", "none"];
 const OFFSETS = [10080, 4320, 1440, 240, 60, 15];
 const DURATIONS = [30, 60, 90, 120, 180, 240, 360, 480];
@@ -43,6 +48,8 @@ export interface Change {
   outcome_note: string | null; internal_notes?: string | null; node_ids?: string[]; task_id?: string | null; task_name?: string | null;
   runbook_id?: string | null; runbook_name?: string | null; run_runbook?: boolean; runbook_run_id?: string | null; notify?: boolean;
   notify_before?: number[] | null; notices?: Notice[]; created_by?: string | null; updated_at?: string; updated_by?: string | null;
+  origin: Origin; origin_ref: string | null; requested_at: string | null; automatic: boolean; has_report: boolean;
+  requested_by?: string | null; ticket_id?: string | null; task_run_id?: string | null;
 }
 interface Detail extends Change {
   conflicts: Conflict[]; recipients: { email: string; lang: string; source: string }[]; maintenance_window: string | null;
@@ -51,7 +58,7 @@ interface Detail extends Change {
 interface TaskRunAt { task_id: string; name: string; kind: string; at: string; customer_ids: string[] | null }
 interface Calendar { changes: Change[]; tasks: TaskRunAt[]; windows: { customer_id: string; customer_name: string; window: string | null; understood: boolean }[]; timezone: string }
 interface Check { conflicts: Conflict[]; suggestion: { starts_at: string; ends_at: string } | null; maintenance_window: string | null; minutes: number }
-interface Settings { notify_before: number[]; notify_after: boolean; notify_cancel: boolean; recipients: Recipients; auto_status: boolean; default_minutes: number; ical_url: string | null }
+interface Settings { notify_before: number[]; notify_after: boolean; notify_cancel: boolean; recipients: Recipients; auto_status: boolean; default_minutes: number; record_tasks: boolean; record_recovery: boolean; ical_url: string | null }
 interface CustomerSettings {
   customer_id: string; customer_name: string; maintenance_window: string | null; notify_before: number[] | null; notify_after: boolean | null;
   recipients: Recipients | null; extra: string[]; lang: "en" | "nl" | null; ical_url: string | null;
@@ -62,6 +69,13 @@ const TABS = ["calendar", "list", "settings"] as const;
 type Tab = (typeof TABS)[number];
 
 /* ------------------------------------------------------------------ helpers */
+/** Where a change came from: a small badge (manual, ticket, issue, schedule, AI, recovery). */
+export function OriginBadge({ c }: { c: Pick<Change, "origin" | "automatic"> }) {
+  const { t } = useTranslation();
+  const o = c.origin ?? "manual";
+  return <Badge tone={ORIGIN_TONE[o] ?? "neutral"}>{t(`chg.origin.${o}`)}</Badge>;
+}
+
 const loc = (lang: string) => (lang === "nl" ? "nl-NL" : "en-GB");
 
 export function useOffsetLabel() {
@@ -312,7 +326,7 @@ function ListTab({ onOpen }: { onOpen: (id: string) => void }) {
               const failed = (c.notices ?? []).some((n) => n.ok === false && !n.skipped);
               return (
                 <Tr key={c.id} className="cursor-pointer" onClick={() => onOpen(c.id)}>
-                  <Td><div className="font-semibold">{c.title}</div><div className="text-xs text-muted">{c.ref} · {t(`chg.kind.${c.kind}`)}{c.machines.length ? ` · ${c.machines.map((m) => m.name).join(", ")}` : ""}</div></Td>
+                  <Td><div className="flex flex-wrap items-center gap-2 font-semibold">{c.title}<OriginBadge c={c} /></div><div className="text-xs text-muted">{c.ref} · {t(`chg.kind.${c.kind}`)}{c.machines.length ? ` · ${c.machines.map((m) => m.name).join(", ")}` : ""}</div></Td>
                   <Td className="whitespace-nowrap text-sm">{whenText(c, i18n.language)}</Td>
                   {!customerId && <Td className="text-sm">{c.customer_name}</Td>}
                   <Td><Badge tone={IMPACT_TONE[c.impact]}>{t(`chg.impact.${c.impact}`)}</Badge></Td>
@@ -383,6 +397,11 @@ function DetailDialog({ id, admin, onClose, onEdit }: { id: string; admin: boole
             <Info2 icon={<AlertTriangle />} k={t("chg.f.impact")} v={<Badge tone={IMPACT_TONE[c.impact]}>{t(`chg.impact.${c.impact}`)}</Badge>} />
             <Info2 icon={<Server />} k={t("chg.f.machines")} v={c.machines.length ? c.machines.map((m) => m.name).join(", ") : <span className="text-muted">{t("chg.no_machines")}</span>} />
             <Info2 icon={<Clock />} k={t("chg.f.window")} v={c.maintenance_window || <span className="text-muted">{t("chg.no_window")}</span>} />
+            <Info2 icon={<Info />} k={t("chg.f.origin")} v={<>
+              <div className="flex flex-wrap items-center gap-2"><OriginBadge c={c} />{c.origin_ref && <span>{c.origin_ref}</span>}</div>
+              <div className="text-xs text-muted">{t("chg.requested", { at: formatDate(c.requested_at, i18n.language), by: c.requested_by ?? "?" })}{c.automatic ? ` · ${t("chg.automatic")}` : ""}</div>
+            </>} />
+            {c.task_run_id && <Info2 icon={<FileText />} k={t("chg.f.report")} v={<Link to={`/tasks/runs/${c.task_run_id}`} className="font-semibold text-koraal hover:underline">{t("chg.view_report")}</Link>} />}
             {(c.task_name || c.runbook_name) && <Info2 icon={<Link2 />} k={t("chg.f.links")} v={<>
               {c.task_name && <div>{t("chg.task")}: {c.task_name}</div>}
               {c.runbook_name && <div>{t("chg.runbook")}: {c.runbook_name}{c.run_runbook ? ` (${t("chg.runs_at_start")})` : ""}{c.runbook_run_status ? ` · ${t(`rb.status.${c.runbook_run_status}`, { defaultValue: c.runbook_run_status })}` : ""}</div>}
@@ -455,6 +474,7 @@ function Section({ title, hint, children }: { title: ReactNode; hint?: ReactNode
 interface Form {
   customer_id: string; title: string; description: string; internal_notes: string; kind: Kind; impact: Impact; start: string; minutes: number;
   node_ids: string[]; task_id: string; runbook_id: string; run_runbook: boolean; notify: boolean; custom: boolean; notify_before: number[]; draft: boolean;
+  origin: Origin; origin_ref: string; ticket_id: string; requested_at: string;
 }
 
 function OffsetPicker({ value, onChange }: { value: number[]; onChange: (v: number[]) => void }) {
@@ -486,11 +506,13 @@ function EditDialog({ init, onClose, onSaved }: { init: { change?: Detail; start
     kind: c?.kind ?? "maintenance", impact: c?.impact ?? "minor", start: c ? toLocalInput(c.starts_at) : init.start ? toLocalInput(init.start) : "",
     minutes: c?.minutes ?? 120, node_ids: c?.node_ids ?? [], task_id: c?.task_id ?? "", runbook_id: c?.runbook_id ?? "", run_runbook: c?.run_runbook ?? false,
     notify: c?.notify ?? true, custom: c?.notify_before != null, notify_before: c?.notify_before ?? [4320, 60], draft: false,
+    origin: c?.origin ?? "manual", origin_ref: c?.origin_ref ?? "", ticket_id: c?.ticket_id ?? "", requested_at: c?.requested_at ? toLocalInput(c.requested_at) : "",
   }));
   useEffect(() => { if (!c && settings.data && !init.start) setF((x) => ({ ...x, minutes: settings.data.default_minutes })); }, [settings.data, c, init.start]);
   const set = (p: Partial<Form>) => setF((x) => ({ ...x, ...p }));
   const machines = useQuery({ queryKey: ["ticket-machines", f.customer_id], queryFn: () => get<{ id: string; name: string; kind: string }[]>(`api/tickets/machines?customer_id=${f.customer_id}`), enabled: !!f.customer_id });
   const tasks = useQuery({ queryKey: ["tasks"], queryFn: () => get<{ tasks: { id: string; name: string; enabled: boolean }[] }>("api/tasks") });
+  const tickets = useQuery({ queryKey: ["tickets", "for-change", f.customer_id], queryFn: () => get<{ tickets: { id: string; number: number; subject: string; status: string }[] }>(`api/tickets?customer_id=${f.customer_id}`), enabled: !!f.customer_id });
   const runbooks = useQuery({ queryKey: ["runbooks", f.customer_id], queryFn: () => get<{ id: string; name: string; customer_id: string | null }[]>(`api/runbooks?customer_id=${f.customer_id}`), enabled: !!f.customer_id });
   const startIso = f.start ? new Date(f.start).toISOString() : null;
   const checkKey = useMemo(() => JSON.stringify([f.customer_id, startIso, f.minutes, f.node_ids, f.task_id, f.custom ? f.notify_before : null]), [f.customer_id, startIso, f.minutes, f.node_ids, f.task_id, f.custom, f.notify_before]);
@@ -509,6 +531,8 @@ function EditDialog({ init, onClose, onSaved }: { init: { change?: Detail; start
         starts_at: startIso, ends_at: new Date(new Date(f.start).getTime() + f.minutes * 60000).toISOString(), node_ids: f.node_ids,
         task_id: f.task_id || null, runbook_id: f.runbook_id || null, run_runbook: f.run_runbook && !!f.runbook_id, notify: f.notify,
         notify_before: f.custom ? f.notify_before : null,
+        origin: f.ticket_id ? "ticket" : f.origin, origin_ref: f.origin_ref.trim() || null, ticket_id: f.ticket_id || null,
+        requested_at: f.requested_at ? new Date(f.requested_at).toISOString() : null,
       };
       return c ? put<Detail>(`api/changes/${c.id}`, body) : post<Detail>("api/changes", { ...body, customer_id: f.customer_id, status: f.draft ? "draft" : "planned" });
     },
@@ -559,6 +583,28 @@ function EditDialog({ init, onClose, onSaved }: { init: { change?: Detail; start
               )}
             </Field>
           )}
+          <div className="grid gap-4 rounded-md border border-line p-3 sm:grid-cols-2">
+            <Field label={t("chg.f.origin")} hint={t("chg.f.origin_hint")}>
+              <Select value={f.ticket_id ? "ticket" : f.origin} onChange={(e) => set({ origin: e.target.value as Origin, ticket_id: e.target.value === "ticket" ? f.ticket_id : "" })}>
+                {ORIGINS.map((o) => <option key={o} value={o}>{t(`chg.origin.${o}`)}</option>)}
+              </Select>
+            </Field>
+            <Field label={t("chg.f.requested_at")} hint={t("chg.f.requested_at_hint")}>
+              <Input type="datetime-local" value={f.requested_at} onChange={(e) => set({ requested_at: e.target.value })} />
+            </Field>
+            {(f.origin === "ticket" || f.ticket_id) ? (
+              <Field label={t("chg.f.ticket")} className="sm:col-span-2">
+                <Select value={f.ticket_id} onChange={(e) => set({ ticket_id: e.target.value })} disabled={!f.customer_id}>
+                  <option value="">{t("chg.none")}</option>
+                  {(tickets.data?.tickets ?? []).map((x) => <option key={x.id} value={x.id}>#{x.number} {x.subject}</option>)}
+                </Select>
+              </Field>
+            ) : (
+              <Field label={t("chg.f.origin_ref")} hint={t("chg.f.origin_ref_hint")} className="sm:col-span-2">
+                <Input value={f.origin_ref} maxLength={300} onChange={(e) => set({ origin_ref: e.target.value })} placeholder={t(`chg.f.origin_ref_ph_${f.origin}`)} />
+              </Field>
+            )}
+          </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label={t("chg.f.task")} hint={t("chg.f.task_hint")}>
               <Select value={f.task_id} onChange={(e) => set({ task_id: e.target.value })}>
@@ -645,6 +691,8 @@ function SettingsTab() {
           <Switch checked={f.notify_after} onCheckedChange={(v) => setF({ ...f, notify_after: v })} label={t("chg.set.after")} description={t("chg.set.after_hint")} />
           <Switch checked={f.notify_cancel} onCheckedChange={(v) => setF({ ...f, notify_cancel: v })} label={t("chg.set.cancel")} />
           <Switch checked={f.auto_status} onCheckedChange={(v) => setF({ ...f, auto_status: v })} label={t("chg.set.auto")} description={t("chg.set.auto_hint")} />
+          <Switch checked={f.record_tasks !== false} onCheckedChange={(v) => setF({ ...f, record_tasks: v })} label={t("chg.set.record_tasks")} description={t("chg.set.record_tasks_hint")} />
+          <Switch checked={f.record_recovery !== false} onCheckedChange={(v) => setF({ ...f, record_recovery: v })} label={t("chg.set.record_recovery")} description={t("chg.set.record_recovery_hint")} />
           <Field label={t("chg.set.default_minutes")}><Input type="number" min={5} max={20160} value={f.default_minutes} onChange={(e) => setF({ ...f, default_minutes: Number(e.target.value) })} className="w-32" /></Field>
           <Button variant="primary" loading={save.isPending} onClick={() => save.mutate(f)}>{t("common.save")}</Button>
         </CardBody>

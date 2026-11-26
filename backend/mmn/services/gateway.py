@@ -418,6 +418,8 @@ def reason_text(r: dict[str, Any]) -> str:
         return f"rule for {p.get('tool')}: {p.get('action')} ({where})"
     if c == "nightly":
         return "proposed by the nightly checks"
+    if c == "maintenance":
+        return "scheduled Proxmox maintenance (updates and restarts) asks approval"
     if c == "runbook":
         return (f"automatic recovery ({p['recovery']}): " if p.get("recovery") else "") + \
             f"step {p.get('step')} of runbook {p.get('runbook')}" + (
@@ -658,7 +660,7 @@ def start_execution(approval_id: str) -> None:
 
 
 # Approval requests that Stackpilot itself makes (no token): client["source"].
-SYSTEM_SOURCES = {"nightly", "runbook"}
+SYSTEM_SOURCES = {"nightly", "runbook", "maintenance"}
 
 
 async def _approver(db: AsyncSession, username: str | None):

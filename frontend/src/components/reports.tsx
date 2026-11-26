@@ -110,11 +110,14 @@ function SettingsCard({ customer, settings, admin }: { customer: Customer; setti
   const qc = useQueryClient();
   const [s, setS] = useState(settings);
   const [rcpt, setRcpt] = useState(settings.recipients.join("\n"));
-  useEffect(() => { setS(settings); setRcpt(settings.recipients.join("\n")); }, [settings]);
+  const [mrcpt, setMrcpt] = useState((settings.maintenance_recipients ?? []).join("\n"));
+  useEffect(() => { setS(settings); setRcpt(settings.recipients.join("\n")); setMrcpt((settings.maintenance_recipients ?? []).join("\n")); }, [settings]);
+  const split = (v: string) => v.split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean);
   const save = useMutation({
     mutationFn: () => put<ReportSettings>(`api/customers/${customer.id}/reports/settings`, {
       enabled: s.enabled, day: s.day, lang: s.lang, include_ai: s.include_ai, include_costs: !!s.include_costs,
-      recipients: rcpt.split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean),
+      recipients: split(rcpt), maintenance_enabled: s.maintenance_enabled !== false, maintenance_on: s.maintenance_on ?? "always",
+      maintenance_recipients: split(mrcpt),
     }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["customer", customer.id, "reports"] }); toast.success(t("common.saved")); },
     onError: (e) => toast.error(errorMessage(e, t)),
@@ -140,6 +143,19 @@ function SettingsCard({ customer, settings, admin }: { customer: Customer; setti
         <Field label={t("rep.recipients")} htmlFor="rep-rcpt" hint={settings.default_recipients?.length && !rcpt.trim() ? t("rep.recipients_default", { email: settings.default_recipients.join(", ") }) : t("rep.recipients_hint")}>
           <Textarea id="rep-rcpt" value={rcpt} onChange={(e) => setRcpt(e.target.value)} disabled={!admin} className="min-h-20" placeholder="it@customer.nl" />
         </Field>
+        <div className="space-y-4 border-t border-line pt-4">
+          <Switch checked={s.maintenance_enabled !== false} onCheckedChange={(v) => setS({ ...s, maintenance_enabled: v })} disabled={!admin} label={t("rep.maint")} description={t("rep.maint_desc")} />
+          {s.maintenance_enabled !== false && <>
+            <Field label={t("rep.maint_on")} htmlFor="rep-mon">
+              <Select id="rep-mon" value={s.maintenance_on ?? "always"} onChange={(e) => setS({ ...s, maintenance_on: e.target.value as "always" | "issues" })} disabled={!admin}>
+                <option value="always">{t("rep.maint_on_always")}</option><option value="issues">{t("rep.maint_on_issues")}</option>
+              </Select>
+            </Field>
+            <Field label={t("rep.maint_recipients")} htmlFor="rep-mrcpt" hint={t("rep.maint_recipients_hint")}>
+              <Textarea id="rep-mrcpt" value={mrcpt} onChange={(e) => setMrcpt(e.target.value)} disabled={!admin} className="min-h-20" placeholder={"it@customer.nl\ndirectie@customer.nl"} />
+            </Field>
+          </>}
+        </div>
         {admin && <Button variant="dark" className="w-full justify-center" onClick={() => save.mutate()} loading={save.isPending}>{t("common.save")}</Button>}
       </CardBody>
     </Card>

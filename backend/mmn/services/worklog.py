@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from mmn.models import Change, Environment, Node, NodeJob, RemediationAttempt, RunbookRun, Ticket
+from mmn.models import Change, Environment, Node, NodeJob, RemediationAttempt, RunbookRun, TaskRun, Ticket
 
 # Node job kind -> (category, English title, Dutch title). {x} is the guest or application name.
 JOBS: dict[str, tuple[str, str, str]] = {
@@ -137,6 +137,14 @@ def _by(source: str | None, requested_by: str | None = None) -> str:
     return "auto"
 
 
+def _change_by(c: Change) -> str:
+    if c.origin == "ai":
+        return "ai"
+    if c.automatic or c.origin in ("schedule", "recovery"):
+        return "auto"
+    return "engineer"
+
+
 def _job_subject(j: NodeJob, node: Node | None) -> str | None:
     p = j.params or {}
     name = p.get("name") or (f"{p['vmid']}" if p.get("vmid") else None)
@@ -167,6 +175,23 @@ async def collect(db: AsyncSession, e: Environment, nodes: list[Node], start: da
             if isinstance(st, dict) and st.get("job_id"):
                 run_jobs.add(str(st["job_id"]))
     linked_runs = {a.run_id for a in attempts if a.run_id} | {c.runbook_run_id for c in changes if c.runbook_run_id}
+    # Changes that Stackpilot recorded for a task run (a maintenance run, scheduled updates) stand for the jobs
+    # of that run: those are not listed one by one as well.
+    task_windows: list[tuple[str, datetime, datetime]] = []
+    for c in changes:
+        if not c.task_run_id:
+            continue
+        tr = await db.get(TaskRun, c.task_run_id)
+        if tr is None:
+            continue
+        for row in tr.results or []:
+            if isinstance(row, dict) and row.get("job_id"):
+                run_jobs.add(str(row["job_id"]))
+        for x in tr.timeline or []:
+            for jid in x.get("job_ids") or []:
+                run_jobs.add(str(jid))
+        task_windows.append((f"task:{tr.name}", _aware(tr.started_at),
+                             _aware(tr.finished_at) or _aware(tr.started_at) + timedelta(hours=12)))
 
     # Tasks on the customer's machines.
     if by_id:
@@ -179,6 +204,8 @@ async def collect(db: AsyncSession, e: Environment, nodes: list[Node], start: da
     groups: dict[tuple, dict[str, Any]] = {}
     for j in jobs:
         if j.id in run_jobs:
+            continue
+        if any(j.requested_by == who and a <= (_aware(j.started_at) or a) <= b for who, a, b in task_windows):
             continue
         cat, en, nl = JOBS[j.kind]
         node = by_id.get(j.node_id)
@@ -241,11 +268,13 @@ async def collect(db: AsyncSession, e: Environment, nodes: list[Node], start: da
         done_at = _aware(c.finished_at) or _aware(c.ends_at)
         if not done_at or not (start <= done_at < end):
             continue
+        if c.origin == "recovery" and c.automatic:
+            continue  # the recovery attempt itself is listed above
         took = _minutes(c.started_at, c.finished_at) if c.started_at and c.finished_at else _minutes(c.starts_at, c.ends_at)
         where = ", ".join(by_id[i].name for i in (c.node_ids or []) if i in by_id) or None
         ok = c.status == "completed"
         items.append({"at": _aware(c.started_at) or _aware(c.starts_at), "category": "change", "title": c.title,
-                      "where": where, "by": "engineer", "minutes": took, "count": 1,
+                      "where": where, "by": _change_by(c), "minutes": took, "count": 1,
                       "result": "done" if ok else "failed",
                       "detail": c.outcome_note or (None if ok else T["change_failed"])})
 

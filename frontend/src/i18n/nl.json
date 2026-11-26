@@ -1374,7 +1374,47 @@
     "run_not_found": "Deze run is niet gevonden.",
     "command_linux": "Script voor Linux (bash)",
     "command_windows": "Script voor Windows (PowerShell)",
-    "command_windows_hint": "Draait op Windows-servers en -werkplekken als PowerShell-script onder het agentaccount (LocalSystem). Elke machine draait het script van zijn eigen OS; een machine zonder script wordt overgeslagen. Vereist agent v0.15.0 of nieuwer."
+    "command_windows_hint": "Draait op Windows-servers en -werkplekken als PowerShell-script onder het agentaccount (LocalSystem). Elke machine draait het script van zijn eigen OS; een machine zonder script wordt overgeslagen. Vereist agent v0.15.0 of nieuwer.",
+    "kind_pve_maintenance": "Proxmox-onderhoud",
+    "kind_pve_maintenance_hint": "Werkt de Proxmox-nodes één voor één bij. Moet een node herstarten, dan gaan de machines naar een andere node (of worden ze netjes afgesloten), herstart de node en start alles weer op in de opstartvolgorde. Controles vooraf en achteraf; elke klant krijgt een rapport met een tijdlijn.",
+    "preset_45_1_6": "Zaterdagnacht om 01:45",
+    "status_waiting": "Wacht op goedkeuring",
+    "maint": {
+      "title": "Onderhoud",
+      "desc": "Eén cluster en één node tegelijk. Vooraf: alle nodes online en quorum. Achteraf: elke machine die draaide, draait weer.",
+      "reboot": "Nodes herstarten",
+      "reboot_if_required": "Alleen als de updates dat nodig hebben",
+      "reboot_always": "Altijd",
+      "reboot_never": "Nooit (alleen updates)",
+      "guests": "Actieve machines tijdens een herstart",
+      "guests_migrate": "Verplaatsen naar een andere node, anders netjes afsluiten",
+      "guests_shutdown": "Netjes afsluiten en weer starten",
+      "approval": "Goedkeuring",
+      "approval_policy": "Zoals het AI-beleid van de klant zegt",
+      "approval_always": "Altijd eerst een beheerder vragen",
+      "approval_never": "Nooit vragen",
+      "boot_timeout": "Wachten tot een node terug is (minuten)",
+      "migrate_back": "Machines daarna terugzetten",
+      "migrate_back_hint": "Verplaatste machines gaan terug naar hun eigen node zodra die weer draait.",
+      "window": "Alleen binnen het onderhoudsvenster",
+      "window_hint": "Een geplande run buiten het venster van de klant doet niets. Nu uitvoeren in de app start altijd.",
+      "report": "De klant een rapport mailen",
+      "report_hint": "In de taal van de klant, naar de rapportontvangers bij Klanten → Rapportages.",
+      "staff_report_hint": "Dit is de technische samenvatting voor je eigen team. De klant krijgt een eigen rapport in gewone taal.",
+      "waiting": "Deze run wacht op goedkeuring van een beheerder voordat er iets verandert.",
+      "to_approvals": "Goedkeuringen openen",
+      "state_ok": "Uitgevoerd",
+      "state_warning": "Uitgevoerd, met aandachtspunten",
+      "state_failed": "Niet verlopen zoals gepland",
+      "state_skipped": "Niet uitgevoerd",
+      "send": "Rapport mailen",
+      "send_hint": "Leeg: de rapportontvangers van de klant.",
+      "tz": "Tijden in {{tz}}",
+      "sent": "Rapport verstuurd naar {{to}} op {{at}}",
+      "send_err_mail_off": "Rapport niet verstuurd: de mailserver staat uit",
+      "send_err_no_recipients": "Rapport niet verstuurd: de klant heeft geen rapportontvangers",
+      "send_err_send_failed": "Rapport kon niet worden verstuurd"
+    }
   },
   "net": {
     "title": "Netwerk",
@@ -2575,7 +2615,8 @@
       "runbook": "Stap {{step}} van runbook {{runbook}}",
       "recovery": "Automatisch herstel ({{recovery}}): stap {{step}} van runbook {{runbook}}",
       "vault": "Gebruikt een geheim uit de wachtwoordkluis: altijd goedkeuring nodig",
-      "m365": "Wijzigt een Microsoft 365-gebruiker: altijd goedkeuring nodig"
+      "m365": "Wijzigt een Microsoft 365-gebruiker: altijd goedkeuring nodig",
+      "maintenance": "Gepland Proxmox-onderhoud (updates en herstarts)"
     },
     "toast": {
       "new": "{{who}} vraagt goedkeuring: {{tool}}",
@@ -3165,7 +3206,14 @@
     "send_hint": "De pdf en de HTML-versie gaan als bijlage mee.",
     "sent_to": "Gemaild naar {{to}}",
     "include_costs": "Kosten opnemen",
-    "include_costs_desc": "Voegt het kostenoverzicht van de maand en wat binnenkort afloopt toe (uit Kosten & licenties)."
+    "include_costs_desc": "Voegt het kostenoverzicht van de maand en wat binnenkort afloopt toe (uit Kosten & licenties).",
+    "maint": "Onderhoudsrapporten",
+    "maint_desc": "Na elke Proxmox-onderhoudsrun: wat er is gedaan, met een tijdlijn, in gewone taal.",
+    "maint_on": "Versturen",
+    "maint_on_always": "Na elke run",
+    "maint_on_issues": "Alleen als er iets aandacht vraagt",
+    "maint_recipients": "Ontvangers onderhoudsrapport",
+    "maint_recipients_hint": "Eén adres per regel, zoveel als je wilt. Leeg: de ontvangers van het maandrapport."
   },
   "opt": {
     "node_offline": {
@@ -4655,7 +4703,11 @@
     "changes_copied": "Link gekopieerd",
     "changes_impact": "Verwachte impact",
     "changes_systems": "Systemen",
-    "changes_result": "Resultaat"
+    "changes_result": "Resultaat",
+    "changes_report": "Rapport",
+    "changes_tz": "Tijden in {{tz}}.",
+    "changes_requested": "Aangevraagd {{at}}",
+    "changes_view_report": "Rapport bekijken"
   },
   "doc": {
     "title": "Documentatie",
@@ -5823,7 +5875,21 @@
       "window": "Onderhoudsvenster",
       "links": "Gekoppeld",
       "outcome": "Resultaat",
-      "outcome_hint": "Gaat naar de klant in de melding achteraf."
+      "outcome_hint": "Gaat naar de klant in de melding achteraf.",
+      "origin": "Herkomst",
+      "origin_hint": "Waarom deze wijziging wordt gedaan; de klant ziet dit in het portaal.",
+      "requested_at": "Aangevraagd op",
+      "requested_at_hint": "Leeg: nu.",
+      "ticket": "Ticket",
+      "origin_ref": "Referentie",
+      "origin_ref_hint": "Bijvoorbeeld de melding, de bevinding of wie erom vroeg.",
+      "origin_ref_ph_manual": "Telefonisch gevraagd door de officemanager",
+      "origin_ref_ph_ticket": "#1234",
+      "origin_ref_ph_issue": "Schijf bijna vol op de fileserver",
+      "origin_ref_ph_schedule": "Maandelijks onderhoud",
+      "origin_ref_ph_ai": "Voorgesteld door de AI-assistent",
+      "origin_ref_ph_recovery": "Service automatisch herstart",
+      "report": "Rapport"
     },
     "none": "Geen",
     "disabled": "uit",
@@ -5905,7 +5971,11 @@
       "feed_off": "Uit",
       "feed_on": "Link maken",
       "feed_new": "Nieuwe link (de oude stopt)",
-      "feed_disable": "Uitzetten"
+      "feed_disable": "Uitzetten",
+      "record_tasks": "Geplande taken vastleggen",
+      "record_tasks_hint": "Updates en commando's van geplande taken verschijnen in de kalender van elke klant waarvoor ze werken (onderhoudsruns altijd).",
+      "record_recovery": "Automatisch herstel vastleggen",
+      "record_recovery_hint": "Problemen die Stackpilot zelf heeft opgelost (of geprobeerd) verschijnen ook in de kalender."
     },
     "cset": {
       "title": "Per klant",
@@ -5920,6 +5990,17 @@
       "extra_hint": "Krijgen elke melding van deze klant, bijv. hun IT-contact of je eigen servicedesk.",
       "feed": "Kalenderfeed voor de klant",
       "feed_desc": "Een geheime link naar de eigen wijzigingen van de klant (geen concepten of interne notities); staat ook in hun portaal."
-    }
+    },
+    "origin": {
+      "manual": "Handmatig",
+      "ticket": "Ticket",
+      "issue": "Melding",
+      "schedule": "Planning",
+      "ai": "AI-assistent",
+      "recovery": "Automatisch herstel"
+    },
+    "automatic": "vastgelegd door Stackpilot",
+    "requested": "Aangevraagd {{at}} door {{by}}",
+    "view_report": "Tijdlijnrapport bekijken"
   }
 }

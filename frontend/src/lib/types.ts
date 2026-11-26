@@ -579,7 +579,7 @@ export interface CommunityState {
   branch: string;
 }
 
-export type TaskKind = "ct_community_update" | "ct_apt_upgrade" | "node_updates" | "template_sync" | "custom_command";
+export type TaskKind = "ct_community_update" | "ct_apt_upgrade" | "node_updates" | "template_sync" | "custom_command" | "pve_maintenance";
 
 export interface TaskTargets {
   scope: "all" | "environments" | "nodes" | "guests" | "tag";
@@ -599,6 +599,13 @@ export interface TaskOptions {
   run_on: "ct" | "node";
   timeout: number;
   parallel_nodes: number;
+  reboot?: "if_required" | "always" | "never";
+  guest_handling?: "migrate" | "shutdown";
+  migrate_back?: boolean;
+  respect_window?: boolean;
+  approval?: "policy" | "always" | "never";
+  boot_timeout?: number;
+  report?: boolean;
 }
 
 export interface ScheduledTask {
@@ -646,13 +653,37 @@ export interface TaskRun {
   task_id: string | null;
   name: string;
   kind: string;
-  status: "running" | "success" | "partial" | "failed";
+  status: "running" | "waiting" | "success" | "partial" | "failed";
   trigger: string;
   requested_by: string | null;
   started_at: string;
   finished_at: string | null;
   results: TaskRunResult[];
   counts: { success: number; failed: number; skipped: number };
+  customer_ids?: string[];
+  approval_id?: string | null;
+  maintenance?: { customers: MaintenanceReport[]; approval_id: string | null };
+}
+
+export interface MaintenanceLine { at: string; time: string; text: string; level: "info" | "ok" | "warning" | "error" | null }
+
+export interface MaintenanceReport {
+  customer_id: string;
+  customer_name: string;
+  lang: "en" | "nl";
+  state: "ok" | "warning" | "failed" | "skipped";
+  title: string;
+  subject?: string;
+  intro: string;
+  summary: string | null;
+  timeline_label: string;
+  lines: MaintenanceLine[];
+  timezone: string;
+  date: string | null;
+  sent_to?: string[];
+  sent_at?: string | null;
+  send_error?: string | null;
+  change_id?: string | null;
 }
 
 export interface ConsoleSession {
@@ -1256,6 +1287,9 @@ export interface ReportSettings {
   include_ai: boolean;
   include_costs?: boolean;
   default_recipients?: string[];
+  maintenance_enabled?: boolean;
+  maintenance_recipients?: string[];
+  maintenance_on?: "always" | "issues";
 }
 
 export interface ReportSummary {

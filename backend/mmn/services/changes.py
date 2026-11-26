@@ -29,7 +29,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from mmn.db import sessionmaker
 from mmn.i18n import t
-from mmn.models import Change, Environment, Node, PortalUser, Runbook, RunbookRun, ScheduledTask
+from mmn.models import (
+    Change,
+    Environment,
+    Node,
+    PortalUser,
+    Runbook,
+    RunbookRun,
+    ScheduledTask,
+    TaskRun,
+    Ticket,
+)
 from mmn.services import tenancy
 from mmn.services.mailer import MailContent, try_send_mail
 from mmn.services.settings_store import get_setting
@@ -42,6 +52,9 @@ STATUSES = ("draft", "planned", "in_progress", "completed", "failed", "cancelled
 ACTIVE = ("planned", "in_progress")
 FINISHED = ("completed", "failed", "cancelled")
 RECIPIENTS = ("contacts", "portal", "both", "none")
+# Where a change came from (v0.24.0): planned by hand, for a ticket, for an issue (an alert or a finding), by a
+# schedule (a maintenance run or a scheduled task), by the AI assistant, or by automatic recovery.
+ORIGINS = ("manual", "ticket", "issue", "schedule", "ai", "recovery")
 # Allowed moves between statuses (by hand; the scheduler moves planned → in_progress → completed).
 MOVES: dict[str, tuple[str, ...]] = {
     "draft": ("planned", "cancelled"),
@@ -169,7 +182,9 @@ def change_out(ch: Change, nm: dict[str, dict[str, str]] | None = None, *, staff
         "kind": ch.kind, "impact": ch.impact, "status": ch.status, "starts_at": ch.starts_at.isoformat(),
         "ends_at": ch.ends_at.isoformat(), "minutes": int((ch.ends_at - ch.starts_at).total_seconds() // 60),
         "machines": [{"id": i, "name": nm["machines"].get(i, "?")} for i in ch.node_ids or []],
-        "outcome_note": ch.outcome_note,
+        "outcome_note": ch.outcome_note, "origin": ch.origin or "manual", "origin_ref": ch.origin_ref,
+        "requested_at": (ch.requested_at or ch.created_at).isoformat() if (ch.requested_at or ch.created_at) else None,
+        "automatic": bool(ch.automatic), "has_report": bool(ch.task_run_id),
     }
     if staff:
         out.update({
@@ -182,6 +197,8 @@ def change_out(ch: Change, nm: dict[str, dict[str, str]] | None = None, *, staff
             "updated_at": ch.updated_at.isoformat(), "updated_by": ch.updated_by,
             "started_at": ch.started_at.isoformat() if ch.started_at else None,
             "finished_at": ch.finished_at.isoformat() if ch.finished_at else None,
+            "requested_by": ch.requested_by or ch.created_by, "ticket_id": ch.ticket_id,
+            "task_run_id": ch.task_run_id,
         })
     return out
 
@@ -436,6 +453,18 @@ async def _clean_machines(db: AsyncSession, customer_id: str, refs: list[str] | 
     return out
 
 
+async def _find_ticket(db: AsyncSession, customer_id: str, ref: Any) -> Ticket:
+    s = str(ref).strip().lstrip("#")
+    tk = None
+    if s.isdigit():
+        tk = (await db.execute(select(Ticket).where(Ticket.number == int(s)))).scalar_one_or_none()
+    if tk is None:
+        tk = await db.get(Ticket, s)
+    if tk is None or tk.customer_id != customer_id:
+        raise ChangeError(f"ticket {ref} not found for this customer")
+    return tk
+
+
 TIME_FIELDS = ("starts_at", "ends_at")
 SEQ_FIELDS = ("starts_at", "ends_at", "title", "description", "status", "impact")
 
@@ -519,6 +548,27 @@ async def save_change(db: AsyncSession, ch: Change | None, *, customer_id: str, 
             vals[k] = bool(fields[k])
     if "notify_before" in fields:
         vals["notify_before"] = None if fields["notify_before"] is None else clean_offsets(fields["notify_before"])
+    if "ticket_id" in fields:
+        tk = await _find_ticket(db, customer_id, fields["ticket_id"]) if fields["ticket_id"] else None
+        vals["ticket_id"] = tk.id if tk else None
+        if tk is not None:
+            if "origin" not in fields:
+                vals["origin"] = "ticket"
+            if not fields.get("origin_ref"):
+                vals["origin_ref"] = f"#{tk.number} {tk.subject}"[:300]
+    if fields.get("origin") is not None:
+        if fields["origin"] not in ORIGINS:
+            raise ChangeError(f"origin must be one of {', '.join(ORIGINS)}")
+        vals["origin"] = fields["origin"]
+    if "origin_ref" in fields and fields["origin_ref"] is not None:
+        vals["origin_ref"] = _text(fields["origin_ref"], "origin_ref", 300)
+    if fields.get("requested_at"):
+        req = parse_dt(fields["requested_at"], "requested_at", tz)
+        if req > _now() + timedelta(minutes=5):
+            raise ChangeError("requested_at can't be in the future")
+        vals["requested_at"] = req
+    if "requested_by" in fields and fields["requested_by"] is not None:
+        vals["requested_by"] = _text(fields["requested_by"], "requested_by", 100)
     run_rb = vals.get("run_runbook", ch.run_runbook if ch else False)
     if run_rb and not vals.get("runbook_id", ch.runbook_id if ch else None):
         raise ChangeError("choose the runbook to start")
@@ -526,9 +576,11 @@ async def save_change(db: AsyncSession, ch: Change | None, *, customer_id: str, 
     now = _now()
     if ch is None:
         ch = Change(customer_id=customer_id, created_by=by, created_at=now, notices=[], node_ids=[], sequence=0,
-                    notify=True, run_runbook=False)
+                    notify=True, run_runbook=False, origin="manual", automatic=False)
         for k, v in vals.items():
             setattr(ch, k, v)
+        ch.requested_at = ch.requested_at or now
+        ch.requested_by = ch.requested_by or by
         ch.updated_at, ch.updated_by = now, by
         db.add(ch)
         await db.flush()
@@ -580,6 +632,83 @@ async def set_status(db: AsyncSession, ch: Change, status: str, *, by: str | Non
     ch.status = status
     ch.sequence = (ch.sequence or 0) + 1
     ch.updated_at, ch.updated_by = now, by
+    await db.flush()
+    return ch
+
+
+# ------------------------------------------------------------------ work that Stackpilot records itself
+async def linked_planned(db: AsyncSession, customer_id: str, task_id: str | None, now: datetime | None = None
+                         ) -> Change | None:
+    """A change in the calendar that is planned for this run of the scheduled task: same customer, linked to
+    the task and (nearly) around now, not yet followed by another run."""
+    if not task_id:
+        return None
+    now = now or _now()
+    q = select(Change).where(Change.customer_id == customer_id, Change.task_id == task_id,
+                             Change.status.in_(ACTIVE), Change.task_run_id.is_(None),
+                             Change.starts_at <= now + timedelta(hours=2), Change.ends_at >= now - timedelta(hours=1))
+    return (await db.execute(q.order_by(Change.starts_at))).scalars().first()
+
+
+async def record_work(db: AsyncSession, *, customer_id: str, title: str, description: str | None = None,
+                      kind: str = "maintenance", impact: str = "minor", origin: str = "schedule",
+                      origin_ref: str | None = None, node_ids: list[str] | None = None,
+                      task_run_id: str | None = None, task_id: str | None = None, by: str | None = None,
+                      requested_at: datetime | None = None, starts_at: datetime | None = None,
+                      minutes: int = 60, status: str = "in_progress") -> Change:
+    """Write work that Stackpilot does itself (a maintenance run, a scheduled task, automatic recovery) to the
+    change calendar, so the customer sees every change with where it came from. A change that was planned for
+    this task run is used (and started) instead of a new one. Automatic changes send no notices of their
+    own: the maintenance report tells the customer."""
+    now = _now()
+    ch = await linked_planned(db, customer_id, task_id, now) if task_run_id else None
+    if ch is not None:
+        ch.task_run_id = task_run_id
+        ch.origin = ch.origin if ch.origin and ch.origin != "manual" else origin
+        ch.origin_ref = ch.origin_ref or origin_ref
+        if node_ids:
+            ch.node_ids = list(dict.fromkeys([*(ch.node_ids or []), *node_ids]))[:100]
+        if ch.status == "planned":
+            await set_status(db, ch, "in_progress", by=by or "schedule")
+        await db.flush()
+        return ch
+    start = _utc(starts_at or now)
+    ch = Change(customer_id=customer_id, title=(title or "Maintenance")[:200], description=description,
+                kind=kind if kind in KINDS else "maintenance", impact=impact if impact in IMPACTS else "minor",
+                status=status if status in STATUSES else "in_progress", starts_at=start,
+                ends_at=start + timedelta(minutes=max(1, minutes)), node_ids=list(node_ids or [])[:100],
+                task_id=task_id, notify=False, notices=[], sequence=0, run_runbook=False,
+                origin=origin if origin in ORIGINS else "schedule", origin_ref=(origin_ref or None) and origin_ref[:300],
+                requested_at=_utc(requested_at) if requested_at else start, requested_by=by,
+                task_run_id=task_run_id, automatic=True, created_at=now, created_by=by, updated_at=now,
+                updated_by=by, started_at=start if status == "in_progress" else None)
+    if ch.status in FINISHED:
+        ch.started_at, ch.finished_at = start, now
+    db.add(ch)
+    await db.flush()
+    return ch
+
+
+async def finish_work(db: AsyncSession, ch: Change, *, ok: bool, note: str | None = None,
+                      by: str | None = "schedule", end: datetime | None = None,
+                      report_sent: bool = False) -> Change:
+    """Close a change of :func:`record_work`: completed or failed with a note for the customer. An automatic
+    change gets its real end time. ``report_sent``: the customer already had the maintenance report, so the
+    usual notice afterwards is not sent as well."""
+    if ch.status in ("draft", "planned", "cancelled"):
+        if ch.status == "cancelled":
+            return ch
+        await set_status(db, ch, "in_progress", by=by)
+    if ch.status == "in_progress":
+        await set_status(db, ch, "completed" if ok else "failed", by=by, note=note)
+    elif note is not None:
+        ch.outcome_note = _text(note, "outcome_note", 5000)
+    if ch.automatic:
+        stop = _utc(end or _now())
+        ch.ends_at = max(stop, ch.starts_at + timedelta(minutes=1))
+    if report_sent and not _sent(ch, "after"):
+        ch.notices = [*(ch.notices or []), {"key": "after", "at": _now().isoformat(), "skipped": True,
+                                            "reason": "report"}]
     await db.flush()
     return ch
 
@@ -768,7 +897,13 @@ async def tick_one(db: AsyncSession, ch: Change, now: datetime, *, base_url: str
             rid = await _start_runbook(db, ch)
             if rid:
                 did.append(f"runbook:{rid}")
-        if ch.status == "in_progress":
+        if ch.status == "in_progress" and ch.task_run_id:
+            run = await db.get(TaskRun, ch.task_run_id)
+            if run is None or run.status not in ("running", "waiting"):
+                ok = run is not None and run.status in ("success", "partial")
+                await set_status(db, ch, "completed" if ok else "failed", by="schedule")
+                did.append(ch.status)
+        elif ch.status == "in_progress":
             if ch.runbook_run_id:
                 run = await db.get(RunbookRun, ch.runbook_run_id)
                 if run is None or run.status in ("succeeded", "failed", "cancelled"):

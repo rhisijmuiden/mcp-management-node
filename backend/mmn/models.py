@@ -421,6 +421,13 @@ class TaskRun(Base):
     results: Mapped[list] = mapped_column(JsonType, default=list)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Proxmox maintenance runs (v0.24.0): what happened when, in order [{"at", "customer_id", "key", "level",
+    # "params"}], the customers the run worked for, the report mailed to each customer and the approval it
+    # waited for.
+    timeline: Mapped[list] = mapped_column(JsonType, default=list)
+    customer_ids: Mapped[list] = mapped_column(JsonType, default=list)
+    reports: Mapped[list] = mapped_column(JsonType, default=list)
+    approval_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
 
 # ------------------------------------------------------------------ phase 4: monitoring, network, deploys
@@ -1620,5 +1627,16 @@ class Change(Base):
     updated_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Where the change came from (v0.24.0): manual | ticket | issue | schedule | ai | recovery, with a reference
+    # (the ticket, the alert or the task) and when and by whom it was asked for. ``automatic``: recorded by
+    # Stackpilot itself for work it did (a maintenance run, a scheduled task, automatic recovery);
+    # ``task_run_id``: the run with the timeline.
+    origin: Mapped[str] = mapped_column(String(16), default="manual")
+    origin_ref: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    ticket_id: Mapped[str | None] = mapped_column(ForeignKey("tickets.id", ondelete="SET NULL"), nullable=True)
+    requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    requested_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    task_run_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    automatic: Mapped[bool] = mapped_column(Boolean, default=False)
 
     customer: Mapped[Environment] = relationship(lazy="joined")

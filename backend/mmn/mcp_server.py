@@ -379,6 +379,14 @@ every customer; `list_changes` / `get_change` the changes (CHG-numbers) with the
 Before planning, `check_change_slot` checks a time and suggests the next free slot inside the maintenance window;
 `save_change` plans or moves a change (scope changes_admin), the customer gets notices by itself (default 3 days and
 1 hour before, and afterwards). `set_change_status` and `send_change_notice` mail the customer: only when asked.
+Every change has an origin (manual, ticket, issue, schedule, ai, recovery) and when it was requested: give `ticket`
+when a change answers a ticket. Work Stackpilot does itself (maintenance runs, scheduled updates, automatic recovery)
+is recorded in the calendar automatically.
+
+Proxmox maintenance: a scheduled task of kind `pve_maintenance` (save_scheduled_task) updates the Proxmox nodes of
+customers one node at a time, moves or cleanly shuts down the machines when a node must restart, restarts it, starts
+everything again in its start-up order and checks the result, inside the maintenance window and with approval when
+the policy asks. Each customer gets a report with a timeline in plain words: `get_maintenance_report`.
 
 Nodes and servers can be named by id or by name. Every call is written to the audit log with your token's name.
 Destructive tools need `confirm` set to the exact node name, or are marked destructive: ask the user
@@ -1720,6 +1728,67 @@ async def get_task_run(run_id: str | None = None, task_id: str | None = None) ->
         if task_id:
             q = q.where(TaskRun.task_id == task_id)
         return _jsonable([tasks.run_out(r) for r in (await db.execute(q)).scalars()])
+
+
+@tool("tasks", WRITE, all_customers=True)
+async def continue_maintenance(run_id: str, customer: str | None = None) -> dict:
+    """Let a Proxmox maintenance run that waits for approval go on. Stackpilot asks this itself in the Approvals
+    inbox; an admin approves it there. Calling it yourself does nothing."""
+    from mmn.models import TaskRun
+    from mmn.services import gateway
+
+    if gateway.approved_call.get() is None:
+        raise ToolDenied("this only continues a maintenance run after an admin approved it in the Approvals inbox")
+    async with sessionmaker()() as db:
+        r = await db.get(TaskRun, run_id)
+        if r is None:
+            raise ToolDenied("run not found")
+        return {"run_id": r.id, "status": r.status, "continues": r.status == "waiting"}
+
+
+@tool("read", RO, all_customers=True)
+async def get_maintenance_report(run_id: str | None = None, customer: str | None = None,
+                                 lang: str | None = None) -> dict | list[dict]:
+    """The report of a Proxmox maintenance run in plain words: per customer a timeline ("01:45 Checks done,
+    01:52 3 machines shut down cleanly ...") with the outcome and who got the report. Without run_id: the last 10
+    maintenance runs (optionally of one customer). `lang` en or nl (default the customer's report language)."""
+    from sqlalchemy import select
+
+    from mmn.models import Environment, TaskRun
+    from mmn.services import maintenance
+
+    e = await _customer_env(customer) if customer else None
+    async with sessionmaker()() as db:
+        tz = await maintenance.tz_of(db)
+        if not run_id:
+            rows = (await db.execute(select(TaskRun).where(TaskRun.kind == maintenance.KIND)
+                                     .order_by(TaskRun.started_at.desc()).limit(50))).scalars()
+            out = []
+            for r in rows:
+                if e is not None and e.id not in (r.customer_ids or []):
+                    continue
+                out.append({"run_id": r.id, "name": r.name, "status": r.status, "started_at": r.started_at,
+                            "finished_at": r.finished_at, "customers": r.customer_ids,
+                            "outcome": {x.get("customer_id"): x.get("state") for x in r.reports or []}})
+                if len(out) >= 10:
+                    break
+            return _jsonable(out)
+        r = await db.get(TaskRun, run_id)
+        if r is None or r.kind != maintenance.KIND:
+            raise ToolDenied("maintenance run not found")
+        envs = {x.id: x for x in (await db.execute(select(Environment).where(
+            Environment.id.in_(r.customer_ids or [])))).scalars()}
+        p = current_principal()
+        allowed = p.customers if p is not None else None
+        res = []
+        for cid, env in envs.items():
+            if (e is not None and cid != e.id) or (allowed is not None and cid not in allowed):
+                continue
+            rl = lang if lang in ("en", "nl") else maintenance._lang(env)
+            view = maintenance.run_view(r, {cid: env}, rl, tz)
+            res += view["customers"]
+        return _jsonable({"run_id": r.id, "name": r.name, "status": r.status, "started_at": r.started_at,
+                          "finished_at": r.finished_at, "customers": res})
 
 
 # ------------------------------------------------------------------ network, firewall, SDN
@@ -5167,7 +5236,9 @@ async def save_change(customer: str, change: str | None = None, title: str | Non
                       internal_notes: str | None = None, kind: str | None = None, impact: str | None = None,
                       machines: list[str] | None = None, scheduled_task: str | None = None,
                       runbook: str | None = None, run_runbook: bool | None = None, draft: bool | None = None,
-                      notify: bool | None = None, notify_before_minutes: list[int] | None = None) -> dict:
+                      notify: bool | None = None, notify_before_minutes: list[int] | None = None,
+                      origin: str | None = None, origin_ref: str | None = None, ticket: str | None = None,
+                      requested_at: str | None = None) -> dict:
     """Plan a change or maintenance for a customer in the change calendar, or change one (give `change`: its
     CHG-number; only the fields you give change). Check the time with check_change_slot first and plan inside the
     customer's maintenance window unless the user says otherwise.
@@ -5177,7 +5248,10 @@ async def save_change(customer: str, change: str | None = None, title: str | Non
     customer's machines. `scheduled_task` / `runbook` link them (name or id); `run_runbook` starts the runbook
     when the change begins (its steps follow the AI policies). `draft` true: not shown to the customer and no
     notices. Notices go to the customer by themselves before the start (`notify_before_minutes`, default the
-    customer's setting, 3 days and 1 hour), when it moves or is cancelled, and afterwards; `notify` false: none."""
+    customer's setting, 3 days and 1 hour), when it moves or is cancelled, and afterwards; `notify` false: none.
+    Where it came from: `ticket` (number) links the customer's ticket; `origin` manual, ticket, issue (an alert or
+    finding: say which in `origin_ref`), schedule, ai or recovery (default for a new change: ai); `requested_at`
+    when the customer or engineer asked for it (default now)."""
     from mmn.services import changes
 
     fields: dict[str, Any] = {k: v for k, v in {
@@ -5192,12 +5266,19 @@ async def save_change(customer: str, change: str | None = None, title: str | Non
         fields["task_id"] = scheduled_task
     if runbook is not None:
         fields["runbook_id"] = runbook
+    if ticket is not None:
+        fields["ticket_id"] = ticket
+    for k, v in (("origin", origin), ("origin_ref", origin_ref), ("requested_at", requested_at)):
+        if v is not None:
+            fields[k] = v
     async with sessionmaker()() as db:
         e = await _netsec_required(db, customer)
         try:
             ch = await changes.find_change(db, change, e.id) if change else None
             if ch is None:
                 fields["status"] = "draft" if draft else "planned"
+                if "origin" not in fields and "ticket_id" not in fields:
+                    fields["origin"] = "ai"
             ch = await changes.save_change(db, ch, customer_id=e.id, by=_actor(), **fields)
             if change and draft is not None and ch.status in ("draft", "planned"):
                 await changes.set_status(db, ch, "draft" if draft else "planned", by=_actor())

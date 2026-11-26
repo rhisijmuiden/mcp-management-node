@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse
@@ -53,13 +54,17 @@ class ReportSettingsIn(BaseModel):
     lang: str = Field(default="en", pattern=r"^(en|nl)$")
     include_ai: bool = True
     include_costs: bool = False
+    maintenance_enabled: bool = True
+    maintenance_recipients: list[EmailStr] = Field(default_factory=list, max_length=20)
+    maintenance_on: Literal["always", "issues"] = "always"
 
 
 @router.put("/{cid}/reports/settings")
 async def save_settings(cid: str, body: ReportSettingsIn, request: Request, db: AsyncSession = Depends(get_db),
                         admin: User = Depends(require_admin)):
     e = await _cust(db, cid)
-    e.report = {**body.model_dump(), "recipients": [str(x) for x in body.recipients]}
+    e.report = {**(e.report or {}), **body.model_dump(), "recipients": [str(x) for x in body.recipients],
+                "maintenance_recipients": [str(x).lower() for x in body.maintenance_recipients]}
     await audit(db, "report.settings", user=admin, target=e.name, ip=client_ip(request), enabled=body.enabled,
                 day=body.day, recipients=len(body.recipients))
     await db.commit()
