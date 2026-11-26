@@ -146,10 +146,10 @@
   {% set cov = d.backups.coverage %}
   {% if cov and cov.considered %}
   <p>{{ T.cov_line.format(good=cov.protected, total=cov.considered, pct=cov.protected_pct, hours=cov.max_age_hours) }}</p>
-  {% if cov.items %}
+  {% if cov['items'] %}
   <div class="card scroll"><table>
     <tr><th>{{ T.item }}</th><th>{{ T.status }}</th><th>{{ T.last_backup }}</th><th>{{ T.age }}</th></tr>
-    {% for x in cov.items %}
+    {% for x in cov['items'] %}
     <tr><td>{{ x.item }}{% if x.error %}<div class="muted" style="font-size:12px">{{ x.error }}</div>{% endif %}</td>
       <td><span class="b {{ 'critical' if x.status == 'failed' else 'warning' }}">{{ T.get('bst_' ~ x.status, x.status) }}</span></td>
       <td class="muted">{{ dt(x.last_backup) }}</td><td>{{ '%.0f'|format(x.age_hours) ~ ' ' ~ T.hours if x.age_hours is not none else '–' }}</td></tr>
