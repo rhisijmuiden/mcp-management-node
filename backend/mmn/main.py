@@ -36,6 +36,7 @@ from mmn.api import (
     runbooks,
     servers,
     settings,
+    software,
     system,
     tickets,
     tokens,
@@ -102,6 +103,16 @@ async def _prepare_agent_tls() -> None:
         os.replace(tmp, run / "nginx-reload-request.json")
 
 
+async def _migrate_github() -> None:
+    """v0.27.0: the single GitHub token becomes the first account of the software library."""
+    from mmn.db import sessionmaker
+    from mmn.services import github_library
+
+    async with sessionmaker()() as db:
+        await github_library.ensure_legacy(db)
+        await db.commit()
+
+
 def create_app() -> FastAPI:
     s = get_settings()
     logging.basicConfig(level=s.log_level.upper(), format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -129,6 +140,10 @@ def create_app() -> FastAPI:
             await hub_service.sync()
         except Exception:  # noqa: BLE001
             log.exception("MCP hub tools could not be loaded")
+        try:
+            await _migrate_github()
+        except Exception:  # noqa: BLE001
+            log.exception("GitHub token could not be moved into the software library")
         try:
             await _announce_version()
         except Exception:  # noqa: BLE001
@@ -187,7 +202,8 @@ def create_app() -> FastAPI:
               cluster.router, monitoring.router, deploy.router, servers.router, unifi.router, customers.router,
               gateway.router, hub.router, workstations.router, reports.router, protection.router, nightly.router,
               runbooks.router, remediation.router, uptime.router, tickets.router, portal.router,
-              documents.router, vault.router, m365.router, netsec.router, costs.router, changes.router, integrations.router):
+              documents.router, vault.router, m365.router, netsec.router, costs.router, changes.router, integrations.router,
+              software.router):
         app.include_router(r)
     app.mount("/mcp", mcp_app)
     return app

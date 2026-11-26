@@ -22,6 +22,8 @@ from mmn.models import (
     McpUpstream,
     Node,
     PortalUser,
+    Repo,
+    RepoAccess,
     Ticket,
     UnifiConnection,
     UptimeCheck,
@@ -61,6 +63,8 @@ async def links(db: AsyncSession, e: Environment, *, user_id: str | None = None)
     certs = await _count(db, select(func.count()).select_from(Certificate).where(Certificate.customer_id == e.id))
     tokens = await ai_access(db, e.id, user_id)
     cov = protection.view(e, await protection.stored(db, e))["summary"]
+    linked = set((await db.execute(select(RepoAccess.repo_id).where(RepoAccess.customer_id == e.id))).scalars())
+    owned = set((await db.execute(select(Repo.id).where(Repo.owner_customer_id == e.id))).scalars())
     app_backup_targets = await _count(db, select(func.count()).select_from(BackupTarget))
 
     px, srv, ws = machines("proxmox"), machines("server"), machines("workstation")
@@ -77,6 +81,7 @@ async def links(db: AsyncSession, e: Environment, *, user_id: str | None = None)
                 "errors": sum(1 for m in mcp if m.enabled and m.status == "error")},
         "deployments": {"total": len(deps), "failed": sum(1 for d in deps if d.last_status == "failed"),
                         "repos": sorted({d.repo for d in deps})},
+        "software": {"repos": len(linked | owned), "own": len(owned)},
         "backups": {"considered": cov["considered"], "protected": cov["protected"], "problems": cov["problems"],
                     "last_backup": cov["last_backup"]},
         "tickets": {"open": open_tickets},

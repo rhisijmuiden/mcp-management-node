@@ -89,6 +89,8 @@ def _criteria(ids: list[str]):
         NodeJob,
         PairingCode,
         PortalUser,
+        Repo,
+        RepoAccess,
         Runbook,
         RunbookRun,
         SdnDesign,
@@ -111,6 +113,7 @@ def _criteria(ids: list[str]):
     conn_ids = select(UnifiConnection.id).where(UnifiConnection.environment_id.in_(ids)).scalar_subquery()
     dep_ids = (select(Deployment.id).where(Deployment.node_id.in_(
         select(Node.id).where(Node.environment_id.in_(ids)))).scalar_subquery())
+    linked_repos = select(RepoAccess.repo_id).where(RepoAccess.customer_id.in_(ids)).scalar_subquery()
     check_ids = select(UptimeCheck.id).where(UptimeCheck.customer_id.in_(ids)).scalar_subquery()
     ticket_ids = select(Ticket.id).where(Ticket.customer_id.in_(ids)).scalar_subquery()
     return [
@@ -153,6 +156,9 @@ def _criteria(ids: list[str]):
         with_loader_criteria(SdnDesign, SdnDesign.node_id.in_(node_ids), include_aliases=True),
         with_loader_criteria(ConfigBackup, ConfigBackup.node_id.in_(node_ids), include_aliases=True),
         with_loader_criteria(Deployment, Deployment.node_id.in_(node_ids), include_aliases=True),
+        # The software library: a repository is visible to the customers it belongs to or is linked to.
+        with_loader_criteria(Repo, Repo.owner_customer_id.in_(ids) | Repo.id.in_(linked_repos), include_aliases=True),
+        with_loader_criteria(RepoAccess, RepoAccess.customer_id.in_(ids), include_aliases=True),
         with_loader_criteria(DeploymentRun, DeploymentRun.deployment_id.in_(dep_ids), include_aliases=True),
         # Global runbooks (no customer) are visible to everyone; runs only to their customer.
         with_loader_criteria(Runbook, Runbook.customer_id.in_(ids) | Runbook.customer_id.is_(None),

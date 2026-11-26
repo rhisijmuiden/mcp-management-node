@@ -44,6 +44,7 @@ const NetworkPage = lazy(() => import("@/pages/Network").then((m) => ({ default:
 const SdnDesignerPage = lazy(() => import("@/pages/SdnDesigner").then((m) => ({ default: m.SdnDesignerPage })));
 const TicketsPage = lazy(() => import("@/pages/Tickets").then((m) => ({ default: m.TicketsPage })));
 const PortalSettingsPage = lazy(() => import("@/pages/Tickets").then((m) => ({ default: m.PortalSettingsPage })));
+const RepositoriesPage = lazy(() => import("@/pages/Repositories").then((m) => ({ default: m.RepositoriesPage })));
 const IntegrationsPage = lazy(() => import("@/pages/Integrations").then((m) => ({ default: m.IntegrationsPage })));
 const TicketDetailPage = lazy(() => import("@/pages/Tickets").then((m) => ({ default: m.TicketDetailPage })));
 const DocsPage = lazy(() => import("@/pages/Docs").then((m) => ({ default: m.DocsPage })));
@@ -146,6 +147,7 @@ export default function App() {
         <Route path="servers/copy" element={<RequireAuth admin><CopyPage /></RequireAuth>} />
         <Route path="servers/:id" element={<NodeDetailPage section="servers" />} />
         <Route path="deployments" element={<L><DeploymentsPage /></L>} />
+        <Route path="repos" element={<L><RepositoriesPage /></L>} />
         <Route path="deployments/:id" element={<L><DeploymentDetailPage /></L>} />
         <Route path="monitoring" element={<L><MonitoringPage /></L>} />
         <Route path="backups" element={<L><ProtectionPage /></L>} />

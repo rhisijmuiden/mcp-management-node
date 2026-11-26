@@ -1,9 +1,12 @@
-"""Deploy own GitHub repositories natively into LXC containers (no Docker).
+"""Deploy own GitHub repositories natively into LXC containers or onto Linux servers (no Docker).
 
 A deployment ties a repository to a container: the production or test branch is cloned into a
 directory in the container and the deploy commands run there (as root, with ``pct exec`` from the
 node). Optional: a snapshot first with roll back on failure, a systemd service to restart, and
 automatic deploys on push (GitHub webhook) or by polling the branch every few minutes.
+
+A Linux server (v0.27.0) gets the same checkout and commands through its agent, without a snapshot.
+Which repository may go to which customer is kept in the software library (``github_library``).
 
 The GitHub token is stored encrypted and reaches the container only through stdin into a file
 that is removed when the deploy ends; it never appears in a command line or in the job log.
@@ -29,10 +32,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from mmn.db import sessionmaker
 from mmn.models import Deployment, DeploymentRun, Node, NodeJob
 from mmn.security import decrypt_secret, encrypt_secret
-from mmn.services import agent_hub, events, guests, nodes
+from mmn.services import agent_hub, events, github_library, guests, nodes
 from mmn.services.agent_hub import AgentError
+from mmn.services.github_library import GitHubError
 from mmn.services.nodes import NodeError
-from mmn.services.settings_store import get_setting, set_setting
+from mmn.services.settings_store import get_setting
 
 log = logging.getLogger("mmn.deploy")
 
@@ -59,77 +63,52 @@ PRESETS: dict[str, dict[str, str]] = {
 }
 
 
-class GitHubError(Exception):
-    pass
-
-
 # ------------------------------------------------------------------ GitHub API
-async def _token(db: AsyncSession) -> str | None:
-    cfg = await get_setting(db, "github")
-    return decrypt_secret(cfg.get("token_enc"))
+async def _token(db: AsyncSession, repo: str | None = None) -> str | None:
+    return await github_library.token_for(db, repo)
 
 
 async def github_get(path: str, token: str | None, params: dict[str, Any] | None = None) -> Any:
-    headers = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28",
-               "User-Agent": "mcp-management-node"}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    async with httpx.AsyncClient(base_url=API_BASE, timeout=20) as c:
-        r = await c.get(path, headers=headers, params=params)
-    if r.status_code == 401:
-        raise GitHubError("GitHub refused the token (401)")
-    if r.status_code == 404:
-        raise GitHubError("not found on GitHub (or the token has no access)")
-    if r.status_code >= 400:
-        raise GitHubError(f"GitHub answered HTTP {r.status_code}: {r.text[:200]}")
-    return r.json()
+    data, _ = await github_library.call("GET", path, token, params=params)
+    return data
 
 
 async def github_status(db: AsyncSession) -> dict[str, Any]:
-    cfg = await get_setting(db, "github")
-    return {"configured": bool(cfg.get("token_enc")), "login": cfg.get("login"), "checked_at": cfg.get("checked_at")}
+    accounts = await github_library.list_accounts(db)
+    first = accounts[0] if accounts else None
+    return {"configured": bool(accounts), "login": first.login if first else None,
+            "checked_at": first.checked_at.isoformat() if first and first.checked_at else None,
+            "accounts": [github_library.account_out(a) for a in accounts]}
 
 
 async def set_github_token(db: AsyncSession, token: str | None) -> dict[str, Any]:
+    """The single-token form of v0.26 and older: replaces the first account (or removes it)."""
+    accounts = await github_library.list_accounts(db)
     if not token:
-        await set_setting(db, "github", {"token_enc": None, "login": None, "checked_at": None})
+        if accounts:
+            await db.delete(accounts[0])
+            await db.flush()
         return await github_status(db)
-    me = await github_get("/user", token)
-    await set_setting(db, "github", {"token_enc": encrypt_secret(token), "login": me.get("login"),
-                                     "checked_at": datetime.now(UTC).isoformat()})
+    if accounts:
+        await github_library.replace_token(db, accounts[0], token)
+    else:
+        await github_library.add_account(db, None, token)
     return await github_status(db)
 
 
 async def list_repos(db: AsyncSession, query: str | None = None) -> list[dict[str, Any]]:
-    token = await _token(db)
-    if not token:
-        raise GitHubError("connect GitHub first (a personal access token with read access to your repositories)")
-    out: list[dict[str, Any]] = []
-    for page in range(1, 6):
-        items = await github_get("/user/repos", token, {"per_page": 100, "page": page, "sort": "pushed",
-                                                         "affiliation": "owner,collaborator,organization_member"})
-        for r in items or []:
-            out.append({"full_name": r.get("full_name"), "private": bool(r.get("private")),
-                        "default_branch": r.get("default_branch"), "description": r.get("description") or "",
-                        "pushed_at": r.get("pushed_at"), "html_url": r.get("html_url"),
-                        "archived": bool(r.get("archived"))})
-        if len(items or []) < 100:
-            break
-    if query:
-        q = query.lower()
-        out = [r for r in out if q in (r["full_name"] or "").lower() or q in r["description"].lower()]
-    return out
+    return await github_library.remote_repos(db, None, query)
 
 
 async def list_branches(db: AsyncSession, repo: str) -> list[str]:
     if not REPO_RE.match(repo):
         raise GitHubError("repository looks like owner/name")
-    items = await github_get(f"/repos/{repo}/branches", await _token(db), {"per_page": 100})
+    items = await github_get(f"/repos/{repo}/branches", await _token(db, repo), {"per_page": 100})
     return [b.get("name") for b in items or []]
 
 
 async def branch_head(db: AsyncSession, repo: str, branch: str) -> str | None:
-    data = await github_get(f"/repos/{repo}/branches/{branch}", await _token(db))
+    data = await github_get(f"/repos/{repo}/branches/{branch}", await _token(db, repo))
     return ((data or {}).get("commit") or {}).get("sha")
 
 
@@ -137,12 +116,12 @@ async def detect(db: AsyncSession, repo: str, branch: str) -> dict[str, Any]:
     """Suggest a preset from the files in the repository root."""
     if not REPO_RE.match(repo) or not BRANCH_RE.match(branch) or ".." in branch:
         raise GitHubError("invalid repository or branch")
-    tree = await github_get(f"/repos/{repo}/git/trees/{branch}", await _token(db))
+    tree = await github_get(f"/repos/{repo}/git/trees/{branch}", await _token(db, repo))
     names = {e.get("path") for e in (tree or {}).get("tree") or []}
     preset = "custom"
     deploy_cmd = None
     if "deploy" in names:
-        sub = await github_get(f"/repos/{repo}/contents/deploy", await _token(db), {"ref": branch})
+        sub = await github_get(f"/repos/{repo}/contents/deploy", await _token(db, repo), {"ref": branch})
         files = {e.get("name") for e in sub or [] if isinstance(e, dict)}
         if "install.sh" in files:
             preset, deploy_cmd = "script", "bash ./deploy/install.sh"
@@ -169,8 +148,9 @@ class DeploymentIn(BaseModel):
     channel: Literal["prod", "test"] = "prod"
     branch_prod: str = Field(default="main", pattern=BRANCH_RE.pattern)
     branch_test: str = Field(default="test", pattern=BRANCH_RE.pattern)
+    target: Literal["container", "server"] = "container"
     node_id: str
-    vmid: int = Field(ge=100, le=999_999_999)
+    vmid: int = Field(default=0, ge=0, le=999_999_999)  # the container; 0 for a server
     path: str | None = Field(default=None, pattern=PATH_RE.pattern)
     preset: Literal["script", "python", "node", "static", "custom"] = "script"
     setup_cmd: str = Field(default="", max_length=20000)
@@ -219,7 +199,8 @@ def branch_of(d: Deployment) -> str:
 
 def deployment_out(d: Deployment, base_url: str = "") -> dict[str, Any]:
     return {"id": d.id, "name": d.name, "repo": d.repo, "channel": d.channel, "branch_prod": d.branch_prod,
-            "branch_test": d.branch_test, "branch": branch_of(d), "node_id": d.node_id, "vmid": d.vmid,
+            "branch_test": d.branch_test, "branch": branch_of(d), "target": d.target or "container",
+            "customer_id": d.customer_id, "node_id": d.node_id, "vmid": d.vmid,
             "path": d.path, "preset": d.preset, "setup_cmd": d.setup_cmd, "deploy_cmd": d.deploy_cmd,
             "service": d.service, "has_env": bool(d.env_enc), "auto_deploy": d.auto_deploy, "snapshot": d.snapshot,
             "rollback": d.rollback, "mail_to": d.mail_to or [], "last_sha": d.last_sha, "last_status": d.last_status,
@@ -248,8 +229,17 @@ async def list_deployments(db: AsyncSession) -> list[Deployment]:
     return list((await db.execute(select(Deployment).order_by(Deployment.name))).scalars())
 
 
-async def _check_target(db: AsyncSession, node_id: str, vmid: int) -> None:
+async def _check_target(db: AsyncSession, node_id: str, vmid: int, target: str = "container") -> None:
     node = await nodes.get_node(db, node_id)
+    if target == "server":
+        if node.kind != "linux" or node.role == "workstation":
+            raise NodeError("deployments onto a machine go to a Linux server (Windows and workstations are not "
+                            "supported)")
+        return
+    if node.kind != "proxmox":
+        raise NodeError("a container deployment needs a Proxmox VE node; for a Linux server choose target server")
+    if vmid < 100:
+        raise NodeError("choose the container (VMID 100 or higher)")
     try:
         _, g = await guests.find_guest(db, vmid, node.id)
     except NodeError as e:
@@ -261,25 +251,34 @@ async def _check_target(db: AsyncSession, node_id: str, vmid: int) -> None:
 async def save_deployment(db: AsyncSession, body: DeploymentIn, d: Deployment | None = None,
                           user: str | None = None, *, check_target: bool = True) -> Deployment:
     if check_target:
-        await _check_target(db, body.node_id, body.vmid)
+        await _check_target(db, body.node_id, body.vmid, body.target)
     clash = (await db.execute(select(Deployment).where(Deployment.name == body.name))).scalars().first()
     if clash is not None and (d is None or clash.id != d.id):
         raise NodeError("a deployment with this name already exists")
     if not body.deploy_cmd.strip() and not body.service:
         raise NodeError("give a deploy command (or at least a service to restart)")
     node = await nodes.get_node(db, body.node_id)
+    try:
+        await github_library.check_deploy(db, body.repo, node.environment_id, user=user)
+    except GitHubError as e:
+        raise NodeError(str(e)) from e
     if d is None:
         d = Deployment(name=body.name, repo=body.repo, vmid=body.vmid, path=body.path or f"/opt/{body.name}",
                        created_by=user, webhook_secret_enc=encrypt_secret(secrets.token_hex(24)))
         db.add(d)
     d.name, d.repo, d.channel = body.name, body.repo, body.channel
     d.branch_prod, d.branch_test = body.branch_prod, body.branch_test
-    d.node_id, d.vmid, d.path = node.id, body.vmid, body.path or d.path or f"/opt/{body.name}"
+    d.target = body.target
+    d.node_id, d.customer_id = node.id, node.environment_id
+    d.vmid = body.vmid if body.target == "container" else 0
+    d.path = body.path or d.path or f"/opt/{body.name}"
     d.preset, d.setup_cmd, d.deploy_cmd = body.preset, body.setup_cmd.strip(), body.deploy_cmd.strip()
     d.service = body.service.removesuffix(".service") if body.service else None
     if body.env is not None:
         d.env_enc = encrypt_secret(body.env) if body.env.strip() else None
     d.auto_deploy, d.snapshot, d.rollback, d.mail_to = body.auto_deploy, body.snapshot, body.rollback, body.mail_to
+    if body.target == "server":
+        d.snapshot = d.rollback = False  # a server has no snapshots
     await db.flush()
     return d
 
@@ -368,6 +367,20 @@ pct exec {vmid} -- bash -c {shlex.quote(inner)}
 """
 
 
+def server_script(d: Deployment, branch: str, *, run_setup: bool) -> str:
+    """Runs on a Linux server through its agent: same checkout and commands, token and environment from the
+    job environment into root-only files."""
+    inner = container_script(d, branch, run_setup=run_setup)
+    name = shlex.quote(d.name)
+    return f"""set -euo pipefail
+if [ "$(id -u)" != 0 ]; then echo "The agent does not run as root; deployments need root"; exit 1; fi
+if [ -n "${{MMN_GIT_TOKEN:-}}" ]; then (umask 077; printf '%s' "$MMN_GIT_TOKEN" > /root/.mmn-git-token); fi
+if [ -n "${{MMN_ENV_B64:-}}" ]; then (umask 077; mkdir -p /etc/mmn-deploy; printf '%s' "$MMN_ENV_B64" | base64 -d > /etc/mmn-deploy/{name}.env); fi
+unset MMN_GIT_TOKEN MMN_ENV_B64
+bash -c {shlex.quote(inner)}
+"""
+
+
 # ------------------------------------------------------------------ running
 async def start_run(deployment_id: str, *, trigger: str = "manual", requested_by: str | None = None,
                     source: str = "ui", run_setup: bool = False) -> DeploymentRun:
@@ -381,9 +394,11 @@ async def start_run(deployment_id: str, *, trigger: str = "manual", requested_by
         if running is not None:
             raise NodeError("a deployment of this app is still running")
         branch = branch_of(d)
+        server = d.target == "server"
         job = await nodes.create_job(d.node_id, "deploy.run", {"deployment": d.name, "repo": d.repo, "branch": branch,
-                                                               "vmid": d.vmid}, source=source,
-                                     requested_by=requested_by, exclusive=False, busy_key=f"guest:{d.vmid}")
+                                                               "vmid": d.vmid, "target": d.target or "container"},
+                                     source=source, requested_by=requested_by, exclusive=False,
+                                     busy_key=f"deploy:{d.id}" if server else f"guest:{d.vmid}")
         run = DeploymentRun(deployment_id=d.id, trigger=trigger, branch=branch, requested_by=requested_by,
                             job_id=job.id, previous_sha=d.last_sha)
         db.add(run)
@@ -400,18 +415,25 @@ async def _pipeline(run_id: str, run_setup: bool, source: str, requested_by: str
         run = await db.get(DeploymentRun, run_id)
         d = await db.get(Deployment, run.deployment_id)
         node_id, job_id, branch = d.node_id, run.job_id, run.branch
-        token = await _token(db)
+        token = await _token(db, d.repo)
         env_text = decrypt_secret(d.env_enc) or ""
-        script = node_script(d, branch, run_setup=run_setup)
-        do_snap, do_rb = d.snapshot, d.rollback
+        server = d.target == "server"
+        script = (server_script if server else node_script)(d, branch, run_setup=run_setup)
+        do_snap, do_rb = (False, False) if server else (d.snapshot, d.rollback)
     say = lambda line: agent_hub.add_line(node_id, job_id, line)  # noqa: E731
     who = {"source": source, "requested_by": requested_by}
     snap, sha, error, rolled_back = None, None, None, False
     node = g = None
     try:
         async with sessionmaker()() as db:
-            node, g = await guests.find_guest(db, d.vmid, node_id)
-        say(f"Deploying {d.repo} ({branch}) into container {d.vmid} {g['name']} on {node.name}")
+            if server:
+                node = await nodes.get_node(db, node_id)
+            else:
+                node, g = await guests.find_guest(db, d.vmid, node_id)
+        if server:
+            say(f"Deploying {d.repo} ({branch}) onto server {node.name} ({d.path})")
+        else:
+            say(f"Deploying {d.repo} ({branch}) into container {d.vmid} {g['name']} on {node.name}")
         if do_snap:
             snap = guests.snapshot_name("mmn-deploy")
             say(f"Taking snapshot {snap}")
@@ -483,7 +505,7 @@ async def _mail(run_id: str, to: list[str]) -> None:
         general = await get_setting(db, "general")
         lang = general["default_language"]
         base = (general.get("base_url") or "").rstrip("/")
-        paras = [t(lang, "deploy.body", repo=d.repo, branch=run.branch, vmid=d.vmid, node=node.name if node else "-",
+        paras = [t(lang, "deploy.body_server" if d.target == "server" else "deploy.body", repo=d.repo, branch=run.branch, vmid=d.vmid, node=node.name if node else "-",
                    status=run.status)]
         if run.error:
             paras.append(run.error[:500])

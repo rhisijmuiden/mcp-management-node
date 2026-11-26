@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import {
-  Archive, BookText, Bot, Check, CircleAlert, CloudCog, Globe, Laptop, LifeBuoy, Monitor, Network, Radar, Rocket, Server, Wifi,
+  Archive, BookText, Bot, Check, CircleAlert, CloudCog, FolderGit2, Globe, Laptop, LifeBuoy, Monitor, Network, Radar, Rocket, Server, Wifi,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -20,6 +20,7 @@ export interface CustomerLinks {
     m365: { tenants: number; errors: number; names: string[] };
     mcp: { servers: number; enabled: number; shared: number; errors: number };
     deployments: { total: number; failed: number; repos: string[] };
+    software: { repos: number; own: number };
     backups: { considered: number; protected: number; problems: number; last_backup: string | null };
     tickets: { open: number };
     ai: { tokens: number; customer_only: number };
@@ -59,6 +60,7 @@ export function LinkedTiles({ customerId }: { customerId: string }) {
     { key: "m365", icon: <CloudCog />, value: d.m365.tenants ? d.m365.names.join(", ") : "–", hint: d.m365.tenants ? (d.m365.errors ? t("links.errors", { count: d.m365.errors }) : t("links.connected")) : t("links.connect"), tone: !d.m365.tenants ? "empty" : d.m365.errors ? "bad" : "ok", to: d.m365.tenants ? "/m365" : "/integrations?setup=m365" },
     { key: "mcp", icon: <Network />, value: d.mcp.servers, hint: t("links.mcp_hint", { shared: d.mcp.shared }), tone: d.mcp.errors ? "bad" : d.mcp.servers ? "ok" : "plain", to: d.mcp.servers ? "/ai/hub" : "/integrations?setup=mcp" },
     { key: "deployments", icon: <Rocket />, value: d.deployments.total, hint: d.deployments.repos.length ? d.deployments.repos.join(", ") : t("links.none"), tone: d.deployments.failed ? "bad" : d.deployments.total ? "ok" : "plain", to: "/deployments" },
+    { key: "software", icon: <FolderGit2 />, value: d.software.repos, hint: d.software.repos ? t("links.software_hint", { count: d.software.repos, own: d.software.own }) : t("links.software_none"), tone: d.software.repos ? "plain" : "empty", to: "/repos" },
     { key: "backups", icon: <Archive />, value: d.backups.considered ? `${d.backups.protected} / ${d.backups.considered}` : "–", hint: d.backups.considered ? (d.backups.problems ? t("links.problems", { count: d.backups.problems }) : t("links.all_protected")) : t("links.not_checked"), tone: !d.backups.considered ? "plain" : d.backups.problems ? "bad" : "ok", to: "/backups" },
     { key: "tickets", icon: <LifeBuoy />, value: d.tickets.open, hint: d.tickets.open ? t("links.open") : t("links.none_open"), tone: d.tickets.open ? "warn" : "plain", to: "/tickets" },
     { key: "ai", icon: <Bot />, value: d.ai.tokens, hint: d.ai.customer_only ? t("links.ai_only", { count: d.ai.customer_only }) : t("links.ai_all"), tone: "plain", to: "/ai/tokens" },

@@ -84,9 +84,17 @@ function status(id: string, o: Overview | undefined, t: (k: string, v?: Record<s
   const none = { tone: "neutral" as Tone, badge: t("intg.not_set") };
   switch (id) {
     case "github":
-      return o.github.configured
-        ? { tone: "online", badge: t("intg.connected"), line: t("intg.github.line", { login: o.github.login ?? "?", ago: timeAgo(o.github.checked_at, lang) }) }
-        : { ...none, line: t("intg.github.line_none") };
+      if (!o.github.configured) return { ...none, line: t("intg.github.line_none") };
+      {
+        const acc = o.github.accounts ?? [];
+        const bad = acc.filter((a) => a.status === "error").length;
+        const soon = acc.filter((a) => a.status === "ok" && a.expiring).length;
+        const line = acc.length > 1 ? t("intg.github.line_many", { count: acc.length, logins: acc.map((a) => a.login ?? a.name).join(", ") })
+          : t("intg.github.line", { login: o.github.login ?? "?", ago: timeAgo(o.github.checked_at, lang) });
+        if (bad) return { tone: "offline", badge: t("intg.errors", { count: bad }), line };
+        if (soon) return { tone: "warning", badge: t("intg.github.expiring", { count: soon }), line };
+        return { tone: "online", badge: t("intg.connected"), line };
+      }
     case "m365":
       return o.m365.tenants
         ? { tone: o.m365.errors ? "warning" : "online", badge: o.m365.errors ? t("intg.errors", { count: o.m365.errors }) : t("intg.connected"), line: t("intg.m365.line", { count: o.m365.tenants, customers: o.m365.customers, total: o.customers }) }
@@ -220,7 +228,7 @@ export function Wizard({ def, onClose }: { def: IntegrationDef; onClose: () => v
                   {def.page && <Link to={def.page} onClick={onClose} className="mt-4 inline-flex"><Button variant="primary">{t("intg.open_page", { name: t(`intg.${def.id}.title`) })} <ArrowRight /></Button></Link>}
                 </>
               )}
-              {def.id === "github" && <Alert tone="info" className="mt-4">{t("intg.github.after")}</Alert>}
+              {def.id === "github" && <Alert tone="info" className="mt-4">{t("intg.github.after")} <Link to="/repos" onClick={onClose} className="font-semibold underline">{t("nav.repos")}</Link></Alert>}
             </>
           )}
         </div>

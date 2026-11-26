@@ -47,7 +47,7 @@ through the [MCP tools](mcp-tools.md), within the limits you set.
 | Customer | Customer overview (when a customer is picked), All customers |
 | Environment | Proxmox, Servers, Workstations, Network (UniFi), Microsoft 365 |
 | Maintenance | Backups, Updates & software, Monitoring & uptime, Certificates & firewall, Change calendar |
-| Automation | Runbooks, Deployments, Scheduled tasks, Automatic recovery |
+| Automation | Runbooks, Software (Repositories, Deployments), Scheduled tasks, Automatic recovery |
 | Knowledge & admin | Documentation, Password vault, Costs & licences |
 | Integrations (bottom) | All integrations, Agents & pairing, Connected AI, API tokens, MCP hub, UniFi consoles, Mail server |
 | Settings (bottom) | AI policies, Tool catalog, AI sessions, Users, App backups, Notifications, Customer portal, Web server & proxy, Audit log, General |
@@ -779,17 +779,46 @@ timeline in its own language (English or Dutch) at its **maintenance report reci
 addresses as you like; empty means the monthly report's recipients), after every run or only when something needs
 attention. The run page shows the same timeline per customer and can mail the report again.
 
+### Repositories (software library)
+
+**Automation → Software → Repositories** is the library of your GitHub repositories. It sits above the customers:
+one repository can be linked to several customers, and per customer you set what is allowed.
+
+- **GitHub tokens**: add one per owner, for example your own account and an organisation of a customer
+  (Integrations → GitHub explains how, with the rights to create repositories and do almost everything). Each token
+  shows its login, kind (fine-grained or classic), expiry date and last check; a token that expires within 14 days
+  or no longer works is flagged here and on the Integrations page.
+- **Kinds**: *Product* (your own software, for several customers), *Customer-specific* (made for one customer; only
+  that customer can use it) and *Tooling* (your own scripts and tools).
+- **Rights per customer**: *May deploy* (it may go onto that customer's containers and servers) and *AI may read*.
+  Set them in the list (Rights) or in the **matrix** of repositories × customers, where one click links, adds AI
+  access or removes.
+- **Add from GitHub** imports repositories the tokens can see; **New repository** creates one on GitHub (your account
+  or an organisation, private or public, optional `.gitignore` and a `test` branch for the test channel) and adds it
+  to the library in one go.
+- With a customer picked in the top bar only that customer's repositories show. The customer overview has a
+  **Software** tile.
+- Repositories you deployed before v0.27.0 are put in the library automatically, linked to the customers they run
+  at. Removing a repository from the library changes nothing on GitHub.
+
+AI tools: `list_software_repos`, `create_github_repo`, `link_repo_to_customer`, `list_github_repos`.
+
 ### Deployments from GitHub
 
-Add a fine-grained GitHub token (read access to Contents and Metadata), then pick a repository, a production and a
-test branch, and a target container. The app clones the repository into the container, runs your setup command once
-and your deploy command every time, writes environment variables to `/etc/mmn-deploy/<name>.env`, restarts the systemd
-service you name, and takes a snapshot first that is restored when the deployment fails.
+Pick a repository from the library, a production and a test branch, and a target: a **container** on Proxmox VE or a
+**Linux server** with the agent. The app clones the repository there, runs your setup command once and your deploy
+command every time, writes environment variables to `/etc/mmn-deploy/<name>.env` and restarts the systemd service
+you name. In a container it takes a snapshot first that is restored when the deployment fails; a server has no
+snapshots, so test on the test channel first.
 
+- A deployment only saves when the repository is released for the customer of the target (*May deploy*); a
+  customer-specific repository of another customer is refused.
 - Presets for an install script in the repo, Python, Node.js and static sites; everything runs natively, no Docker.
 - Deploy by hand, **on every push** (GitHub webhook, signed with a secret) or by checking for new commits every
   5 minutes.
 - **Create → GitHub** makes a new container and deploys into it in one go.
+- The GitHub token used is the one the repository is stored under; it reaches the machine only through stdin into a
+  root-only file that is removed when the deploy ends.
 
 ## Administration
 
