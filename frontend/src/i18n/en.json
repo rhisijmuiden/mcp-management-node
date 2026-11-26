@@ -2052,6 +2052,7 @@
     "hits_one": "{{count}} hit",
     "hits_other": "{{count}} hits",
     "truncated": "More results than shown. Narrow the search or the period.",
+    "expectedRestart": "expected: the agent restarted itself to run version {{version}} after an update, not a crash",
     "find_errors": "Find errors",
     "errors_desc": "Failed services, errors in the journal or event log and other warning signs, per server.",
     "healthy": "Nothing found",

@@ -51,6 +51,10 @@ var RestartExitCode = 0
 // On Windows it arms a scheduled task that starts the service should the service recovery not.
 var BeforeRestart func()
 
+// OnUpdateRestart, when set, runs first when the agent restarts for version after a self-update:
+// it records the restart so that the event it causes is not read as a crash.
+var OnUpdateRestart func(version string)
+
 // DrainTimeout is how long a self-update waits for running requests (commands, scripts,
 // file transfers) to finish before the agent restarts.
 var DrainTimeout = 5 * time.Minute
@@ -481,6 +485,9 @@ func (a *Agent) restartAfterUpdate(version string) {
 		log.Printf("update to %s: %d request(s) still running after %s, restarting anyway", version, a.inflight.Load()-1, DrainTimeout)
 	}
 	log.Printf("restarting to run version %s", version)
+	if OnUpdateRestart != nil {
+		OnUpdateRestart(version)
+	}
 	if BeforeRestart != nil {
 		BeforeRestart()
 	}

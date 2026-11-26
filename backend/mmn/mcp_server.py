@@ -1086,7 +1086,10 @@ async def run_command(node: str, command: str, reason: str, timeout: int = 60) -
     """Run a command on a machine and return exit code, stdout and stderr (max 256 KiB each): /bin/sh
     as root on Linux, Windows PowerShell 5.1 as SYSTEM on Windows. `reason` is stored in the audit
     log with the command and its output. Prefer the read-only tools when they suffice, and ask the
-    user before changing anything. timeout: seconds, max 1800."""
+    user before changing anything. timeout: seconds, max 1800; give a long-running command (DISM,
+    updates, robocopy) a large enough timeout. On a time-out `timed_out` is true and the command and
+    the processes it started are stopped (agents from v0.27.1; older agents left child processes
+    running)."""
     if not reason.strip():
         raise ToolDenied("give a reason")
     return _jsonable(await _op(node, "exec", {"command": command, "timeout": max(1, min(timeout, 1800))}))
@@ -1167,7 +1170,10 @@ async def read_event_log(server: str, log: str = "System,Application", level: st
     """Windows Event Log entries of one Windows server as structured data (time, log, level,
     provider, event id, message). log: comma separated, e.g. 'System', 'Application', 'Security' or
     'Microsoft-Windows-TaskScheduler/Operational'. level: critical, error, warning or information
-    (that level and worse). source: event provider, e.g. 'Service Control Manager' or 'MSSQLSERVER'."""
+    (that level and worse). source: event provider, e.g. 'Service Control Manager' or 'MSSQLSERVER'.
+    Event 7031 "The Stackpilot agent service terminated unexpectedly" right after an agent update is
+    the agent restarting itself into the new version: agents from v0.27.1 mark it with
+    `expected_restart` (the version) and a `note`. Only unmarked ones are real crashes."""
     return _jsonable(await _op(server, "logs.events", {"log": log, "priority": level or "", "since": since,
                                                        "unit": source or "", "grep": grep or "",
                                                        "lines": max(1, min(max_events, 2000))}))

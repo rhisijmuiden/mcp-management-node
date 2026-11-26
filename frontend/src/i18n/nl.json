@@ -2052,6 +2052,7 @@
     "hits_one": "{{count}} treffer",
     "hits_other": "{{count}} treffers",
     "truncated": "Meer resultaten dan getoond. Maak de zoekopdracht of periode kleiner.",
+    "expectedRestart": "verwacht: de agent herstartte zichzelf voor versie {{version}} na een update, geen crash",
     "find_errors": "Fouten vinden",
     "errors_desc": "Gefaalde services, fouten in de journal of het eventlog en andere waarschuwingen, per server.",
     "healthy": "Niets gevonden",

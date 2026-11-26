@@ -402,7 +402,7 @@ export function LogSearchPage() {
                 {res && n > 0 && (
                   <CardBody>
                     {res.lines && <Output text={res.lines.join("\n")} />}
-                    {res.events && <Output text={res.events.map((e) => `${e.time} ${e.log} ${e.level} ${e.provider}[${e.id}]: ${e.message}`).join("\n")} />}
+                    {res.events && <Output text={res.events.map((e) => `${e.time} ${e.log} ${e.level} ${e.provider}[${e.id}]: ${e.message}${e.expected_restart ? `  (${t("srv.expectedRestart", { version: e.expected_restart })})` : ""}`).join("\n")} />}
                     {res.matches && <Output text={res.matches.map((m) => `${m.file}:${m.line}: ${m.text}`).join("\n")} />}
                     {res.truncated && <p className="mt-2 text-xs text-muted">{t("srv.truncated")}</p>}
                   </CardBody>

@@ -184,16 +184,6 @@ func FailedServiceCount(ctx context.Context) (int, error) {
 	return n, nil
 }
 
-// Event is one entry of the Windows Event Log (not available on Linux).
-type Event struct {
-	Time     string `json:"time"`
-	Log      string `json:"log"`
-	Level    string `json:"level"`
-	Provider string `json:"provider"`
-	ID       int    `json:"id"`
-	Message  string `json:"message"`
-}
-
 // Events is only available on Windows; Linux uses the journal.
 func Events(ctx context.Context, q JournalQuery) ([]Event, error) {
 	return nil, errors.New("the Windows Event Log is only available on Windows servers; use the journal")
