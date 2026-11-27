@@ -17,9 +17,12 @@
   <img alt="Debian 13" src="https://img.shields.io/badge/draait%20op-Debian%2013-FF6B57">
   <img alt="MCP-tools" src="https://img.shields.io/badge/MCP--tools-237-9CC3FF">
   <img alt="Engels en Nederlands" src="https://img.shields.io/badge/talen-EN%20%7C%20NL-F6F7FB">
+  <a href="https://rhisijmuiden.github.io/stackpilot/nl/"><img alt="Helpsite" src="https://img.shields.io/badge/help-rhisijmuiden.github.io%2Fstackpilot-14223D"></a>
 </p>
 
 <p align="center">
+  <a href="https://rhisijmuiden.github.io/stackpilot/nl/"><strong>Helpsite</strong></a> ·
+  <a href="#wat-is-stackpilot">Wat is het?</a> ·
   <a href="#functies">Functies</a> ·
   <a href="#hoe-het-werkt">Hoe het werkt</a> ·
   <a href="#snel-starten">Snel starten</a> ·
@@ -30,6 +33,30 @@
 </p>
 
 ![Stackpilot commandocentrum](docs/images/command-center-nl.png)
+
+## Wat is Stackpilot?
+
+Stackpilot is **één server waarmee je de IT van al je klanten beheert**. Je installeert het één keer, op een
+Debian 13-server of -container. Op elke machine die je beheert (Proxmox VE-nodes, Linux- en Windows-servers, pc's en
+laptops) draait een klein programma, de **agent**, dat zich meldt via een versleutelde verbinding die de machine zelf
+opzet. Bij de klant hoeft dus niets open.
+
+Vanuit één webinterface zie je dan hoe elke klant ervoor staat: machines, back-ups, updates, certificaten, netwerken,
+Microsoft 365, tickets en kosten. En omdat Stackpilot ook een **MCP-server** is, kun je een AI-assistent (Claude,
+ChatGPT, Copilot) het werk laten doen: *"Controleer klant Acme"*, *"Installeer vannacht de updates"*, *"Waarom is deze
+laptop traag?"*. Jij bepaalt wat de AI zelf mag, wat hij eerst aan jou moet vragen en wat nooit mag.
+
+**Voor wie:** managed service providers (MSP's), zelfstandige systeembeheerders en IT'ers die meerdere locaties
+beheren, en iedereen die dezelfde gereedschappen wil voor zijn eigen lab of thuisnetwerk.
+
+**Kort gezegd is Stackpilot:**
+
+1. een **IT-beheerserver** voor veel klanten (een RMM-achtige tool die je zelf host),
+2. een **AI-gateway** die je AI één veilige koppeling naar dat alles geeft, met beleid, goedkeuringen en een volledig log,
+3. een **MCP-hub** die je andere MCP-servers (GitHub, VoIP, Home Assistant) achter diezelfde koppeling zet.
+
+> **Nieuw hier?** De **[helpsite](https://rhisijmuiden.github.io/stackpilot/nl/)** legt alles stap voor stap uit, in het
+> Nederlands en Engels: installeren, klanten en agents toevoegen, je AI koppelen, elke koppeling, goedkeuringen en meer.
 
 ## Waarom Stackpilot
 
@@ -59,7 +86,7 @@ AI-acties.
 | 🌐 **Netwerk & cluster** | Bridges en VLAN's met gebruiksoverzicht, wijzigingen eerst als diff met automatische rollback, firewall, SDN-ontwerper, HA, replicatie, backupjobs en storage. |
 | 🧑‍💻 **Linux- & Windows-servers** | Dezelfde agent op elke Linux-server of Windows Server/pc (MSI): services, journal/Event Log, pakketten en Windows Update, shell/PowerShell, bestanden, gezondheidscheck. |
 | 🔎 **Troubleshooten** | Logs doorzoeken op veel servers tegelijk, foutoverzichten, software- en CVE-inventaris, data kopiëren tussen servers. |
-| 📶 **UniFi** | UniFi Network, Site Manager en Access: apparaten, clients, wifi-troubleshooter, gastisolatiecheck, firmware, events, deuren en toegangslog. |
+| 📶 **UniFi** | UniFi Network, Site Manager en Access: apparaten, clients, wifi-troubleshooter, gastisolatiecheck, firmware, events, deuren en toegangslog. **UniFi Fabrics**: één Site Manager-sleutel per Fabric, elke console gevonden en gekoppeld via de cloudconnector, zonder adres, poort of agent. |
 | 📈 **Monitoring** | Eén meting per node per minuut, 30 dagen bewaard, trends, SMART en slijtage, alerts per mail. |
 | ☁️ **Microsoft 365 & Entra ID** | Koppel de tenant van een klant met een app-registratie (clientgeheim of certificaat, bewaard in de wachtwoordkluis). Gebruikers met licenties, beheerdersrollen, MFA en Entra ID-risico, gekochte en toegewezen licenties, standaardbeveiliging en voorwaardelijke toegang, en de aanmeldingen die opvallen (risicovol, mislukt, vanuit een ander land, oude protocollen). Meldingen en bevindingen in de ochtendsamenvatting voor risicovolle gebruikers, beheerders zonder MFA, inactieve of geblokkeerde accounts met licentie, licentietekorten en een app-geheim dat verloopt. Blokkeren, afmelden, MFA of wachtwoord resetten vanuit de app; de AI alleen na goedkeuring van een beheerder. |
 | 📚 **Documentatie & wachtwoordkluis** | Netwerkplannen, procedures, notities en contactpersonen per klant in Markdown, met versies, versleutelde bijlagen en gekoppelde machines; de AI leest ze voordat hij aan een klant werkt. Een wachtwoordkluis per klant (AES-256-GCM, eigen sleutel, sleutelrotatie, wachtwoordgeschiedenis, generator): mensen zien geheimen na het opnieuw invoeren van hun wachtwoord, de AI pas nadat een beheerder dat ene gebruik heeft goedgekeurd, of hij draait een script met het geheim zonder het zelf te zien. Elk tonen, kopiëren en gebruik staat in het toegangslog. |
@@ -67,18 +94,20 @@ AI-acties.
 | 📡 **Uptime & SLA** | Externe controles per klant van websites (status, trefwoord, reactietijd, certificaat), TCP-poorten, ping, DNS-records en VPN-endpoints, vanaf Stackpilot of vanaf een machine bij de klant; storingen, meldingen en de gemeten SLA tegenover het doel van elke klant in het maandrapport. |
 | 🔐 **Certificaten, firewall & VPN** | Elk certificaat van een klant, van websites en mailservers tot de certificaatopslag op Linux, Proxmox en Windows, met waarschuwingen voordat het verloopt. Elke firewallwijziging (Proxmox, nftables/iptables, Windows Firewall, UniFi) als diff die iemand moet bevestigen, en VPN-tunnels (WireGuard, IPsec, OpenVPN, Windows RRAS, UniFi) die een melding geven als ze down blijven. |
 | 🗓️ **Wijzigingskalender** | Plan onderhoud en wijzigingen per klant, gecontroleerd tegen het onderhoudsvenster, andere wijzigingen en geplande taken, met het eerstvolgende vrije moment als voorstel. De klant krijgt vooraf een melding (standaard 3 dagen en 1 uur), bij verplaatsen of annuleren, en achteraf, ziet het in het portaal en kan zich abonneren op een iCal-feed. |
+| 🧭 **Navigatie & koppelingen** | Een bovenbalk met klantkiezer (de hele app volgt de klant die je kiest), zoeken met Ctrl+K en goedkeuringen; een klantoverzicht met een tegel voor alles wat gekoppeld is en *wat er nog niet ingericht is*; een pagina Koppelingen met stap-voor-stap-uitleg voor GitHub, Microsoft 365, UniFi, MCP-servers, AI-apps, agents, mail en back-ups; het klantportaal bekijken zoals de klant het ziet. |
 | 💶 **Kosten & licenties** | Wat elke klant per maand kost als basis voor de facturatie: resources en machines volgens je prijslijst, Microsoft 365-licenties, contracten, licenties en hardware, met een pdf/csv-overzicht per maand en waarschuwingen voordat een contract, licentie of garantie afloopt of opgezegd moet worden. |
-| ⏱️ **Geplande taken** | Updates van containers en nodes, template-sync of een eigen commando op een cron-schema, met snapshot vooraf, rollback en mailrapport. |
-| 🚀 **Deploys vanuit GitHub** | Een repo uitrollen in een container (prod/test-branch), bij elke push via webhook of door te pollen, met snapshot vooraf en herstel bij fouten. |
+| ⏱️ **Geplande taken & Proxmox-onderhoud** | Updates van containers en nodes, template-sync of een eigen bash/PowerShell-script op een cron-schema, met snapshot vooraf, rollback en mailrapport. **Proxmox-onderhoud** patcht clusters node voor node: checks vooraf, machines verplaatst of netjes afgesloten, herstarten in de Proxmox-opstartvolgorde, checks achteraf, en per klant een tijdlijnrapport in gewone taal. |
+| 📦 **Softwarebibliotheek & deployments** | Meerdere GitHub-tokens (één per eigenaar, met waarschuwing voor het verlopen), repositories als product, klantspecifiek of tooling, gekoppeld aan klanten met rechten om uit te rollen en voor de AI, een matrix van repositories × klanten, nieuwe repositories aanmaken vanuit Stackpilot, en uitrollen in een container of op een Linux-server (prod/test-branch, bij elke push of door te pollen, snapshot vooraf in containers). |
 | 🌅 **Nachtelijke controle & ochtendsamenvatting** | Elke nacht wordt elke klant gecontroleerd: updates, beveiligingsupdates met de CVE's die ze verhelpen, volle schijven, verlopende certificaten, mislukte of ontbrekende back-ups en de optimalisatiescan. 's Ochtends één samenvatting in de app en per mail, met wat nieuw en opgelost is, en voorstellen die je met één klik goedkeurt; wijzigingen wachten op het onderhoudsvenster van de klant. |
 | 📒 **Runbooks** | Vaste procedures per klant of voor iedereen (server patchen, nieuwe medewerker, nieuw project via GitHub, service herstarten) die Stackpilot stap voor stap uitvoert met zijn eigen tools: goedkeuring per stap waar het beleid of het runbook dat zegt, wachten op het onderhoudsvenster, handmatige stappen voor een persoon of de AI, en elke stap in het auditlog. Bewerken in de app, of de AI start ze via MCP. |
 | 💓 **Automatisch herstel** | Bekende problemen lossen zichzelf op binnen het beleid: een gestopte service wordt herstart, een volle schijf opgeruimd, een offline agent in een VM of container teruggebracht. Regels per klant koppelen een alert of een nachtelijke bevinding aan een runbook; het probleem moet echt weg zijn voordat het als opgelost telt. Afkoeltijd, een maximum aantal pogingen, een limiet per uur, een stroomonderbreker en één noodknop; een Proxmox VE-node wordt nooit herstart. Resultaten in de app, per mail, in de ochtendsamenvatting en in het maandrapport. |
-| 🛟 **Back-ups van klanten** | Dekking per klant: welke VM's, containers, servers en werkplekken een back-up hebben, wanneer de laatste goede liep, grootte, fouten, verify en offsite kopie. Meldingen als een back-up mislukt of ouder is dan de SLA van de klant, terugzetten van een hele guest of losse bestanden (Proxmox Backup Server) met goedkeuring, status van Windows Server Backup, en beheer van datastores, verify-, sync- en prune-jobs op Proxmox Backup Server. |
+| 🛟 **Back-ups van klanten** | Dekking per klant: welke VM's, containers, servers en werkplekken een back-up hebben, wanneer de laatste goede liep, grootte, fouten, verify en offsite kopie. Meldingen als een back-up mislukt of ouder is dan de SLA van de klant, terugzetten van een hele guest of losse bestanden (Proxmox Backup Server) met goedkeuring, status van Windows Server Backup, en beheer van datastores, verify-, sync- en prune-jobs op Proxmox Backup Server, en de herstelpunten per VM van Veeam Backup & Replication. |
 | 💾 **App-back-ups** | Full en incremental, versleuteld (AES-256-GCM), naar FTP, FTPS, SFTP of SCP, ingepland, met restore vanaf de remote locatie. |
 | ✉️ **Mailserver** | Je eigen SMTP-server met STARTTLS of TLS, minimaal TLS 1.2/1.3 en DKIM-ondertekening, voor alerts, goedkeuringen en rapporten. |
 | 🔄 **Updaten vanuit de app** | Info & updates toont de versie, controleert GitHub, wisselt tussen productie (`main`) en test (`test`) en installeert, met databasebackup en automatische rollback. |
 
-Elke functie staat uitgebreid beschreven in de **[functiegids](docs/features.md)** (Engels).
+Elke functie wordt stap voor stap uitgelegd op de **[helpsite](https://rhisijmuiden.github.io/stackpilot/nl/)**, en
+technisch in de **[functiegids](docs/features.md)** (Engels).
 
 ## Een kijkje binnen
 
@@ -152,7 +181,7 @@ De installer toont het adres en een eenmalige **setupcode**. Open het adres, maa
 1. Maak een klant aan onder **Klanten** (Home staat er al).
 2. Voeg vanaf de klantpagina een machine toe: **Proxmox VE-node**, **server** of **werkplek**. Kopieer het
    installatiecommando met de koppelcode naar de machine.
-3. Kopieer onder **AI-gateway → Gekoppelde AI** het MCP-endpoint en koppel Claude, ChatGPT of Copilot
+3. Kopieer onder **Koppelingen → Gekoppelde AI** het MCP-endpoint en koppel Claude, ChatGPT of Copilot
    (**Help → Claude, ChatGPT of Copilot koppelen** legt het stap voor stap uit).
 4. Controleer **Beleid & guardrails**, stel een **mailserver** en een **backuplocatie** in.
 
@@ -163,6 +192,7 @@ zie **[installatie](docs/install.md)** (Engels).
 
 | Document | Inhoud |
 | --- | --- |
+| **[Helpsite](https://rhisijmuiden.github.io/stackpilot/nl/)** | Hoe alles werkt, stap voor stap, in gewone taal (Nederlands en Engels) |
 | [Functiegids](docs/features.md) | Elk onderdeel van de app, pagina voor pagina |
 | [MCP-toolreferentie](docs/mcp-tools.md) | Alle 237 tools met risiconiveau, scope en parameters (gegenereerd uit de code) |
 | [Installatie](docs/install.md) | Installeren, upgraden, reverse proxy (Zoraxy), agents, bestandslocaties, ontwikkelen |
@@ -191,6 +221,14 @@ zie **[installatie](docs/install.md)** (Engels).
 | 20 | **Certificaat-, firewall- en VPN-bewaking**: verloopdatums, configuratiewijzigingen en tunnels die wegvallen | ✅ Klaar (v0.20.0) |
 | 21 | **Kosten en licenties per klant**: prijslijst, resourcegebruik, licenties, contracten en hardware met verlengdatums, maandoverzicht met CSV/PDF-export | ✅ Klaar (v0.21.0) |
 | 22 | **Wijzigingskalender per klant**: geplande wijzigingen en onderhoud, gecontroleerd tegen het onderhoudsvenster, met meldingen aan de klant vooraf en achteraf, het portaal en een iCal-feed | ✅ Klaar (v0.22.0) |
+| – | **Uitgevoerde werkzaamheden** in het maandrapport, in gewone taal voor de klant | ✅ Klaar (v0.23.0) |
+| – | **Proxmox-onderhoud** met een tijdlijnrapport per klant, en de herkomst van elke wijziging | ✅ Klaar (v0.24.0) |
+| – | **Nieuwe navigatie**: bovenbalk met klantkiezer en zoeken, tegels in het klantoverzicht, pagina Koppelingen met stap-voor-stap-uitleg, portaal bekijken als klant | ✅ Klaar (v0.25.0, v0.26.0) |
+| – | **Softwarebibliotheek**: meerdere GitHub-tokens, repositories met rechten per klant, repositories aanmaken, uitrollen op Linux-servers | ✅ Klaar (v0.27.0) |
+| – | **Veeam Backup & Replication**: herstelpunten gekoppeld aan machines | ✅ Klaar (v0.28.0) |
+| – | **UniFi Fabrics**: één Site Manager-sleutel per Fabric, consoles gekoppeld via de cloudconnector | ✅ Klaar (v0.29.0) |
+
+Wat elke release toevoegde: [releasegeschiedenis](docs/history.md) (Engels).
 
 ## Releases en kanalen
 

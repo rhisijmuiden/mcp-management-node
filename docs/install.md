@@ -1,6 +1,6 @@
 # Installation
 
-[← Back to the README](../README.md)
+[← Back to the README](../README.md) · Step-by-step guide: [help site](https://rhisijmuiden.github.io/stackpilot/start/install/)
 
 - [Requirements](#requirements)
 - [Install](#install)
@@ -43,24 +43,24 @@ Options (`--help`): `--channel production|test`, `--version vX.Y.Z`, `--tarball 
 ## First steps
 
 1. Open the address and create the first admin with the setup code.
-2. **Administration → General**: set the public address (for example `https://stackpilot.example.com`) and the
+2. **Settings → General**: set the public address (for example `https://stackpilot.example.com`) and the
    default language (English or Dutch).
-3. **Administration → Mail server**: your SMTP server for alerts, approvals and reports.
-4. **Administration → Backups**: add a backup location (FTP, FTPS, SFTP or SCP).
+3. **Integrations → Mail server**: your SMTP server for alerts, approvals and reports.
+4. **Settings → App backups**: add a backup location (FTP, FTPS, SFTP or SCP).
 5. **Customers**: create your customers and add machines from each customer page.
-6. **AI Gateway → Connected AI**: connect Claude, ChatGPT or Copilot to the MCP endpoint.
+6. **Integrations → Connected AI**: connect Claude, ChatGPT or Copilot to the MCP endpoint.
 
 ## Behind a reverse proxy (Zoraxy)
 
-1. Install with `--proxy <Zoraxy IP>` (or change it later under **Administration → Web server & proxy**).
+1. Install with `--proxy <Zoraxy IP>` (or change it later under **Settings → Web server & proxy**).
 2. In Zoraxy add an HTTP proxy rule for your host name to this server on port 80, with TLS on and WebSockets allowed.
-3. Set the public address (e.g. `https://stackpilot.example.com`) under **Administration → General**.
+3. Set the public address (e.g. `https://stackpilot.example.com`) under **Settings → General**.
 
 Nginx trusts `X-Forwarded-For` / `X-Forwarded-Proto` only from the configured proxy addresses, and can serve the app
 under a sub-path (`--base-path /mmn`). The Web server page shows what the app receives from the proxy.
 
 Zoraxy only has to pass the agent port (default **8443**) through as a **Stream Proxy (TCP)**: agents use mutual
-TLS with this server, so Zoraxy must not terminate TLS on that port. See **Administration → Agents & pairing**.
+TLS with this server, so Zoraxy must not terminate TLS on that port. See **Integrations → Agents & pairing**.
 
 ## Agents
 

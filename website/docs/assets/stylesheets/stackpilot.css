@@ -1,0 +1,68 @@
+/* Stackpilot docs in the RHIS house style (branding/tokens). */
+:root {
+  --sp-nacht: #14213D;
+  --sp-koraal: #FF6B57;
+  --sp-lucht: #9CC3FF;
+  --sp-wolk: #F6F7FB;
+}
+[data-md-color-primary="custom"] {
+  --md-primary-fg-color: var(--sp-nacht);
+  --md-primary-fg-color--light: #2A3A5E;
+  --md-primary-fg-color--dark: #0B1428;
+  --md-primary-bg-color: #FFFFFF;
+  --md-primary-bg-color--light: #FFFFFFB3;
+}
+[data-md-color-accent="custom"] {
+  --md-accent-fg-color: #B8392A;
+  --md-accent-fg-color--transparent: #FF6B571A;
+  --md-accent-bg-color: var(--sp-nacht);
+}
+[data-md-color-scheme="default"] {
+  --md-default-bg-color: #FFFFFF;
+  --md-typeset-a-color: #B8392A;
+  --md-code-bg-color: var(--sp-wolk);
+}
+[data-md-color-scheme="slate"] {
+  --md-hue: 222;
+  --md-default-bg-color: #0E1626;
+  --md-default-fg-color--light: #A3AEC4;
+  --md-typeset-a-color: #FF8A78;
+  --md-accent-fg-color: #FF8A78;
+  --md-code-bg-color: #16213A;
+}
+[data-md-color-scheme="slate"][data-md-color-primary="custom"] {
+  --md-primary-fg-color: #0B1428;
+}
+.md-typeset h1, .md-typeset h2 {
+  font-stretch: 125%;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.md-typeset h1 { color: var(--md-default-fg-color); }
+.md-header__title { font-stretch: 125%; font-weight: 800; }
+.md-tabs { background-color: var(--md-primary-fg-color); }
+
+/* Landing page */
+.sp-hero {
+  background: var(--sp-nacht);
+  color: #fff;
+  border-radius: 16px;
+  padding: 2.2rem 2rem;
+  margin: 0 0 2rem;
+}
+.sp-hero h1 { color: #fff !important; margin: 0 0 .6rem; }
+.sp-hero p { font-size: 1.05rem; color: #D9E2F2; margin: .3rem 0; max-width: 46rem; }
+.sp-hero .md-button { margin: 1rem .5rem 0 0; }
+.sp-hero .md-button--primary { background: var(--sp-koraal); border-color: var(--sp-koraal); color: var(--sp-nacht); }
+.sp-hero .md-button:not(.md-button--primary) { color: #fff; border-color: var(--sp-lucht); }
+.sp-pill {
+  display: inline-block; background: var(--sp-lucht); color: var(--sp-nacht);
+  border-radius: 999px; padding: .1rem .7rem; font-size: .75rem; font-weight: 700; margin-bottom: .8rem;
+}
+.md-typeset .grid.cards > ul > li { border-radius: 10px; }
+.md-typeset .grid.cards > ul > li:hover { border-color: var(--sp-koraal); }
+.md-content__inner:has(.sp-hero) > .md-content__button { display: none; }
+@media (max-width: 600px) {
+  .sp-hero { padding: 1.4rem 1.2rem; }
+  .sp-hero .md-button { display: block; text-align: center; margin: .8rem 0 0; }
+}

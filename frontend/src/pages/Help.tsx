@@ -24,9 +24,13 @@ function Steps({ items }: { items: ReactNode[] }) {
 const b = <strong className="font-semibold" />;
 const c = <code className="mono rounded bg-sunken px-1 py-0.5 text-[12.5px]" />;
 
+const DOCS_SITE = "https://rhisijmuiden.github.io/stackpilot/";
+
 export function HelpPage() {
-  const { t } = useTranslation();
-  const topics = [
+  const { t, i18n } = useTranslation();
+  const docsUrl = i18n.language?.startsWith("nl") ? `${DOCS_SITE}nl/` : DOCS_SITE;
+  const topics: { icon: ReactNode; title: string; text: string; to?: string; href?: string }[] = [
+    { icon: <BookOpen />, title: t("help.topic_docs"), text: t("help.topic_docs_text"), href: docsUrl },
     { icon: <Sparkles />, title: t("help.topic_caps"), text: t("help.topic_caps_text"), to: "/help/capabilities" },
     { icon: <Bot />, title: t("help.topic_mcp"), text: t("help.topic_mcp_text"), to: "/help/mcp" },
     { icon: <Plug />, title: t("help.topic_nodes"), text: t("help.topic_nodes_text"), to: "/help/nodes" },
@@ -46,6 +50,7 @@ export function HelpPage() {
               <CardBody className="text-sm text-muted">{tp.text}</CardBody>
             </Card>
           );
+          if (tp.href) return <a key={tp.title} href={tp.href} target="_blank" rel="noreferrer">{body}</a>;
           return tp.to ? <Link key={tp.title} to={tp.to}>{body}</Link> : <div key={tp.title}>{body}</div>;
         })}
       </div>
@@ -58,19 +63,19 @@ export function McpHelpPage() {
   const url = appUrl("/mcp");
   const isLocal = /^(http:\/\/)?(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(url.replace(/^https?:\/\//, "")) || url.startsWith("http://");
   const tab = "rounded-[8px] px-3 py-1.5 text-[13px] font-semibold text-muted data-[state=active]:bg-raised data-[state=active]:text-ink data-[state=active]:shadow-sm cursor-pointer";
-  const claudeCode = `claude mcp add --transport http mcp-node ${url}`;
-  const claudeCodeToken = `claude mcp add --transport http mcp-node ${url} \\\n  --header "Authorization: Bearer mmn_YOUR_TOKEN"`;
-  const vscode = JSON.stringify({ servers: { "mcp-node": { type: "http", url } } }, null, 2);
+  const claudeCode = `claude mcp add --transport http stackpilot ${url}`;
+  const claudeCodeToken = `claude mcp add --transport http stackpilot ${url} \\\n  --header "Authorization: Bearer mmn_YOUR_TOKEN"`;
+  const vscode = JSON.stringify({ servers: { "stackpilot": { type: "http", url } } }, null, 2);
   const vscodeToken = JSON.stringify(
     {
       inputs: [{ type: "promptString", id: "mmn-token", description: "Stackpilot API token", password: true }],
-      servers: { "mcp-node": { type: "http", url, headers: { Authorization: "Bearer ${input:mmn-token}" } } },
+      servers: { "stackpilot": { type: "http", url, headers: { Authorization: "Bearer ${input:mmn-token}" } } },
     },
     null,
     2,
   );
   const desktop = JSON.stringify(
-    { mcpServers: { "mcp-node": { command: "npx", args: ["-y", "mcp-remote", url, "--header", "Authorization: Bearer ${MMN_TOKEN}"], env: { MMN_TOKEN: "mmn_YOUR_TOKEN" } } } },
+    { mcpServers: { "stackpilot": { command: "npx", args: ["-y", "mcp-remote", url, "--header", "Authorization: Bearer ${MMN_TOKEN}"], env: { MMN_TOKEN: "mmn_YOUR_TOKEN" } } } },
     null,
     2,
   );

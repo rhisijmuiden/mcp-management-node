@@ -1,6 +1,6 @@
 # Feature guide
 
-[← Back to the README](../README.md) · [MCP tool reference](mcp-tools.md) · [Installation](install.md)
+[← Back to the README](../README.md) · [MCP tool reference](mcp-tools.md) · [Installation](install.md) · Step by step: [help site](https://rhisijmuiden.github.io/stackpilot/)
 
 This guide describes every part of the app; [Finding your way](#finding-your-way) shows where each one sits in the menu. Everything you can do in the interface, an AI assistant can do
 through the [MCP tools](mcp-tools.md), within the limits you set.
@@ -239,7 +239,7 @@ not shown to the AI and calls are refused (stored as a "block" rule, so it also 
 - Endpoint `https://<your address>/mcp`, Streamable HTTP.
 - **OAuth 2.1** with dynamic client registration and PKCE for Claude, ChatGPT and VS Code, or a personal **API token**
   for scripts.
-- **144 tools** across customers, Proxmox, servers, network, cluster, monitoring, deployments, UniFi, backups, updates
+- **237 tools** across customers, Proxmox, servers, network, cluster, monitoring, deployments, UniFi, backups, updates
   and the gateway itself. See the **[MCP tool reference](mcp-tools.md)**.
 - Destructive tools require confirmation of the exact target, commands and service actions need a stated reason, and
   network changes can be tried as a dry run first.
